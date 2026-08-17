@@ -19,7 +19,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 /**
  * Plain key/value store. Source verification: the Laravel model's current()
  * method treats this as a singleton (firstOrCreate([])), which contradicts its
- * own unique-key/value design and is almost certainly a bug — do not replicate
+ * own unique-key/value design and is almost certainly a bug — does not replicate
  * that singleton pattern here. StoreSettings is the real singleton table.
  */
 @Entity
