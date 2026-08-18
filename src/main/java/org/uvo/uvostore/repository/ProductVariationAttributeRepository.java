@@ -12,4 +12,5 @@ public interface ProductVariationAttributeRepository extends JpaRepository<Produ
 
     List<ProductVariationAttribute> findByVariationId(Long variationId);
     Optional<ProductVariationAttribute> findByVariationIdAndAttributeId(Long variationId, Long attributeId);
+    void deleteByVariationId(Long variationId);
 }

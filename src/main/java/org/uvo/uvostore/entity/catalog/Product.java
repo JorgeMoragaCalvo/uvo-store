@@ -19,6 +19,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
@@ -96,6 +97,8 @@ public class Product {
     // is_featured, not featured). Kept for schema fidelity.
     @Column(nullable = false)
     @Builder.Default
+    @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
     private boolean featured = false;
 
     @Column(name = "is_featured", nullable = false)

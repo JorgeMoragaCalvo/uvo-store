@@ -1,5 +1,6 @@
 package org.uvo.uvostore.repository;
 
+import org.jspecify.annotations.NonNull;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.stereotype.Repository;
@@ -12,6 +13,7 @@ import java.util.Optional;
 public interface CategoryRepository extends JpaRepository<Category, Long>, JpaSpecificationExecutor<Category> {
 
     Optional<Category> findBySlug(String slug);
+    Optional<Category> findById(Long id);
     List<Category> findByActiveTrueOrderBySortOrderAsc();
     List<Category> findByParentIsNullOrderBySortOrderAsc(); // Category::rootCategories
     List<Category> findByParentIdOrderBySortOrderAsc(Long parentId);
