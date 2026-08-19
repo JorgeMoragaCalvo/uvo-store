@@ -26,4 +26,12 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
     List<Order> findTop10ByOrderByCreatedAtDesc(); // Order::recent()
     List<Order> findByStatusAndCreatedAtAfter(OrderStatus status, Instant since);
     long countByPosSyncedFalse();
+
+    // Admin\Shipping\{Zones,Methods}\Index delete guards — refuse to delete a zone/method that
+    // still has orders referencing it.
+    long countByShippingZoneId(Long shippingZoneId);
+    long countByShippingMethodRefId(Long shippingMethodId);
+
+    // Admin\Reports\* — every report aggregates in-memory over the orders (+ items) in a date range.
+    List<Order> findByCreatedAtBetween(Instant start, Instant end);
 }

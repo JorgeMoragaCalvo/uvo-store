@@ -95,8 +95,9 @@ public class ProductVariationServiceImpl implements ProductVariationService{
         }
     }
 
+    @Override
     @Transactional
-    void recalculateParentAggregate(Long productId) {
+    public void recalculateParentAggregate(Long productId) {
         List<ProductVariation> variations = variationRepository.findByProductId(productId);
 
         int totalStock = variations.stream().mapToInt(ProductVariation::getStock).sum();

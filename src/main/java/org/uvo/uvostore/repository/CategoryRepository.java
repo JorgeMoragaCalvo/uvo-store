@@ -13,6 +13,7 @@ import java.util.Optional;
 public interface CategoryRepository extends JpaRepository<Category, Long>, JpaSpecificationExecutor<Category> {
 
     Optional<Category> findBySlug(String slug);
+    Optional<Category> findByName(String name); // PosSyncService::getOrCreateCategory() lookup key
     Optional<Category> findById(Long id);
     List<Category> findByActiveTrueOrderBySortOrderAsc();
     List<Category> findByParentIsNullOrderBySortOrderAsc(); // Category::rootCategories

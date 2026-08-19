@@ -94,6 +94,24 @@ public class ProductServiceImpl implements ProductService {
         productRepository.deleteById(productId);
     }
 
+    @Override
+    @Transactional
+    public Product toggleActive(Long productId) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new NoSuchElementException("Product " + productId + " not found"));
+        product.setActive(!product.isActive());
+        return productRepository.save(product);
+    }
+
+    @Override
+    @Transactional
+    public Product toggleFeatured(Long productId) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new NoSuchElementException("Product " + productId + " not found"));
+        product.setFeatured(!product.isFeatured());
+        return productRepository.save(product);
+    }
+
     // Ports the base $data array ProductCreate.php::save() builds before the simple/variable
     // branch (lines 143-163) — every field there applies to both product types.
     private void applyCommonFields(Product product, ProductCreateCommand command) {
