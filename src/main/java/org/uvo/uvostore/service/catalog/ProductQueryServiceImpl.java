@@ -178,6 +178,14 @@ public class ProductQueryServiceImpl implements ProductQueryService {
             ));
         }
 
+        if (criteria.newOnly()) {
+            specs.add((root, query, cb) -> cb.isTrue(root.get("isNew")));
+        }
+
+        if (criteria.onSaleOnly()) {
+            specs.add((root, query, cb) -> cb.isTrue(root.get("isOnSale")));
+        }
+
         if (criteria.minPrice() != null) {
             specs.add((root, query, cb) -> cb.greaterThanOrEqualTo(root.get("price"), criteria.minPrice()));
         }

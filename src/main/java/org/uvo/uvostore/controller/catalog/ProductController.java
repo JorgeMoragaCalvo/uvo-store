@@ -36,6 +36,8 @@ public class ProductController {
             @RequestParam(required = false) String type,
             @RequestParam(required = false, defaultValue = "false") boolean featured,
             @RequestParam(name = "in_stock", required = false, defaultValue = "false") boolean inStock,
+            @RequestParam(name = "is_new", required = false, defaultValue = "false") boolean isNew,
+            @RequestParam(name = "on_sale", required = false, defaultValue = "false") boolean onSale,
             @RequestParam(name = "min_price", required = false) BigDecimal minPrice,
             @RequestParam(name = "max_price", required = false) BigDecimal maxPrice,
             @RequestParam(name = "sort_by", required = false, defaultValue = "createdAt") String sortBy,
@@ -44,7 +46,7 @@ public class ProductController {
             @RequestParam(required = false, defaultValue = "1") int page
     ) {
         ProductType productType = type == null ? null : ProductType.valueOf(type.toUpperCase());
-        ProductSearchCriteria criteria = new ProductSearchCriteria(search, category, productType, featured, inStock, minPrice, maxPrice);
+        ProductSearchCriteria criteria = new ProductSearchCriteria(search, category, productType, featured, inStock, isNew, onSale, minPrice, maxPrice);
 
         String sortField = ALLOWED_SORTS.contains(sortBy) ? sortBy : "createdAt";
         Sort.Direction direction = "asc".equalsIgnoreCase(sortOrder) ? Sort.Direction.ASC : Sort.Direction.DESC;

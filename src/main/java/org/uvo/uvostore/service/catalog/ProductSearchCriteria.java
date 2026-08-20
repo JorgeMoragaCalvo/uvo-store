@@ -10,6 +10,8 @@ public record ProductSearchCriteria(
         ProductType type,
         boolean featuredOnly,
         boolean inStockOnly,
+        boolean newOnly,
+        boolean onSaleOnly,
         BigDecimal minPrice,
         BigDecimal maxPrice
 ) {
