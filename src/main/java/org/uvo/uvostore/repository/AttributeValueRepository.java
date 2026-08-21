@@ -8,6 +8,6 @@ import java.util.Optional;
 
 public interface AttributeValueRepository extends JpaRepository<AttributeValue, Long> {
 
-    List<AttributeValue> finByAttributeIdOrderBySortOrderAsc(Long attributeId);
+    List<AttributeValue> findByAttributeIdOrderBySortOrderAsc(Long attributeId);
     Optional<AttributeValue> findByAttributeIdAndSlug(Long attributeId, String slug);
 }

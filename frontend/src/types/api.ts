@@ -38,7 +38,7 @@ export interface Product {
   slug: string
   shortDescription: string | null
   description: string | null
-  productType: 'SIMPLE' | 'VARIABLE'
+  productType: 'simple' | 'variable' // backend serializes Product.productType.name().toLowerCase()
   sku: string
   price: number
   formattedPrice: string

@@ -1,0 +1,103 @@
+CREATE TABLE coupons (
+    id BIGSERIAL PRIMARY KEY,
+    code VARCHAR NOT NULL UNIQUE,
+    name VARCHAR NOT NULL,
+    description TEXT,
+    type VARCHAR NOT NULL,
+    value NUMERIC(10,2) NOT NULL,
+    minimum_purchase NUMERIC(10,2),
+    maximum_discount NUMERIC(10,2),
+    starts_at TIMESTAMPTZ,
+    expires_at TIMESTAMPTZ,
+    usage_limit INTEGER,
+    usage_limit_per_customer INTEGER,
+    times_used INTEGER NOT NULL,
+    is_active BOOLEAN NOT NULL,
+    created_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ
+);
+
+CREATE TABLE orders (
+    id BIGSERIAL PRIMARY KEY,
+    order_number VARCHAR NOT NULL UNIQUE,
+    customer_id BIGINT REFERENCES customers(id) ON DELETE SET NULL,
+    customer_email VARCHAR NOT NULL,
+    customer_first_name VARCHAR NOT NULL,
+    customer_last_name VARCHAR NOT NULL,
+    customer_phone VARCHAR,
+    subtotal NUMERIC(10,2) NOT NULL,
+    discount_amount NUMERIC(10,2) NOT NULL,
+    shipping_cost NUMERIC(10,2) NOT NULL,
+    tax_amount NUMERIC(10,2) NOT NULL,
+    total NUMERIC(10,2) NOT NULL,
+    status VARCHAR NOT NULL,
+    payment_status VARCHAR NOT NULL,
+    fulfillment_status VARCHAR NOT NULL,
+    payment_method VARCHAR,
+    payment_id VARCHAR,
+    payment_data JSONB,
+    stripe_checkout_session_id VARCHAR,
+    stripe_payment_intent_id VARCHAR,
+    stripe_customer_id VARCHAR,
+    shipping_method VARCHAR,
+    shipping_address JSONB,
+    billing_address JSONB,
+    shipping_commune VARCHAR,
+    shipping_region VARCHAR,
+    shipping_postal_code VARCHAR,
+    shipping_notes TEXT,
+    tracking_number VARCHAR,
+    tracking_url VARCHAR,
+    total_weight NUMERIC(10,2),
+    shipped_at TIMESTAMPTZ,
+    delivered_at TIMESTAMPTZ,
+    pos_synced BOOLEAN NOT NULL,
+    pos_order_id VARCHAR,
+    sync_attempts INTEGER NOT NULL,
+    last_sync_error TEXT,
+    notes TEXT,
+    customer_notes TEXT,
+    coupon_id BIGINT REFERENCES coupons(id) ON DELETE SET NULL,
+    coupon_code VARCHAR,
+    shipping_zone_id BIGINT REFERENCES shipping_zones(id) ON DELETE SET NULL,
+    shipping_method_id BIGINT REFERENCES shipping_methods(id) ON DELETE SET NULL,
+    shipping_rate_id BIGINT REFERENCES shipping_rates(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ
+);
+
+CREATE TABLE order_items (
+    id BIGSERIAL PRIMARY KEY,
+    order_id BIGINT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+    product_variation_id BIGINT REFERENCES product_variations(id) ON DELETE RESTRICT,
+    pos_product_id VARCHAR,
+    product_name VARCHAR NOT NULL,
+    product_sku VARCHAR NOT NULL,
+    variation_details JSONB,
+    quantity INTEGER NOT NULL,
+    price NUMERIC(10,2) NOT NULL,
+    subtotal NUMERIC(10,2) NOT NULL,
+    tax_amount NUMERIC(10,2) NOT NULL,
+    created_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ
+);
+
+CREATE TABLE order_status_history (
+    id BIGSERIAL PRIMARY KEY,
+    order_id BIGINT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    status VARCHAR NOT NULL,
+    notes TEXT,
+    user_id BIGINT REFERENCES users(id),
+    created_at TIMESTAMPTZ
+);
+
+CREATE TABLE coupon_usages (
+    id BIGSERIAL PRIMARY KEY,
+    coupon_id BIGINT NOT NULL REFERENCES coupons(id) ON DELETE CASCADE,
+    order_id BIGINT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    customer_id BIGINT REFERENCES customers(id) ON DELETE SET NULL,
+    discount_amount NUMERIC(10,2) NOT NULL,
+    created_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ
+);

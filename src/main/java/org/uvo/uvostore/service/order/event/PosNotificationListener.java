@@ -43,7 +43,7 @@ public class PosNotificationListener {
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    @org.springframework.transaction.annotation.Transactional
+    @org.springframework.transaction.annotation.Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
     public void onOrderCompleted(OrderCompletedEvent event) {
         Order order = orderRepository.findById(event.orderId())
                 .orElseThrow(() -> new NoSuchElementException("Order " + event.orderId() + " not found"));
