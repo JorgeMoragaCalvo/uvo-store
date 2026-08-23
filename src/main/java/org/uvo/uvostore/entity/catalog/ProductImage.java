@@ -23,6 +23,7 @@ import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
 import org.hibernate.annotations.UpdateTimestamp;
 import org.uvo.uvostore.entity.catalog.enums.ImageType;
+import org.uvo.uvostore.entity.tenant.Store;
 
 @Entity
 @Table(name = "product_images")
@@ -43,6 +44,10 @@ public class ProductImage {
     @JoinColumn(name = "product_id", nullable = false)
     @OnDelete(action = OnDeleteAction.CASCADE)
     private Product product;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "store_id")
+    private Store store;
 
     @Column(name = "image_path", nullable = false)
     private String imagePath;

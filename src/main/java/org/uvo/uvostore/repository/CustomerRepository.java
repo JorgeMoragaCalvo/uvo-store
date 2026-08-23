@@ -14,6 +14,8 @@ public interface CustomerRepository extends JpaRepository<Customer, Long>, JpaSp
 
     Optional<Customer> findByEmail(String email);
     boolean existsByEmail(String email);
+    Optional<Customer> findByStoreIdAndEmail(Long storeId, String email);
+    boolean existsByStoreIdAndEmail(Long storeId, String email);
     Optional<Customer> findByInvitationToken(String token);
 
     // Admin\Customers\CustomerIndex::stats() — 'with_orders' / 'new_this_month'.

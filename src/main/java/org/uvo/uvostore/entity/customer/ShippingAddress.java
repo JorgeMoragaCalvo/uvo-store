@@ -20,6 +20,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.uvo.uvostore.entity.tenant.Store;
 
 @Entity
 @Table(name = "shipping_addresses")
@@ -40,6 +41,10 @@ public class ShippingAddress {
     @JoinColumn(name = "customer_id", nullable = false)
     @OnDelete(action = OnDeleteAction.CASCADE)
     private Customer customer;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "store_id")
+    private Store store;
 
     @Column(name = "first_name", nullable = false)
     private String firstName;

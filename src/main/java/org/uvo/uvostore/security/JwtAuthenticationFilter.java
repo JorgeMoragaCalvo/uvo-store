@@ -41,7 +41,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                         : authorityNames.stream().<GrantedAuthority>map(SimpleGrantedAuthority::new).toList();
 
                 Long uid = claims.get("uid", Number.class).longValue();
-                AuthPrincipal principal = new AuthPrincipal(uid, claims.getSubject(), claims.get("type", String.class));
+                Number sidClaim = claims.get("sid", Number.class);
+                Long sid = sidClaim == null ? null : sidClaim.longValue();
+
+                // Cross-check the token's store against the store resolved from this request's
+                // subdomain (TenantResolutionFilter runs earlier in the chain) — a token issued
+                // for one store must not authenticate a request against another store's subdomain.
+                Long resolvedStoreId = TenantContext.currentStoreId();
+                if (resolvedStoreId != null && sid != null && !resolvedStoreId.equals(sid)) {
+                    SecurityContextHolder.clearContext();
+                    filterChain.doFilter(request, response);
+                    return;
+                }
+
+                AuthPrincipal principal = new AuthPrincipal(uid, claims.getSubject(), claims.get("type", String.class), sid);
                 var authentication = new UsernamePasswordAuthenticationToken(principal, null, authorities);
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             } catch (JwtException | IllegalArgumentException ignored) {

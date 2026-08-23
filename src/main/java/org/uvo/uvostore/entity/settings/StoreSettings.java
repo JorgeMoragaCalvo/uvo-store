@@ -2,9 +2,12 @@ package org.uvo.uvostore.entity.settings;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import lombok.AllArgsConstructor;
@@ -15,12 +18,13 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.uvo.uvostore.entity.tenant.Store;
 
 /**
- * Singleton row (Laravel's current() = Cache::remember(..., firstOrCreate([]))).
- * Model as a single-row table here; enforcing "only one row" is a service-layer
- * concern (e.g. a repository method that always fetches/creates id=1), not a
- * DB constraint — flagged for a later phase.
+ * Was a singleton row (Laravel's current() = Cache::remember(..., firstOrCreate([]))).
+ * Since the Fase 0 multi-tenant retrofit it's one row per store, DB-enforced via
+ * UNIQUE(store_id) — the service layer still needs updating to fetch/create by the
+ * current tenant instead of "row id=1" (tracked as a later sub-step, not done here).
  */
 @Entity
 @Table(name = "store_settings")
@@ -43,6 +47,10 @@ public class StoreSettings {
 
     @Column(name = "store_logo")
     private String storeLogo;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "store_id")
+    private Store store;
 
     @Column(name = "store_favicon")
     private String storeFavicon;

@@ -40,6 +40,7 @@ import org.uvo.uvostore.entity.order.enums.PaymentStatus;
 import org.uvo.uvostore.entity.shipping.ShippingMethod;
 import org.uvo.uvostore.entity.shipping.ShippingRate;
 import org.uvo.uvostore.entity.shipping.ShippingZone;
+import org.uvo.uvostore.entity.tenant.Store;
 
 @Entity
 @Table(name = "orders")
@@ -195,6 +196,10 @@ public class Order {
 
     @Column(name = "customer_notes", columnDefinition = "text")
     private String customerNotes;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "store_id")
+    private Store store;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "coupon_id")

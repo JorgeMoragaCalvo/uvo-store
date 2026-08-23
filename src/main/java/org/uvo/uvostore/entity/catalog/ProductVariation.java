@@ -28,6 +28,7 @@ import org.hibernate.annotations.OnDeleteAction;
 import org.hibernate.annotations.UpdateTimestamp;
 import org.uvo.uvostore.entity.common.Dimensions;
 import org.uvo.uvostore.entity.order.OrderItem;
+import org.uvo.uvostore.entity.tenant.Store;
 
 @Entity
 @Table(name = "product_variations")
@@ -49,8 +50,12 @@ public class ProductVariation {
     @OnDelete(action = OnDeleteAction.CASCADE)
     private Product product;
 
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false)
     private String sku;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "store_id")
+    private Store store;
 
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal price;

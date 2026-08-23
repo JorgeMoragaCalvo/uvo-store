@@ -21,6 +21,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.uvo.uvostore.entity.tenant.Store;
 
 @Entity
 @Table(
@@ -56,6 +57,10 @@ public class AttributeValue {
     @Column(name = "sort_order", nullable = false)
     @Builder.Default
     private int sortOrder = 0;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "store_id")
+    private Store store;
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)

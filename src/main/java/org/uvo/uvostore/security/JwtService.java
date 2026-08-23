@@ -22,13 +22,14 @@ public class JwtService {
         this.expirationMs = expirationMs;
     }
 
-    public String generateToken(Long principalId, String subject, String principalType, List<String> authorities) {
+    public String generateToken(Long principalId, String subject, String principalType, Long storeId, List<String> authorities) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + expirationMs);
         return Jwts.builder()
                 .subject(subject)
                 .claim("uid", principalId)
                 .claim("type", principalType)
+                .claim("sid", storeId)
                 .claim("authorities", authorities)
                 .issuedAt(now)
                 .expiration(expiry)

@@ -22,6 +22,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.uvo.uvostore.entity.tenant.Store;
 
 /**
  * Explicit join entity for the Laravel pivot-like table product_variation_attributes,
@@ -67,6 +68,10 @@ public class ProductVariationAttribute {
     @JoinColumn(name = "attribute_value_id", nullable = false)
     @OnDelete(action = OnDeleteAction.CASCADE)
     private AttributeValue attributeValue;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "store_id")
+    private Store store;
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
