@@ -8,6 +8,7 @@ public record ShippingMethodRequest(
         String description,
         @NotBlank String type,
         boolean hasApiIntegration,
+        String carrier,
         Integer minDeliveryDays,
         Integer maxDeliveryDays,
         boolean active,

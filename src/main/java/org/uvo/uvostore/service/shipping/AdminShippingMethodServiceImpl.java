@@ -3,13 +3,16 @@ package org.uvo.uvostore.service.shipping;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.uvo.uvostore.entity.shipping.ShippingMethod;
+import org.uvo.uvostore.entity.shipping.enums.ShippingCarrier;
 import org.uvo.uvostore.entity.shipping.enums.ShippingMethodType;
 import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.repository.ShippingMethodRepository;
 import org.uvo.uvostore.security.TenantContext;
 
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 
 @Service
@@ -75,6 +78,18 @@ public class AdminShippingMethodServiceImpl implements AdminShippingMethodServic
         return toDto(shippingMethodRepository.save(method));
     }
 
+    @Override
+    @Transactional
+    public ShippingMethodDto updateCredentials(Long id, Map<String, String> credentials) {
+        ShippingMethod method = findOrThrow(id);
+        Map<String, String> merged = new HashMap<>(method.getApiCredentials());
+        if (credentials != null) {
+            merged.putAll(credentials);
+        }
+        method.setApiCredentials(merged);
+        return toDto(shippingMethodRepository.save(method));
+    }
+
     private void ensureCodeAvailable(String code, Long excludingId) {
         shippingMethodRepository.findByStoreIdAndCode(TenantContext.requireStoreId(), code)
                 .filter(existing -> excludingId == null || !existing.getId().equals(excludingId))
@@ -89,6 +104,8 @@ public class AdminShippingMethodServiceImpl implements AdminShippingMethodServic
         method.setDescription(command.description());
         method.setType(ShippingMethodType.valueOf(command.type().toUpperCase()));
         method.setHasApiIntegration(command.hasApiIntegration());
+        method.setCarrier(command.carrier() == null || command.carrier().isBlank()
+                ? null : ShippingCarrier.valueOf(command.carrier().toUpperCase()));
         method.setMinDeliveryDays(command.minDeliveryDays());
         method.setMaxDeliveryDays(command.maxDeliveryDays());
         method.setActive(command.active());
@@ -102,9 +119,12 @@ public class AdminShippingMethodServiceImpl implements AdminShippingMethodServic
     }
 
     private ShippingMethodDto toDto(ShippingMethod m) {
+        Map<String, Boolean> credentialsSet = new HashMap<>();
+        m.getApiCredentials().forEach((key, value) -> credentialsSet.put(key, value != null && !value.isBlank()));
         return new ShippingMethodDto(
                 m.getId(), m.getName(), m.getCode(), m.getDescription(), m.getType().name().toLowerCase(),
-                m.isHasApiIntegration(), m.getMinDeliveryDays(), m.getMaxDeliveryDays(), m.isActive(), m.getSortOrder(),
+                m.isHasApiIntegration(), m.getCarrier() == null ? null : m.getCarrier().name(), credentialsSet,
+                m.getMinDeliveryDays(), m.getMaxDeliveryDays(), m.isActive(), m.getSortOrder(),
                 m.getRates().size()
         );
     }

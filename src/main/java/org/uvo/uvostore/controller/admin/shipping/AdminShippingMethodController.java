@@ -15,6 +15,7 @@ import org.uvo.uvostore.service.shipping.ShippingMethodCommand;
 import org.uvo.uvostore.service.shipping.ShippingMethodDto;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/admin/shipping/methods")
@@ -57,8 +58,13 @@ public class AdminShippingMethodController {
         return adminShippingMethodService.toggleStatus(id);
     }
 
+    @PutMapping("/{id}/credentials")
+    public ShippingMethodDto updateCredentials(@PathVariable Long id, @RequestBody Map<String, String> credentials) {
+        return adminShippingMethodService.updateCredentials(id, credentials);
+    }
+
     private ShippingMethodCommand toCommand(ShippingMethodRequest r) {
-        return new ShippingMethodCommand(r.name(), r.code(), r.description(), r.type(), r.hasApiIntegration(),
+        return new ShippingMethodCommand(r.name(), r.code(), r.description(), r.type(), r.hasApiIntegration(), r.carrier(),
                 r.minDeliveryDays(), r.maxDeliveryDays(), r.active(), r.sortOrder());
     }
 }
