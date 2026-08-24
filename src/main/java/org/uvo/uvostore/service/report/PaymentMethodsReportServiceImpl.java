@@ -43,7 +43,7 @@ public class PaymentMethodsReportServiceImpl implements PaymentMethodsReportServ
         List<Order> orders = ordersInRange(start, end, paymentStatus);
 
         Map<String, List<Order>> byMethod = orders.stream()
-                .collect(java.util.stream.Collectors.groupingBy(o -> o.getPaymentMethod() == null ? "No especificado" : o.getPaymentMethod(),
+                .collect(java.util.stream.Collectors.groupingBy(o -> o.getPaymentMethod() == null ? "No especificado" : o.getPaymentMethod().name(),
                         LinkedHashMap::new, java.util.stream.Collectors.toList()));
 
         return byMethod.entrySet().stream()

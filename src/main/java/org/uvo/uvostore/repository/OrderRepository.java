@@ -19,6 +19,7 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
     Optional<Order> findByStripeCheckoutSessionId(String sessionId);
     Optional<Order> findByStripePaymentIntentId(String paymentIntentId);
     Optional<Order> findByPosOrderId(String posOrderId);
+    Optional<Order> findByPaymentId(String paymentId); // Webpay token / MercadoPago reference
 
     List<Order> findByStatus(OrderStatus status); // Order::byStatus()
     List<Order> findByPaymentStatus(PaymentStatus paymentStatus); // Order::byPaymentStatus()

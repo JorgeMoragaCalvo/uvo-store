@@ -25,12 +25,17 @@ public class OrderStatusServiceImpl implements OrderStatusService {
 
     @Override
     @Transactional
-    public Order markPaid(Long orderId, String stripePaymentIntentId) {
+    public Order markPaid(Long orderId, String paymentReference) {
         Order order = findOrThrow(orderId);
         if (order.getPaymentStatus() != PaymentStatus.PENDING) {
             return order;
         }
-        order.setStripePaymentIntentId(stripePaymentIntentId);
+        // Generic column, populated regardless of gateway (Fase 2: Webpay/MercadoPago reuse this
+        // same method). stripePaymentIntentId stays Stripe-only, kept for its existing lookups.
+        order.setPaymentId(paymentReference);
+        if (order.getPaymentMethod() == org.uvo.uvostore.entity.order.enums.PaymentMethodType.STRIPE) {
+            order.setStripePaymentIntentId(paymentReference);
+        }
         order.setPaymentStatus(PaymentStatus.PAID);
         order.setStatus(OrderStatus.PROCESSING);
         appendHistory(order, OrderStatus.PROCESSING, "Pago confirmado");
