@@ -24,6 +24,7 @@ import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
 import org.hibernate.annotations.UpdateTimestamp;
 import org.uvo.uvostore.entity.shipping.enums.RateType;
+import org.uvo.uvostore.entity.tenant.Store;
 
 @Entity
 @Table(name = "shipping_rates")
@@ -89,6 +90,10 @@ public class ShippingRate {
     @JoinColumn(name = "shipping_zone_id", nullable = false)
     @OnDelete(action = OnDeleteAction.CASCADE)
     private ShippingZone zone;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "store_id")
+    private Store store;
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)

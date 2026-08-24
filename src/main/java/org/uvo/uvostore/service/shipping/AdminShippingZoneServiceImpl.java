@@ -5,6 +5,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.uvo.uvostore.entity.shipping.ShippingZone;
 import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.repository.ShippingZoneRepository;
+import org.uvo.uvostore.security.TenantContext;
 
 import java.util.Comparator;
 import java.util.List;
@@ -24,7 +25,7 @@ public class AdminShippingZoneServiceImpl implements AdminShippingZoneService {
     @Override
     @Transactional(readOnly = true)
     public List<ShippingZoneDto> list(String search) {
-        return shippingZoneRepository.findAll().stream()
+        return shippingZoneRepository.findByStoreId(TenantContext.requireStoreId()).stream()
                 .filter(z -> search == null || search.isBlank() || containsIgnoreCase(z.getName(), search))
                 .sorted(Comparator.comparingInt(ShippingZone::getSortOrder))
                 .map(this::toDto)
@@ -41,6 +42,7 @@ public class AdminShippingZoneServiceImpl implements AdminShippingZoneService {
     @Transactional
     public ShippingZoneDto create(ShippingZoneCommand command) {
         ShippingZone zone = new ShippingZone();
+        zone.setStore(TenantContext.requireCurrent());
         applyCommonFields(zone, command);
         return toDto(shippingZoneRepository.save(zone));
     }
@@ -86,6 +88,7 @@ public class AdminShippingZoneServiceImpl implements AdminShippingZoneService {
 
     private ShippingZone findOrThrow(Long id) {
         return shippingZoneRepository.findById(id)
+                .filter(z -> z.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("Shipping zone " + id + " not found"));
     }
 

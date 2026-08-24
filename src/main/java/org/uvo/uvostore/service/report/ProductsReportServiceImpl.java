@@ -11,6 +11,7 @@ import org.uvo.uvostore.entity.order.Order;
 import org.uvo.uvostore.entity.order.OrderItem;
 import org.uvo.uvostore.entity.order.enums.PaymentStatus;
 import org.uvo.uvostore.repository.OrderRepository;
+import org.uvo.uvostore.security.TenantContext;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -172,7 +173,7 @@ public class ProductsReportServiceImpl implements ProductsReportService {
     }
 
     private List<Order> paidOrders(Instant start, Instant end) {
-        return orderRepository.findByCreatedAtBetween(start, end).stream()
+        return orderRepository.findByStoreIdAndCreatedAtBetween(TenantContext.requireStoreId(), start, end).stream()
                 .filter(o -> o.getPaymentStatus() == PaymentStatus.PAID)
                 .toList();
     }

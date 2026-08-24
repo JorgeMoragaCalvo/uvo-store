@@ -9,6 +9,7 @@ import org.uvo.uvostore.entity.shipping.enums.RateType;
 import org.uvo.uvostore.repository.ShippingMethodRepository;
 import org.uvo.uvostore.repository.ShippingRateRepository;
 import org.uvo.uvostore.repository.ShippingZoneRepository;
+import org.uvo.uvostore.security.TenantContext;
 
 import java.util.Comparator;
 import java.util.List;
@@ -31,7 +32,7 @@ public class AdminShippingRateServiceImpl implements AdminShippingRateService {
     @Override
     @Transactional(readOnly = true)
     public List<ShippingRateDto> list(Long methodId, Long zoneId) {
-        return shippingRateRepository.findAll().stream()
+        return shippingRateRepository.findByStoreId(TenantContext.requireStoreId()).stream()
                 .filter(r -> methodId == null || r.getMethod().getId().equals(methodId))
                 .filter(r -> zoneId == null || r.getZone().getId().equals(zoneId))
                 .sorted(Comparator.comparingInt(ShippingRate::getSortOrder))
@@ -49,6 +50,7 @@ public class AdminShippingRateServiceImpl implements AdminShippingRateService {
     @Transactional
     public ShippingRateDto create(ShippingRateCommand command) {
         ShippingRate rate = new ShippingRate();
+        rate.setStore(TenantContext.requireCurrent());
         applyCommonFields(rate, command);
         return toDto(shippingRateRepository.save(rate));
     }
@@ -76,9 +78,12 @@ public class AdminShippingRateServiceImpl implements AdminShippingRateService {
     }
 
     private void applyCommonFields(ShippingRate rate, ShippingRateCommand command) {
+        Long storeId = TenantContext.requireStoreId();
         ShippingMethod method = shippingMethodRepository.findById(command.methodId())
+                .filter(m -> m.getStore().getId().equals(storeId))
                 .orElseThrow(() -> new NoSuchElementException("Shipping method " + command.methodId() + " not found"));
         ShippingZone zone = shippingZoneRepository.findById(command.zoneId())
+                .filter(z -> z.getStore().getId().equals(storeId))
                 .orElseThrow(() -> new NoSuchElementException("Shipping zone " + command.zoneId() + " not found"));
 
         rate.setMethod(method);
@@ -99,6 +104,7 @@ public class AdminShippingRateServiceImpl implements AdminShippingRateService {
 
     private ShippingRate findOrThrow(Long id) {
         return shippingRateRepository.findById(id)
+                .filter(r -> r.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("Shipping rate " + id + " not found"));
     }
 

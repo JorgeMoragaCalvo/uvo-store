@@ -8,6 +8,7 @@ import org.uvo.uvostore.entity.catalog.ProductVariationAttribute;
 import org.uvo.uvostore.repository.ProductRepository;
 import org.uvo.uvostore.repository.ProductVariationRepository;
 import org.uvo.uvostore.repository.SettingRepository;
+import org.uvo.uvostore.security.TenantContext;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -34,6 +35,7 @@ public class CartServiceImpl implements CartService {
     @Override
     @Transactional(readOnly = true)
     public CartValidationResult validateItems(List<CartItemCommand> items) {
+        Long storeId = TenantContext.requireStoreId();
         List<CartValidatedItemDto> validated = new ArrayList<>();
         Map<String, String> errors = new HashMap<>();
 
@@ -42,7 +44,9 @@ public class CartServiceImpl implements CartService {
             String key = "items." + index;
 
             if ("variation".equals(item.type())) {
-                variationRepository.findById(item.id()).ifPresentOrElse(variation -> {
+                variationRepository.findById(item.id())
+                        .filter(v -> v.getStore().getId().equals(storeId))
+                        .ifPresentOrElse(variation -> {
                     if (!variation.isActive() || !variation.getProduct().isActive()) {
                         errors.put(key, "Producto no disponible");
                     } else if (variation.getStock() < item.quantity()) {
@@ -57,7 +61,9 @@ public class CartServiceImpl implements CartService {
                     }
                 }, () -> errors.put(key, "Variación no encontrada"));
             } else {
-                productRepository.findById(item.id()).ifPresentOrElse(product -> {
+                productRepository.findById(item.id())
+                        .filter(p -> p.getStore().getId().equals(storeId))
+                        .ifPresentOrElse(product -> {
                     if (!product.isActive()) {
                         errors.put(key, "Producto no disponible");
                     } else if (product.isManageStock() && product.getStock() < item.quantity()) {
@@ -86,13 +92,14 @@ public class CartServiceImpl implements CartService {
 
         CartTotals totals = cartPricingService.price(lines, couponCode, region, commune);
 
-        boolean pricesIncludeTax = settingRepository.findBySettingKey("prices_include_tax")
+        Long storeId = TenantContext.requireStoreId();
+        boolean pricesIncludeTax = settingRepository.findByStoreIdAndSettingKey(storeId, "prices_include_tax")
                 .map(s -> Boolean.parseBoolean(s.getValue())).orElse(false);
-        BigDecimal taxRate = settingRepository.findBySettingKey("tax_rate")
+        BigDecimal taxRate = settingRepository.findByStoreIdAndSettingKey(storeId, "tax_rate")
                 .map(s -> new BigDecimal(s.getValue())).orElse(BigDecimal.valueOf(19));
-        BigDecimal freeShippingThreshold = settingRepository.findBySettingKey("free_shipping_threshold")
+        BigDecimal freeShippingThreshold = settingRepository.findByStoreIdAndSettingKey(storeId, "free_shipping_threshold")
                 .map(s -> new BigDecimal(s.getValue())).orElse(BigDecimal.ZERO);
-        boolean shippingEnabled = settingRepository.findBySettingKey("shipping_enabled")
+        boolean shippingEnabled = settingRepository.findByStoreIdAndSettingKey(storeId, "shipping_enabled")
                 .map(s -> Boolean.parseBoolean(s.getValue())).orElse(true);
 
         return new CartCalculationResult(

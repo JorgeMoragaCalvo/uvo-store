@@ -6,6 +6,7 @@ import org.uvo.uvostore.entity.shipping.ShippingMethod;
 import org.uvo.uvostore.entity.shipping.enums.ShippingMethodType;
 import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.repository.ShippingMethodRepository;
+import org.uvo.uvostore.security.TenantContext;
 
 import java.util.Comparator;
 import java.util.List;
@@ -25,7 +26,7 @@ public class AdminShippingMethodServiceImpl implements AdminShippingMethodServic
     @Override
     @Transactional(readOnly = true)
     public List<ShippingMethodDto> list() {
-        return shippingMethodRepository.findAll().stream()
+        return shippingMethodRepository.findByStoreId(TenantContext.requireStoreId()).stream()
                 .sorted(Comparator.comparingInt(ShippingMethod::getSortOrder))
                 .map(this::toDto)
                 .toList();
@@ -42,6 +43,7 @@ public class AdminShippingMethodServiceImpl implements AdminShippingMethodServic
     public ShippingMethodDto create(ShippingMethodCommand command) {
         ensureCodeAvailable(command.code(), null);
         ShippingMethod method = new ShippingMethod();
+        method.setStore(TenantContext.requireCurrent());
         applyCommonFields(method, command);
         return toDto(shippingMethodRepository.save(method));
     }
@@ -74,7 +76,7 @@ public class AdminShippingMethodServiceImpl implements AdminShippingMethodServic
     }
 
     private void ensureCodeAvailable(String code, Long excludingId) {
-        shippingMethodRepository.findByCode(code)
+        shippingMethodRepository.findByStoreIdAndCode(TenantContext.requireStoreId(), code)
                 .filter(existing -> excludingId == null || !existing.getId().equals(excludingId))
                 .ifPresent(existing -> {
                     throw new IllegalStateException("Este código ya está en uso.");
@@ -95,6 +97,7 @@ public class AdminShippingMethodServiceImpl implements AdminShippingMethodServic
 
     private ShippingMethod findOrThrow(Long id) {
         return shippingMethodRepository.findById(id)
+                .filter(m -> m.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("Shipping method " + id + " not found"));
     }
 

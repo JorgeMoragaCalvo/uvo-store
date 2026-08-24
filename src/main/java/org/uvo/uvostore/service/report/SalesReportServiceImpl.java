@@ -6,6 +6,7 @@ import org.uvo.uvostore.entity.order.Order;
 import org.uvo.uvostore.entity.order.OrderItem;
 import org.uvo.uvostore.entity.order.enums.PaymentStatus;
 import org.uvo.uvostore.repository.OrderRepository;
+import org.uvo.uvostore.security.TenantContext;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -64,7 +65,7 @@ public class SalesReportServiceImpl implements SalesReportService {
     @Override
     @Transactional(readOnly = true)
     public List<TopProductDto> getTopProducts(Instant start, Instant end) {
-        List<Order> paidOrders = orderRepository.findByCreatedAtBetween(start, end).stream()
+        List<Order> paidOrders = orderRepository.findByStoreIdAndCreatedAtBetween(TenantContext.requireStoreId(), start, end).stream()
                 .filter(o -> o.getPaymentStatus() == PaymentStatus.PAID)
                 .toList();
 
@@ -88,7 +89,7 @@ public class SalesReportServiceImpl implements SalesReportService {
     @Override
     @Transactional(readOnly = true)
     public List<PaymentMethodRevenueDto> getSalesByPaymentMethod(Instant start, Instant end) {
-        List<Order> paidOrders = orderRepository.findByCreatedAtBetween(start, end).stream()
+        List<Order> paidOrders = orderRepository.findByStoreIdAndCreatedAtBetween(TenantContext.requireStoreId(), start, end).stream()
                 .filter(o -> o.getPaymentStatus() == PaymentStatus.PAID)
                 .toList();
 
@@ -119,7 +120,7 @@ public class SalesReportServiceImpl implements SalesReportService {
     }
 
     private List<Order> ordersInRange(Instant start, Instant end, String paymentStatus) {
-        List<Order> orders = orderRepository.findByCreatedAtBetween(start, end);
+        List<Order> orders = orderRepository.findByStoreIdAndCreatedAtBetween(TenantContext.requireStoreId(), start, end);
         if (paymentStatus == null || paymentStatus.isBlank() || "all".equalsIgnoreCase(paymentStatus)) {
             return orders;
         }

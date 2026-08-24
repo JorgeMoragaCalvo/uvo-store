@@ -8,4 +8,5 @@ import java.util.List;
 public interface HomeBannerRepository extends JpaRepository<HomeBanner, Long> {
 
     List<HomeBanner> findByActiveTrueOrderBySortOrderAsc(); // HomeBanner::getActiveBanners() cached in Laravel
+    List<HomeBanner> findByStoreId(Long storeId);
 }

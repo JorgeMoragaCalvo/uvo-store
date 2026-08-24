@@ -12,6 +12,7 @@ import org.uvo.uvostore.entity.order.enums.OrderStatus;
 import org.uvo.uvostore.entity.order.enums.PaymentStatus;
 import org.uvo.uvostore.repository.CustomerRepository;
 import org.uvo.uvostore.repository.OrderRepository;
+import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.order.AdminOrderSummaryDto;
 
 import java.math.BigDecimal;
@@ -36,15 +37,17 @@ public class AdminCustomerServiceImpl implements AdminCustomerService {
     @Override
     @Transactional(readOnly = true)
     public Page<AdminCustomerSummaryDto> search(String search, Pageable pageable) {
-        Specification<Customer> spec = null;
+        Long storeId = TenantContext.requireStoreId();
+        Specification<Customer> spec = (root, query, cb) -> cb.equal(root.get("store").get("id"), storeId);
         if (search != null && !search.isBlank()) {
             String term = "%" + search.toLowerCase() + "%";
-            spec = (root, query, cb) -> cb.or(
+            Specification<Customer> searchSpec = (root, query, cb) -> cb.or(
                     cb.like(cb.lower(root.get("firstName")), term),
                     cb.like(cb.lower(root.get("lastName")), term),
                     cb.like(cb.lower(root.get("email")), term),
                     cb.like(cb.lower(root.get("phone")), term)
             );
+            spec = spec.and(searchSpec);
         }
         return customerRepository.findAll(spec, pageable).map(this::toSummaryDto);
     }
@@ -52,12 +55,13 @@ public class AdminCustomerServiceImpl implements AdminCustomerService {
     @Override
     @Transactional(readOnly = true)
     public AdminCustomerStatsDto getStats() {
+        Long storeId = TenantContext.requireStoreId();
         Instant startOfMonth = Instant.now().atZone(ZoneOffset.UTC).with(TemporalAdjusters.firstDayOfMonth())
                 .toLocalDate().atStartOfDay(ZoneOffset.UTC).toInstant();
         return new AdminCustomerStatsDto(
-                customerRepository.count(),
-                customerRepository.countWithOrders(),
-                customerRepository.countByCreatedAtAfter(startOfMonth)
+                customerRepository.countByStoreId(storeId),
+                customerRepository.countWithOrdersByStoreId(storeId),
+                customerRepository.countByStoreIdAndCreatedAtAfter(storeId, startOfMonth)
         );
     }
 
@@ -92,6 +96,7 @@ public class AdminCustomerServiceImpl implements AdminCustomerService {
     @Override
     @Transactional(readOnly = true)
     public Page<AdminOrderSummaryDto> getOrders(Long customerId, Pageable pageable) {
+        findOrThrow(customerId); // verifies the customer belongs to the current store
         Specification<Order> spec = (root, query, cb) -> cb.equal(root.get("customer").get("id"), customerId);
         return orderRepository.findAll(spec, pageable).map(this::toOrderSummaryDto);
     }
@@ -108,6 +113,7 @@ public class AdminCustomerServiceImpl implements AdminCustomerService {
 
     private Customer findOrThrow(Long id) {
         return customerRepository.findById(id)
+                .filter(c -> c.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("Customer " + id + " not found"));
     }
 

@@ -7,6 +7,7 @@ import org.uvo.uvostore.entity.catalog.ProductVariation;
 import org.uvo.uvostore.repository.ProductRepository;
 import org.uvo.uvostore.repository.ProductVariationRepository;
 import org.uvo.uvostore.repository.SettingRepository;
+import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.shipping.ShippingOption;
 import org.uvo.uvostore.service.shipping.ShippingRateService;
 
@@ -41,6 +42,7 @@ public class CartPricingServiceImpl implements CartPricingService {
     @Override
     @Transactional(readOnly = true)
     public CartTotals price(List<CartLineCommand> lines, String couponCode, String region, String commune) {
+        Long storeId = TenantContext.requireStoreId();
         BigDecimal subtotalWithTax = BigDecimal.ZERO;
         BigDecimal totalWeight = BigDecimal.ZERO;
         for (CartLineCommand line : lines) {
@@ -48,11 +50,13 @@ public class CartPricingServiceImpl implements CartPricingService {
             BigDecimal unitWeight;
             if (line.variationId() != null) {
                 ProductVariation variation = variationRepository.findById(line.variationId())
+                        .filter(v -> v.getStore().getId().equals(storeId))
                         .orElseThrow(() -> new NoSuchElementException("Variation " + line.variationId() + " not found"));
                 unitPrice = variation.getPrice();
                 unitWeight = variation.getWeight();
             } else {
                 Product product = productRepository.findById(line.productId())
+                        .filter(p -> p.getStore().getId().equals(storeId))
                         .orElseThrow(() -> new NoSuchElementException("Product " + line.productId() + " not found"));
                 unitPrice = product.getPrice();
                 unitWeight = product.getWeight();
@@ -63,9 +67,9 @@ public class CartPricingServiceImpl implements CartPricingService {
             }
         }
 
-        BigDecimal taxRate = BigDecimal.valueOf(settingRepository.findBySettingKey("tax_rate")
+        BigDecimal taxRate = BigDecimal.valueOf(settingRepository.findByStoreIdAndSettingKey(storeId, "tax_rate")
                 .map(s -> Double.parseDouble(s.getValue())).orElse(19.0)).divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP);
-        boolean pricesIncludeTax = settingRepository.findBySettingKey("prices_include_tax")
+        boolean pricesIncludeTax = settingRepository.findByStoreIdAndSettingKey(storeId, "prices_include_tax")
                 .map(s -> Boolean.parseBoolean(s.getValue())).orElse(false);
 
         BigDecimal subtotalWithoutTax;

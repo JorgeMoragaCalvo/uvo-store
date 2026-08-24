@@ -11,6 +11,7 @@ import org.uvo.uvostore.entity.order.OrderItem;
 import org.uvo.uvostore.entity.order.enums.OrderStatus;
 import org.uvo.uvostore.entity.order.enums.PaymentStatus;
 import org.uvo.uvostore.repository.OrderRepository;
+import org.uvo.uvostore.security.TenantContext;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -34,13 +35,19 @@ public class AdminOrderQueryServiceImpl implements AdminOrderQueryService {
     @Override
     @Transactional(readOnly = true)
     public AdminOrderStatsDto getStats() {
+        Long storeId = TenantContext.requireStoreId();
         return new AdminOrderStatsDto(
-                orderRepository.count(),
-                orderRepository.count((root, query, cb) -> cb.equal(root.get("status"), OrderStatus.PENDING)),
-                orderRepository.count((root, query, cb) -> cb.equal(root.get("paymentStatus"), PaymentStatus.PAID)),
-                orderRepository.count((root, query, cb) -> cb.equal(root.get("status"), OrderStatus.PROCESSING)),
-                orderRepository.count((root, query, cb) -> cb.equal(root.get("status"), OrderStatus.SHIPPED)),
-                orderRepository.count((root, query, cb) -> cb.equal(root.get("status"), OrderStatus.CANCELLED))
+                orderRepository.count((root, query, cb) -> cb.equal(root.get("store").get("id"), storeId)),
+                orderRepository.count((root, query, cb) -> cb.and(
+                        cb.equal(root.get("store").get("id"), storeId), cb.equal(root.get("status"), OrderStatus.PENDING))),
+                orderRepository.count((root, query, cb) -> cb.and(
+                        cb.equal(root.get("store").get("id"), storeId), cb.equal(root.get("paymentStatus"), PaymentStatus.PAID))),
+                orderRepository.count((root, query, cb) -> cb.and(
+                        cb.equal(root.get("store").get("id"), storeId), cb.equal(root.get("status"), OrderStatus.PROCESSING))),
+                orderRepository.count((root, query, cb) -> cb.and(
+                        cb.equal(root.get("store").get("id"), storeId), cb.equal(root.get("status"), OrderStatus.SHIPPED))),
+                orderRepository.count((root, query, cb) -> cb.and(
+                        cb.equal(root.get("store").get("id"), storeId), cb.equal(root.get("status"), OrderStatus.CANCELLED)))
         );
     }
 
@@ -48,12 +55,15 @@ public class AdminOrderQueryServiceImpl implements AdminOrderQueryService {
     @Transactional(readOnly = true)
     public AdminOrderDetailDto getById(Long id) {
         Order order = orderRepository.findById(id)
+                .filter(o -> o.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("Order " + id + " not found"));
         return toDetailDto(order);
     }
 
     private Specification<Order> buildSpecification(AdminOrderSearchCriteria criteria) {
         List<Specification<Order>> specs = new ArrayList<>();
+        Long storeId = TenantContext.requireStoreId();
+        specs.add((root, query, cb) -> cb.equal(root.get("store").get("id"), storeId));
 
         if (criteria.search() != null && !criteria.search().isBlank()) {
             String term = "%" + criteria.search().toLowerCase() + "%";

@@ -15,6 +15,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.uvo.uvostore.security.JwtAuthenticationFilter;
 import org.uvo.uvostore.security.PosApiKeyAuthFilter;
 import org.uvo.uvostore.security.PosWebhookAuthFilter;
+import org.uvo.uvostore.security.TenantResolutionFilter;
 
 import java.util.List;
 
@@ -43,6 +44,7 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
+            TenantResolutionFilter tenantResolutionFilter,
             JwtAuthenticationFilter jwtAuthenticationFilter,
             PosWebhookAuthFilter posWebhookAuthFilter,
             PosApiKeyAuthFilter posApiKeyAuthFilter) throws Exception {
@@ -62,7 +64,12 @@ public class SecurityConfig {
                         .requestMatchers("/api/customer/**").hasAuthority("ROLE_CUSTOMER")
                         .anyRequest().authenticated()
                 )
+                // JwtAuthenticationFilter must be registered (added relative to a known filter)
+                // before TenantResolutionFilter can be anchored "before" it.
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                // TenantResolutionFilter must run before JwtAuthenticationFilter so
+                // TenantContext is populated in time for the token/subdomain cross-check.
+                .addFilterBefore(tenantResolutionFilter, JwtAuthenticationFilter.class)
                 .addFilterBefore(posWebhookAuthFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(posApiKeyAuthFilter, UsernamePasswordAuthenticationFilter.class);
 

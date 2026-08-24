@@ -9,6 +9,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.JoinTable;
 import jakarta.persistence.ManyToMany;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.Instant;
@@ -22,6 +23,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.uvo.uvostore.entity.tenant.Store;
 
 /**
  * Source verification: no custom Laravel model exists — this is the Spatie
@@ -35,7 +37,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 @Entity
 @Table(
         name = "roles",
-        uniqueConstraints = @UniqueConstraint(columnNames = {"name", "guard_name"}))
+        uniqueConstraints = @UniqueConstraint(columnNames = {"store_id", "name", "guard_name"}))
 @Getter
 @Setter
 @NoArgsConstructor
@@ -55,6 +57,10 @@ public class Role {
     @Column(name = "guard_name", nullable = false)
     @Builder.Default
     private String guardName = "web";
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "store_id")
+    private Store store;
 
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(

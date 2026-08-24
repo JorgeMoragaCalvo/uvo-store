@@ -6,6 +6,7 @@ import org.uvo.uvostore.entity.security.Permission;
 import org.uvo.uvostore.entity.security.Role;
 import org.uvo.uvostore.repository.PermissionRepository;
 import org.uvo.uvostore.repository.RoleRepository;
+import org.uvo.uvostore.security.TenantContext;
 
 import java.util.HashSet;
 import java.util.NoSuchElementException;
@@ -26,6 +27,7 @@ public class RoleServiceImpl implements RoleService {
     @Transactional
     public Role createRole(RoleCommand command) {
         Role role = new Role();
+        role.setStore(TenantContext.requireCurrent());
         role.setName(command.name());
         if (command.permissionIds() != null) {
             role.setPermissions(resolvePermissions(command.permissionIds()));
@@ -37,6 +39,7 @@ public class RoleServiceImpl implements RoleService {
     @Transactional
     public Role updateRole(Long id, RoleCommand command) {
         Role role = roleRepository.findById(id)
+                .filter(r -> r.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("Role " + id + " not found"));
         role.setName(command.name());
         if (command.permissionIds() != null) {
@@ -48,7 +51,10 @@ public class RoleServiceImpl implements RoleService {
     @Override
     @Transactional
     public void deleteRole(Long id) {
-        roleRepository.deleteById(id);
+        Role role = roleRepository.findById(id)
+                .filter(r -> r.getStore().getId().equals(TenantContext.requireStoreId()))
+                .orElseThrow(() -> new NoSuchElementException("Role " + id + " not found"));
+        roleRepository.delete(role);
     }
 
     private Set<Permission> resolvePermissions(Set<Long> permissionIds) {

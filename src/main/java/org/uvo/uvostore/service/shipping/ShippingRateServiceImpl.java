@@ -12,6 +12,7 @@ import org.uvo.uvostore.repository.ProductRepository;
 import org.uvo.uvostore.repository.ProductVariationRepository;
 import org.uvo.uvostore.repository.ShippingRateRepository;
 import org.uvo.uvostore.repository.ShippingZoneRepository;
+import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.order.CartLineCommand;
 
 import java.math.BigDecimal;
@@ -64,7 +65,7 @@ public class ShippingRateServiceImpl implements ShippingRateService {
     }
 
     private ShippingZone findZone(String region, String commune) {
-        for (ShippingZone zone : zoneRepository.findByIsActiveTrueOrderBySortOrderAsc()) {
+        for (ShippingZone zone : zoneRepository.findByStoreIdAndIsActiveTrueOrderBySortOrderAsc(TenantContext.requireStoreId())) {
             if (zone.getRegions() != null && zone.getRegions().contains(region)){
                 if (zone.getCommunes() != null && commune != null) {
                     if (zone.getCommunes().contains(commune)) return zone;
@@ -86,15 +87,18 @@ public class ShippingRateServiceImpl implements ShippingRateService {
     @Override
     @Transactional(readOnly = true)
     public BigDecimal calculateTotalWeight(List<CartLineCommand> lines) {
+        Long storeId = TenantContext.requireStoreId();
         BigDecimal total = BigDecimal.ZERO;
         for (CartLineCommand line : lines) {
             BigDecimal weight;
             if (line.variationId() != null) {
                 ProductVariation variation = variationRepository.findById(line.variationId())
+                        .filter(v -> v.getStore().getId().equals(storeId))
                         .orElseThrow(() -> new NoSuchElementException("Variation " + line.variationId() + " not found"));
                 weight = variation.getWeight();
             } else {
                 Product product = productRepository.findById(line.productId())
+                        .filter(p -> p.getStore().getId().equals(storeId))
                         .orElseThrow(() -> new NoSuchElementException("Product " + line.productId() + " not found"));
                 weight = product.getWeight();
             }

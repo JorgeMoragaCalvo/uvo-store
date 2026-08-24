@@ -20,4 +20,10 @@ public interface CategoryRepository extends JpaRepository<Category, Long>, JpaSp
     List<Category> findByParentIdOrderBySortOrderAsc(Long parentId);
     List<Category> findByIsFeaturedTrueAndActiveTrue();
     boolean existsBySlug(String slug);
+
+    // Tenant-scoped lookups.
+    Optional<Category> findByStoreIdAndSlug(Long storeId, String slug);
+    List<Category> findByStoreIdAndParentIsNullOrderBySortOrderAsc(Long storeId);
+    List<Category> findByStoreIdOrderByNameAsc(Long storeId);
+    Optional<Category> findByStoreIdAndName(Long storeId, String name); // PosSyncService::getOrCreateCategory()
 }

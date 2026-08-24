@@ -4,6 +4,7 @@ import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
 import org.uvo.uvostore.entity.catalog.Category;
 import org.uvo.uvostore.repository.CategoryRepository;
+import org.uvo.uvostore.security.TenantContext;
 
 import java.util.NoSuchElementException;
 
@@ -22,6 +23,7 @@ public class CategoryServiceImpl implements CategoryService{
     @Transactional
     public Category createCategory(CategoryCommand command) {
         Category category = new Category();
+        category.setStore(TenantContext.requireCurrent());
         applyCommonFields(category, command);
         if (command.image() != null && !command.image().isEmpty()) {
             category.setImage(fileStorageService.store(command.image(), "categories"));
@@ -33,6 +35,7 @@ public class CategoryServiceImpl implements CategoryService{
     @Transactional
     public Category updateCategory(Long id, CategoryCommand command) {
         Category category = categoryRepository.findById(id)
+            .filter(c -> c.getStore().getId().equals(TenantContext.requireStoreId()))
             .orElseThrow(() -> new NoSuchElementException("Category " + id + " not found"));
         applyCommonFields(category, command);
         if (command.image() != null && !command.image().isEmpty()) {
@@ -48,6 +51,7 @@ public class CategoryServiceImpl implements CategoryService{
     @Transactional
     public void removeImage(Long id) {
         Category category = categoryRepository.findById(id)
+            .filter(c -> c.getStore().getId().equals(TenantContext.requireStoreId()))
             .orElseThrow(() -> new NoSuchElementException("Category " + id + " not found"));
         if (category.getImage() != null) {
             fileStorageService.delete(category.getImage());
@@ -60,6 +64,7 @@ public class CategoryServiceImpl implements CategoryService{
     @Transactional
     public void deleteCategory(Long id) {
         Category category = categoryRepository.findById(id)
+                        .filter(c -> c.getStore().getId().equals(TenantContext.requireStoreId()))
                         .orElseThrow(() -> new NoSuchElementException("Category " + id + " not found"));
 
         if (!category.getChildren().isEmpty()) {
@@ -84,6 +89,7 @@ public class CategoryServiceImpl implements CategoryService{
         category.setIcon(command.icon());
         if (command.parentId() != null) {
             Category parent = categoryRepository.findById(command.parentId())
+                .filter(c -> c.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("Category " + command.parentId() + " not found"));
             category.setParent(parent);
         } else {

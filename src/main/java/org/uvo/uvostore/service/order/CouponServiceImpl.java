@@ -9,6 +9,7 @@ import org.uvo.uvostore.entity.order.Order;
 import org.uvo.uvostore.entity.order.enums.CouponType;
 import org.uvo.uvostore.repository.CouponRepository;
 import org.uvo.uvostore.repository.CouponUsageRepository;
+import org.uvo.uvostore.security.TenantContext;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -28,7 +29,7 @@ public class CouponServiceImpl implements CouponService {
     @Override
     @Transactional(readOnly = true)
     public CouponValidationResult validate(String code, BigDecimal subtotal, Long customerId) {
-        Coupon coupon = couponRepository.findByCode(code).orElse(null);
+        Coupon coupon = couponRepository.findByStoreIdAndCode(TenantContext.requireStoreId(), code).orElse(null);
         if (coupon == null) {
             return new CouponValidationResult(false, "Coupon not found", null);
         }

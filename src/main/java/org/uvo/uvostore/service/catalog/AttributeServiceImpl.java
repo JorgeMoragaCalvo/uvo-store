@@ -7,6 +7,7 @@ import org.uvo.uvostore.entity.catalog.AttributeValue;
 import org.uvo.uvostore.entity.catalog.enums.AttributeType;
 import org.uvo.uvostore.repository.AttributeRepository;
 import org.uvo.uvostore.repository.AttributeValueRepository;
+import org.uvo.uvostore.security.TenantContext;
 
 import java.util.List;
 import java.util.NoSuchElementException;
@@ -25,7 +26,7 @@ public class AttributeServiceImpl implements AttributeService {
     @Override
     @Transactional(readOnly = true)
     public List<AttributeDto> listAll() {
-        return attributeRepository.findAllByOrderByNameAsc().stream()
+        return attributeRepository.findByStoreIdOrderByNameAsc(TenantContext.requireStoreId()).stream()
                 .map(AttributeDtoMapper::toDto)
                 .toList();
     }
@@ -34,6 +35,7 @@ public class AttributeServiceImpl implements AttributeService {
     @Transactional
     public AttributeDto createAttribute(AttributeCommand command) {
         Attribute attribute = new Attribute();
+        attribute.setStore(TenantContext.requireCurrent());
         applyCommonFields(attribute, command);
         return AttributeDtoMapper.toDto(attributeRepository.save(attribute));
     }
@@ -62,6 +64,7 @@ public class AttributeServiceImpl implements AttributeService {
         Attribute attribute = findAttributeOrThrow(command.attributeId());
 
         AttributeValue value = new AttributeValue();
+        value.setStore(TenantContext.requireCurrent());
         value.setAttribute(attribute);
         applyValueFields(value, command);
         attributeValueRepository.save(value);
@@ -73,6 +76,7 @@ public class AttributeServiceImpl implements AttributeService {
     @Transactional
     public AttributeDto updateValue(Long valueId, AttributeValueCommand command) {
         AttributeValue value = attributeValueRepository.findById(valueId)
+                .filter(v -> v.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("Attribute value " + valueId + " not found"));
         applyValueFields(value, command);
         attributeValueRepository.save(value);
@@ -84,6 +88,7 @@ public class AttributeServiceImpl implements AttributeService {
     @Transactional
     public AttributeDto deleteValue(Long valueId) {
         AttributeValue value = attributeValueRepository.findById(valueId)
+                .filter(v -> v.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("Attribute value " + valueId + " not found"));
         Long attributeId = value.getAttribute().getId();
         attributeValueRepository.delete(value);
@@ -105,6 +110,7 @@ public class AttributeServiceImpl implements AttributeService {
 
     private Attribute findAttributeOrThrow(Long id) {
         return attributeRepository.findById(id)
+                .filter(a -> a.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("Attribute " + id + " not found"));
     }
 }

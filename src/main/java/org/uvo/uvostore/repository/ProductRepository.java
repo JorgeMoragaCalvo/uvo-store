@@ -27,6 +27,11 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     List<Product> findByIsOnSaleTrueAndActiveTrue();
     Optional<Product> findByPosProductId(String posProductId);
 
+    // Tenant-scoped lookups — the storefront and admin panel always operate within one store.
+    Optional<Product> findByStoreIdAndSlug(Long storeId, String slug);
+    List<Product> findByStoreIdAndCategoryId(Long storeId, Long categoryId);
+    List<Product> findByStoreIdAndIsFeaturedTrueAndActiveTrue(Long storeId);
+
     @Query("""
         SELECT p FROM Product p
         WHERE p.active = true

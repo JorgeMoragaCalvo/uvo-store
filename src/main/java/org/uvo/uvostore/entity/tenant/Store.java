@@ -1,13 +1,10 @@
-package org.uvo.uvostore.entity.settings;
+package org.uvo.uvostore.entity.tenant;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import lombok.AllArgsConstructor;
@@ -18,38 +15,37 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
-import org.uvo.uvostore.entity.tenant.Store;
 
-/**
- * Plain key/value store. Source verification: the Laravel model's current()
- * method treats this as a singleton (firstOrCreate([])), which contradicts its
- * own unique-key/value design and is almost certainly a bug — does not replicate
- * that singleton pattern here. StoreSettings is the real singleton table.
- */
+// The tenant root — every other tenant-scoped table carries a store_id FK to this table
+// (Fase 0 of the multi-tenant retrofit, see docs/plan). slug doubles as the subdomain used by
+// TenantResolutionFilter to identify which store a storefront request belongs to.
 @Entity
-@Table(name = "settings")
+@Table(name = "stores")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
-public class Setting {
+public class Store {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @EqualsAndHashCode.Include
     private Long id;
 
-    @Column(name = "key", nullable = false)
-    private String settingKey;
+    @Column(nullable = false)
+    private String name;
 
-    @Column(columnDefinition = "text")
-    private String value;
+    @Column(nullable = false, unique = true)
+    private String slug;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "store_id")
-    private Store store;
+    @Column(name = "owner_user_id")
+    private Long ownerUserId;
+
+    @Column(nullable = false)
+    @Builder.Default
+    private String status = "active";
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)

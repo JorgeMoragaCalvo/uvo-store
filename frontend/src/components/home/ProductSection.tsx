@@ -19,12 +19,24 @@ export default function ProductSection({
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    setLoading(true)
-    api.products
-      .getAll({ ...filter, per_page: limit, sort_by: 'createdAt', sort_order: 'desc' })
-      .then((page) => setProducts(page.content))
-      .catch(() => setProducts([]))
-      .finally(() => setLoading(false))
+    let cancelled = false
+
+    async function load() {
+      setLoading(true)
+      try {
+        const page = await api.products.getAll({ ...filter, per_page: limit, sort_by: 'createdAt', sort_order: 'desc' })
+        if (!cancelled) setProducts(page.content)
+      } catch {
+        if (!cancelled) setProducts([])
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    load()
+    return () => {
+      cancelled = true
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [limit, JSON.stringify(filter)])
 

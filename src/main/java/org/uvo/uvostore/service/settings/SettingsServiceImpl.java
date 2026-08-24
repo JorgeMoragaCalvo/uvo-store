@@ -4,8 +4,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.uvo.uvostore.entity.pos.PosConnection;
 import org.uvo.uvostore.entity.settings.Setting;
+import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.PosConnectionRepository;
 import org.uvo.uvostore.repository.SettingRepository;
+import org.uvo.uvostore.security.TenantContext;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -75,8 +77,10 @@ public class SettingsServiceImpl implements SettingsService {
         set("instagram_url", command.instagramUrl());
         set("twitter_url", command.twitterUrl());
 
+        Store store = TenantContext.requireCurrent();
         Long companyId = Long.valueOf(matcher.group(1));
-        PosConnection connection = posConnectionRepository.findById(1L).orElseGet(PosConnection::new);
+        PosConnection connection = posConnectionRepository.findByStoreId(store.getId()).orElseGet(PosConnection::new);
+        connection.setStore(store);
         connection.setCompanyId(companyId);
         connection.setApiKey(command.posApiToken());
         connection.setWebhookSecret(command.posWebhookSecret());
@@ -93,15 +97,17 @@ public class SettingsServiceImpl implements SettingsService {
     }
 
     private String get(String key, String fallback) {
-        return settingRepository.findBySettingKey(key).map(Setting::getValue).orElse(fallback);
+        return settingRepository.findByStoreIdAndSettingKey(TenantContext.requireStoreId(), key).map(Setting::getValue).orElse(fallback);
     }
 
     private boolean getBool(String key, boolean fallback) {
-        return settingRepository.findBySettingKey(key).map(s -> Boolean.parseBoolean(s.getValue())).orElse(fallback);
+        return settingRepository.findByStoreIdAndSettingKey(TenantContext.requireStoreId(), key).map(s -> Boolean.parseBoolean(s.getValue())).orElse(fallback);
     }
 
     private void set(String key, String value) {
-        Setting setting = settingRepository.findBySettingKey(key).orElseGet(Setting::new);
+        Store store = TenantContext.requireCurrent();
+        Setting setting = settingRepository.findByStoreIdAndSettingKey(store.getId(), key).orElseGet(Setting::new);
+        setting.setStore(store);
         setting.setSettingKey(key);
         setting.setValue(value);
         settingRepository.save(setting);

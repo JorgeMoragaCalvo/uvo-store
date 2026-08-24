@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.uvo.uvostore.entity.customer.Customer;
 import org.uvo.uvostore.entity.customer.enums.AccountStatus;
 import org.uvo.uvostore.repository.CustomerRepository;
+import org.uvo.uvostore.security.TenantContext;
 
 import java.util.NoSuchElementException;
 
@@ -32,7 +33,7 @@ public class CustomerServiceImpl implements CustomerService {
     public CustomerDto updateProfile(Long customerId, ProfileUpdateCommand command) {
         Customer customer = findOrThrow(customerId);
 
-        customerRepository.findByEmail(command.email())
+        customerRepository.findByStoreIdAndEmail(TenantContext.requireStoreId(), command.email())
                 .filter(existing -> !existing.getId().equals(customerId))
                 .ifPresent(existing -> {
                     throw new IllegalStateException("El correo ya está en uso por otra cuenta");
@@ -61,8 +62,10 @@ public class CustomerServiceImpl implements CustomerService {
     @Override
     @Transactional
     public Customer findOrCreateGuest(String email, String firstName, String lastName, String phone) {
-        return customerRepository.findByEmail(email).orElseGet(() -> {
+        Long storeId = TenantContext.requireStoreId();
+        return customerRepository.findByStoreIdAndEmail(storeId, email).orElseGet(() -> {
             Customer customer = new Customer();
+            customer.setStore(TenantContext.requireCurrent());
             customer.setEmail(email);
             customer.setFirstName(firstName);
             customer.setLastName(lastName);

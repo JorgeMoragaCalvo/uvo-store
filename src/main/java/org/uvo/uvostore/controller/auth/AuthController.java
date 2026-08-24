@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -12,9 +13,11 @@ import org.uvo.uvostore.entity.customer.Customer;
 import org.uvo.uvostore.entity.customer.enums.AccountStatus;
 import org.uvo.uvostore.entity.security.Role;
 import org.uvo.uvostore.entity.security.User;
+import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.CustomerRepository;
 import org.uvo.uvostore.repository.UserRepository;
 import org.uvo.uvostore.security.JwtService;
+import org.uvo.uvostore.security.TenantContext;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -37,8 +40,10 @@ public class AuthController {
     }
 
     @PostMapping("/api/admin/auth/login")
+    @Transactional // also persists lastLoginAt; adminAuthorities() below walks the lazy User.roles/Role.permissions collections
     public ResponseEntity<AuthResponse> adminLogin(@Valid @RequestBody AdminLoginRequest request) {
-        User user = userRepository.findByEmail(request.email())
+        Store store = TenantContext.requireCurrent();
+        User user = userRepository.findByStoreIdAndEmail(store.getId(), request.email())
                 .orElseThrow(() -> new BadCredentialsException("Credenciales inválidas"));
 
         if (!user.isActive() || !user.isAdmin() || !passwordEncoder.matches(request.password(), user.getPassword())) {
@@ -49,13 +54,14 @@ public class AuthController {
         userRepository.save(user);
 
         List<String> authorities = adminAuthorities(user);
-        String token = jwtService.generateToken(user.getId(), user.getEmail(), "ADMIN", authorities);
+        String token = jwtService.generateToken(user.getId(), user.getEmail(), "ADMIN", store.getId(), authorities);
         return ResponseEntity.ok(new AuthResponse(token, user.getId(), user.getName(), user.getEmail(), "ADMIN"));
     }
 
     @PostMapping("/api/customer/auth/login")
     public ResponseEntity<AuthResponse> customerLogin(@Valid @RequestBody CustomerLoginRequest request) {
-        Customer customer = customerRepository.findByEmail(request.email())
+        Store store = TenantContext.requireCurrent();
+        Customer customer = customerRepository.findByStoreIdAndEmail(store.getId(), request.email())
                 .orElseThrow(() -> new BadCredentialsException("Credenciales inválidas"));
 
         if (customer.getPassword() == null || customer.getAccountStatus() != AccountStatus.ACTIVE
@@ -63,18 +69,20 @@ public class AuthController {
             throw new BadCredentialsException("Credenciales inválidas");
         }
 
-        String token = jwtService.generateToken(customer.getId(), customer.getEmail(), "CUSTOMER", List.of("ROLE_CUSTOMER"));
+        String token = jwtService.generateToken(customer.getId(), customer.getEmail(), "CUSTOMER", store.getId(), List.of("ROLE_CUSTOMER"));
         String fullName = customer.getFirstName() + " " + customer.getLastName();
         return ResponseEntity.ok(new AuthResponse(token, customer.getId(), fullName, customer.getEmail(), "CUSTOMER"));
     }
 
     @PostMapping("/api/customer/auth/register")
     public ResponseEntity<AuthResponse> customerRegister(@Valid @RequestBody CustomerRegisterRequest request) {
-        if (customerRepository.existsByEmail(request.email())) {
+        Store store = TenantContext.requireCurrent();
+        if (customerRepository.existsByStoreIdAndEmail(store.getId(), request.email())) {
             throw new IllegalStateException("El correo ya está registrado");
         }
 
         Customer customer = new Customer();
+        customer.setStore(store);
         customer.setEmail(request.email());
         customer.setPassword(passwordEncoder.encode(request.password()));
         customer.setFirstName(request.firstName());
@@ -83,10 +91,11 @@ public class AuthController {
         customer.setAccountStatus(AccountStatus.ACTIVE);
         Customer saved = customerRepository.save(customer);
 
-        String token = jwtService.generateToken(saved.getId(), saved.getEmail(), "CUSTOMER", List.of("ROLE_CUSTOMER"));
+        String token = jwtService.generateToken(saved.getId(), saved.getEmail(), "CUSTOMER", store.getId(), List.of("ROLE_CUSTOMER"));
         String fullName = saved.getFirstName() + " " + saved.getLastName();
         return ResponseEntity.ok(new AuthResponse(token, saved.getId(), fullName, saved.getEmail(), "CUSTOMER"));
     }
+
 
     private List<String> adminAuthorities(User user) {
         List<String> authorities = new ArrayList<>();

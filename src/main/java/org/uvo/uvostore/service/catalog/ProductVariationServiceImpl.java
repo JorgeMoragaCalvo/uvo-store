@@ -10,6 +10,7 @@ import org.uvo.uvostore.repository.AttributeValueRepository;
 import org.uvo.uvostore.repository.ProductRepository;
 import org.uvo.uvostore.repository.ProductVariationAttributeRepository;
 import org.uvo.uvostore.repository.ProductVariationRepository;
+import org.uvo.uvostore.security.TenantContext;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -35,9 +36,11 @@ public class ProductVariationServiceImpl implements ProductVariationService{
     @Transactional
     public ProductVariation addVariation(Long productId, VariationCommand command) {
         Product product = productRepository.findById(productId)
+                .filter(p -> p.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(()-> new NoSuchElementException("Product " + productId + " not found"));
 
         ProductVariation variation = new ProductVariation();
+        variation.setStore(TenantContext.requireCurrent());
         variation.setProduct(product);
         variation.setSku(command.sku());
         variation.setPrice(command.price());
@@ -53,6 +56,7 @@ public class ProductVariationServiceImpl implements ProductVariationService{
     @Transactional
     public ProductVariation updateVariation(Long variationId, VariationCommand command) {
         ProductVariation variation = variationRepository.findById(variationId)
+                .filter(v -> v.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(()-> new NoSuchElementException("Product variation " + variationId + " not found"));
 
         variation.setSku(command.sku());
@@ -72,6 +76,7 @@ public class ProductVariationServiceImpl implements ProductVariationService{
     @Transactional
     public void deleteVariation(Long variationId) {
         ProductVariation variation = variationRepository.findById(variationId)
+                .filter(v -> v.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(()-> new NoSuchElementException("Product variation " + variationId + " not found"));
         Long productId = variation.getProduct().getId();
 
@@ -83,11 +88,15 @@ public class ProductVariationServiceImpl implements ProductVariationService{
 
     private void attachAttributeValues(ProductVariation variation, Map<Long, Long> attributeValueIdsByAttributeId) {
 
+        Long storeId = TenantContext.requireStoreId();
         for (Long attributeValueId : attributeValueIdsByAttributeId.values()){
-            AttributeValue attributeValue = attributeValueRepository.findById(attributeValueId).orElse(null);
+            AttributeValue attributeValue = attributeValueRepository.findById(attributeValueId)
+                    .filter(v -> v.getStore().getId().equals(storeId))
+                    .orElse(null);
             if (attributeValue == null) continue;
 
             ProductVariationAttribute link = new ProductVariationAttribute();
+            link.setStore(TenantContext.requireCurrent());
             link.setVariation(variation);
             link.setAttributeValue(attributeValue);
             link.setAttribute(attributeValue.getAttribute());
@@ -105,6 +114,7 @@ public class ProductVariationServiceImpl implements ProductVariationService{
                 .map(ProductVariation::getPrice).min(BigDecimal::compareTo).orElse(BigDecimal.ZERO);
 
         Product product = productRepository.findById(productId)
+                .filter(p -> p.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(()-> new NoSuchElementException("Product " + productId + " not found"));
         product.setStock(totalStock);
         product.setPrice(minPrice);

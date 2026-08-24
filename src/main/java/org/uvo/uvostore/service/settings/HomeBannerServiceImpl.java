@@ -7,6 +7,7 @@ import org.uvo.uvostore.entity.settings.HomeBanner;
 import org.uvo.uvostore.entity.settings.enums.TextColor;
 import org.uvo.uvostore.entity.settings.enums.TextPosition;
 import org.uvo.uvostore.repository.HomeBannerRepository;
+import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.catalog.FileStorageService;
 
 import java.util.Comparator;
@@ -27,7 +28,7 @@ public class HomeBannerServiceImpl implements HomeBannerService {
     @Override
     @Transactional(readOnly = true)
     public List<HomeBannerDto> list(String search) {
-        return homeBannerRepository.findAll().stream()
+        return homeBannerRepository.findByStoreId(TenantContext.requireStoreId()).stream()
                 .filter(b -> search == null || search.isBlank()
                         || containsIgnoreCase(b.getTitle(), search) || containsIgnoreCase(b.getSubtitle(), search))
                 .sorted(Comparator.comparingInt(HomeBanner::getSortOrder)
@@ -50,6 +51,7 @@ public class HomeBannerServiceImpl implements HomeBannerService {
         }
 
         HomeBanner banner = new HomeBanner();
+        banner.setStore(TenantContext.requireCurrent());
         applyCommonFields(banner, command);
         banner.setImage(fileStorageService.store(command.newImage(), "banners"));
         if (command.newMobileImage() != null && !command.newMobileImage().isEmpty()) {
@@ -131,6 +133,7 @@ public class HomeBannerServiceImpl implements HomeBannerService {
 
     private HomeBanner findOrThrow(Long id) {
         return homeBannerRepository.findById(id)
+                .filter(b -> b.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("Banner " + id + " not found"));
     }
 

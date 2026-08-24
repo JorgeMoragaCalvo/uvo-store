@@ -43,24 +43,40 @@ export default function ProductDetail() {
 
   useEffect(() => {
     if (!slug) return
-    setLoading(true)
-    setNotFound(false)
-    setSelectedAttributes({})
-    setQuantity(1)
+    let cancelled = false
 
-    api.products
-      .getBySlug(slug)
-      .then((data) => {
+    async function loadProduct() {
+      setLoading(true)
+      setNotFound(false)
+      setSelectedAttributes({})
+      setQuantity(1)
+
+      try {
+        const data = await api.products.getBySlug(slug!)
+        if (cancelled) return
         setProduct(data)
         setActiveImage(data.featuredImage ?? data.images[0]?.url ?? null)
-      })
-      .catch(() => setNotFound(true))
-      .finally(() => setLoading(false))
+      } catch {
+        if (!cancelled) setNotFound(true)
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
 
-    api.products
-      .getRelated(slug)
-      .then(setRelated)
-      .catch(() => setRelated([]))
+    async function loadRelated() {
+      try {
+        const related = await api.products.getRelated(slug!)
+        if (!cancelled) setRelated(related)
+      } catch {
+        if (!cancelled) setRelated([])
+      }
+    }
+
+    loadProduct()
+    loadRelated()
+    return () => {
+      cancelled = true
+    }
   }, [slug])
 
   const attributeGroups = useMemo(() => (product ? buildAttributeGroups(product.variations) : {}), [product])

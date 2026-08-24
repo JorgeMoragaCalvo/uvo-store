@@ -9,4 +9,6 @@ public interface ShippingRateRepository extends JpaRepository<ShippingRate, Long
 
     List<ShippingRate> findByMethodIdAndZoneIdAndIsActiveTrue(Long methodId, Long zoneId);
     List<ShippingRate> findByZoneIdAndIsActiveTrue(Long zoneId); // ShippingZone::getAvailableMethods()
+
+    List<ShippingRate> findByStoreId(Long storeId);
 }

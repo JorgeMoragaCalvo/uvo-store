@@ -9,6 +9,7 @@ import org.uvo.uvostore.entity.catalog.Category;
 import org.uvo.uvostore.entity.catalog.Product;
 import org.uvo.uvostore.entity.catalog.enums.ProductType;
 import org.uvo.uvostore.repository.ProductRepository;
+import org.uvo.uvostore.security.TenantContext;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -34,7 +35,7 @@ public class ProductQueryServiceImpl implements ProductQueryService {
     @Override
     @Transactional(readOnly = true)
     public List<ProductDto> featured(int limit) {
-        return productRepository.findByIsFeaturedTrueAndActiveTrue().stream()
+        return productRepository.findByStoreIdAndIsFeaturedTrueAndActiveTrue(TenantContext.requireStoreId()).stream()
                 .limit(limit)
                 .map(ProductDtoMapper::toDto)
                 .toList();
@@ -43,7 +44,7 @@ public class ProductQueryServiceImpl implements ProductQueryService {
     @Override
     @Transactional(readOnly = true)
     public ProductDto getBySlug(String slug) {
-        Product product = productRepository.findBySlug(slug)
+        Product product = productRepository.findByStoreIdAndSlug(TenantContext.requireStoreId(), slug)
                 .filter(Product::isActive)
                 .orElseThrow(() -> new NoSuchElementException("Product " + slug + " not found"));
         return ProductDtoMapper.toDto(product);
@@ -52,13 +53,14 @@ public class ProductQueryServiceImpl implements ProductQueryService {
     @Override
     @Transactional(readOnly = true)
     public List<ProductDto> related(String slug, int limit) {
-        Product product = productRepository.findBySlug(slug)
+        Long storeId = TenantContext.requireStoreId();
+        Product product = productRepository.findByStoreIdAndSlug(storeId, slug)
                 .orElseThrow(() -> new NoSuchElementException("Product " + slug + " not found"));
         if (product.getCategory() == null) {
             return List.of();
         }
 
-        return productRepository.findByCategoryId(product.getCategory().getId()).stream()
+        return productRepository.findByStoreIdAndCategoryId(storeId, product.getCategory().getId()).stream()
                 .filter(Product::isActive)
                 .filter(p -> !p.getId().equals(product.getId()))
                 .filter(this::isInStock)
@@ -71,6 +73,7 @@ public class ProductQueryServiceImpl implements ProductQueryService {
     @Transactional(readOnly = true)
     public ProductDto getById(Long id) {
         Product product = productRepository.findById(id)
+                .filter(p -> p.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("Product " + id + " not found"));
         return ProductDtoMapper.toDto(product);
     }
@@ -84,11 +87,15 @@ public class ProductQueryServiceImpl implements ProductQueryService {
     @Override
     @Transactional(readOnly = true)
     public AdminProductStatsDto getStats() {
-        long total = productRepository.count();
-        long active = productRepository.count((root, query, cb) -> cb.isTrue(root.get("active")));
+        Long storeId = TenantContext.requireStoreId();
+        long total = productRepository.count((root, query, cb) -> cb.equal(root.get("store").get("id"), storeId));
+        long active = productRepository.count((root, query, cb) -> cb.and(
+                cb.equal(root.get("store").get("id"), storeId), cb.isTrue(root.get("active"))));
         long outOfStock = productRepository.count((root, query, cb) -> cb.and(
+                cb.equal(root.get("store").get("id"), storeId),
                 cb.equal(root.get("productType"), ProductType.SIMPLE), cb.equal(root.get("stock"), 0)));
         long lowStock = productRepository.count((root, query, cb) -> cb.and(
+                cb.equal(root.get("store").get("id"), storeId),
                 cb.equal(root.get("productType"), ProductType.SIMPLE),
                 cb.greaterThan(root.get("stock"), 0), cb.lessThanOrEqualTo(root.get("stock"), 5)));
         return new AdminProductStatsDto(total, active, outOfStock, lowStock);
@@ -96,6 +103,8 @@ public class ProductQueryServiceImpl implements ProductQueryService {
 
     private Specification<Product> buildAdminSpecification(AdminProductSearchCriteria criteria) {
         List<Specification<Product>> specs = new ArrayList<>();
+        Long storeId = TenantContext.requireStoreId();
+        specs.add((root, query, cb) -> cb.equal(root.get("store").get("id"), storeId));
 
         if (criteria.search() != null && !criteria.search().isBlank()) {
             String term = "%" + criteria.search().toLowerCase() + "%";
@@ -145,6 +154,8 @@ public class ProductQueryServiceImpl implements ProductQueryService {
 
     private Specification<Product> buildSpecification(ProductSearchCriteria criteria) {
         List<Specification<Product>> specs = new ArrayList<>();
+        Long storeId = TenantContext.requireStoreId();
+        specs.add((root, query, cb) -> cb.equal(root.get("store").get("id"), storeId));
         specs.add((root, query, cb) -> cb.isTrue(root.get("active")));
 
         if (criteria.search() != null && !criteria.search().isBlank()) {

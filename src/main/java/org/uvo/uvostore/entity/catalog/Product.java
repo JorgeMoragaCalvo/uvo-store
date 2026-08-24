@@ -35,6 +35,7 @@ import org.hibernate.type.SqlTypes;
 import org.uvo.uvostore.entity.catalog.enums.ProductType;
 import org.uvo.uvostore.entity.order.OrderItem;
 import org.uvo.uvostore.entity.pos.ProductSyncMapping;
+import org.uvo.uvostore.entity.tenant.Store;
 
 @Entity
 @Table(name = "products")
@@ -51,13 +52,13 @@ public class Product {
     @EqualsAndHashCode.Include
     private Long id;
 
-    @Column(unique = true)
+    @Column
     private String sku;
 
     @Column(nullable = false)
     private String name;
 
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false)
     private String slug;
 
     @Column(name = "short_description", columnDefinition = "text")
@@ -160,6 +161,10 @@ public class Product {
     @JoinColumn(name = "category_id")
     @OnDelete(action = OnDeleteAction.SET_NULL)
     private Category category;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "store_id")
+    private Store store;
 
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
