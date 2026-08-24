@@ -12,6 +12,8 @@ import org.uvo.uvostore.entity.pos.PosConnection;
 import org.uvo.uvostore.repository.PosConnectionRepository;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.Optional;
 
 // Ports AuthenticatePosApi middleware: Bearer API key + X-Company-ID header, matched against
@@ -56,13 +58,17 @@ public class PosApiKeyAuthFilter extends OncePerRequestFilter {
             reject(response, "POS_CONNECTION_NOT_FOUND", "Conexión POS no encontrada o inactiva");
             return;
         }
-        if (!connection.get().getApiKey().equals(token)) {
+        if (!constantTimeEquals(connection.get().getApiKey(), token)) {
             reject(response, "INVALID_API_KEY", "API key inválida");
             return;
         }
 
         request.setAttribute("posConnection", connection.get());
         filterChain.doFilter(request, response);
+    }
+
+    private static boolean constantTimeEquals(String a, String b) {
+        return MessageDigest.isEqual(a.getBytes(StandardCharsets.UTF_8), b.getBytes(StandardCharsets.UTF_8));
     }
 
     private void reject(HttpServletResponse response, String error, String message) throws IOException {
