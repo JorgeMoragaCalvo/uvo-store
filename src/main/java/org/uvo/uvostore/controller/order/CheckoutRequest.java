@@ -16,7 +16,7 @@ public record CheckoutRequest(
         String commune,
         @NotEmpty @Valid List<CartItemRequest> items,
         String couponCode,
-        @NotBlank @Pattern(regexp = "manual|stripe") String paymentMethod,
+        @NotBlank @Pattern(regexp = "manual|stripe|webpay|mercadopago") String paymentMethod,
         @Size(max = 1000) String customerNotes
 ) {
 }

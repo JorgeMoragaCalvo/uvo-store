@@ -36,6 +36,7 @@ import org.uvo.uvostore.entity.common.Address;
 import org.uvo.uvostore.entity.customer.Customer;
 import org.uvo.uvostore.entity.order.enums.FulfillmentStatus;
 import org.uvo.uvostore.entity.order.enums.OrderStatus;
+import org.uvo.uvostore.entity.order.enums.PaymentMethodType;
 import org.uvo.uvostore.entity.order.enums.PaymentStatus;
 import org.uvo.uvostore.entity.shipping.ShippingMethod;
 import org.uvo.uvostore.entity.shipping.ShippingRate;
@@ -111,8 +112,9 @@ public class Order {
     @Builder.Default
     private FulfillmentStatus fulfillmentStatus = FulfillmentStatus.UNFULFILLED;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "payment_method")
-    private String paymentMethod;
+    private PaymentMethodType paymentMethod;
 
     @Column(name = "payment_id")
     private String paymentId;

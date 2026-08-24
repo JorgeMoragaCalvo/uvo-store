@@ -96,7 +96,7 @@ public class CheckoutServiceImpl implements CheckoutService {
         order.setStatus(OrderStatus.PENDING);
         order.setPaymentStatus(PaymentStatus.PENDING);
         order.setFulfillmentStatus(FulfillmentStatus.UNFULFILLED);
-        order.setPaymentMethod(command.paymentMethod());
+        order.setPaymentMethod(org.uvo.uvostore.entity.order.enums.PaymentMethodType.valueOf(command.paymentMethod().toUpperCase()));
         order.setCustomerNotes(command.customerNotes());
         order.setPosSynced(false);
         order.setSyncAttempts(0);

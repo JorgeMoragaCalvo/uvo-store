@@ -113,7 +113,7 @@ public class AdminOrderQueryServiceImpl implements AdminOrderQueryService {
                 order.getCustomerEmail(), order.getCustomerFirstName(), order.getCustomerLastName(), order.getCustomerPhone(),
                 order.getStatus().name(), order.getPaymentStatus().name(), order.getFulfillmentStatus().name(),
                 order.getSubtotal(), order.getDiscountAmount(), order.getShippingCost(), order.getTaxAmount(), order.getTotal(),
-                order.getPaymentMethod(), order.getTrackingNumber(), order.getTrackingUrl(),
+                order.getPaymentMethod() == null ? null : order.getPaymentMethod().name(), order.getTrackingNumber(), order.getTrackingUrl(),
                 toAddressDto(order.getShippingAddress()), toAddressDto(order.getBillingAddress()),
                 order.getShippingRegion(), order.getShippingCommune(), order.getShippingPostalCode(),
                 order.getCustomerNotes(), order.getNotes(), items,

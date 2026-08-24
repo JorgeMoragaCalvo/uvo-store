@@ -94,7 +94,7 @@ public class SalesReportServiceImpl implements SalesReportService {
                 .toList();
 
         Map<String, List<Order>> byMethod = paidOrders.stream()
-                .collect(java.util.stream.Collectors.groupingBy(o -> o.getPaymentMethod() == null ? "No especificado" : o.getPaymentMethod()));
+                .collect(java.util.stream.Collectors.groupingBy(o -> o.getPaymentMethod() == null ? "No especificado" : o.getPaymentMethod().name()));
 
         return byMethod.entrySet().stream()
                 .map(e -> new PaymentMethodRevenueDto(e.getKey(), e.getValue().size(), sumPaid(e.getValue())))
