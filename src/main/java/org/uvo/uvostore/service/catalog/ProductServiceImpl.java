@@ -8,6 +8,7 @@ import org.uvo.uvostore.entity.catalog.Product;
 import org.uvo.uvostore.entity.catalog.enums.ProductType;
 import org.uvo.uvostore.repository.CategoryRepository;
 import org.uvo.uvostore.repository.ProductRepository;
+import org.uvo.uvostore.security.TenantContext;
 
 import java.math.BigDecimal;
 import java.security.SecureRandom;
@@ -34,6 +35,7 @@ public class ProductServiceImpl implements ProductService {
     @Transactional
     public Product createSimpleProduct(ProductCreateCommand command) {
         Product product = new Product();
+        product.setStore(TenantContext.requireCurrent());
         applyCommonFields(product, command);
         product.setProductType(ProductType.SIMPLE);
         product.setSku(command.sku());
@@ -49,6 +51,7 @@ public class ProductServiceImpl implements ProductService {
     @Transactional
     public Product createVariableProduct(ProductCreateCommand command, List<VariationCommand> variations) {
         Product product = new Product();
+        product.setStore(TenantContext.requireCurrent());
         applyCommonFields(product, command);
         // ProductCreate.php::save() (lines 172-176) — variable products get a synthetic
         // "VAR-XXXXXXXX" SKU and price=0/stock=0/manageStock=false.
@@ -77,6 +80,7 @@ public class ProductServiceImpl implements ProductService {
     @Transactional
     public Product updateProduct(Long productId, ProductCreateCommand command) {
         Product product = productRepository.findById(productId)
+            .filter(p -> p.getStore().getId().equals(TenantContext.requireStoreId()))
             .orElseThrow(() -> new NoSuchElementException("Product " + productId + " not found"));
         applyCommonFields(product, command);
         if (product.getProductType() == ProductType.SIMPLE) {
@@ -91,13 +95,17 @@ public class ProductServiceImpl implements ProductService {
     @Override
     @Transactional
     public void deleteProduct(Long productId) {
-        productRepository.deleteById(productId);
+        Product product = productRepository.findById(productId)
+                .filter(p -> p.getStore().getId().equals(TenantContext.requireStoreId()))
+                .orElseThrow(() -> new NoSuchElementException("Product " + productId + " not found"));
+        productRepository.delete(product);
     }
 
     @Override
     @Transactional
     public Product toggleActive(Long productId) {
         Product product = productRepository.findById(productId)
+                .filter(p -> p.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("Product " + productId + " not found"));
         product.setActive(!product.isActive());
         return productRepository.save(product);
@@ -107,6 +115,7 @@ public class ProductServiceImpl implements ProductService {
     @Transactional
     public Product toggleFeatured(Long productId) {
         Product product = productRepository.findById(productId)
+                .filter(p -> p.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("Product " + productId + " not found"));
         product.setFeatured(!product.isFeatured());
         return productRepository.save(product);
@@ -142,6 +151,7 @@ public class ProductServiceImpl implements ProductService {
 
         if (command.categoryId() != null) {
             Category category = categoryRepository.findById(command.categoryId())
+                .filter(c -> c.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("Category " + command.categoryId() + " not found"));
             product.setCategory(category);
         } else {

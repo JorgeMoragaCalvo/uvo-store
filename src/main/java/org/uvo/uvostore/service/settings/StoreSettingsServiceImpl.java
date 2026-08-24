@@ -5,6 +5,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.uvo.uvostore.entity.settings.StoreSettings;
 import org.uvo.uvostore.repository.StoreSettingsRepository;
+import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.catalog.FileStorageService;
 
 @Service
@@ -91,7 +92,11 @@ public class StoreSettingsServiceImpl implements StoreSettingsService {
     }
 
     private StoreSettings currentOrCreate() {
-        return storeSettingsRepository.findFirstByOrderByIdAsc().orElseGet(() -> storeSettingsRepository.save(new StoreSettings()));
+        return storeSettingsRepository.findByStoreId(TenantContext.requireStoreId()).orElseGet(() -> {
+            StoreSettings settings = new StoreSettings();
+            settings.setStore(TenantContext.requireCurrent());
+            return storeSettingsRepository.save(settings);
+        });
     }
 
     private StoreSettingsDto toDto(StoreSettings s) {

@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -39,8 +40,9 @@ public class AuthController {
     }
 
     @PostMapping("/api/admin/auth/login")
+    @Transactional // also persists lastLoginAt; adminAuthorities() below walks the lazy User.roles/Role.permissions collections
     public ResponseEntity<AuthResponse> adminLogin(@Valid @RequestBody AdminLoginRequest request) {
-        Store store = requireCurrentStore();
+        Store store = TenantContext.requireCurrent();
         User user = userRepository.findByStoreIdAndEmail(store.getId(), request.email())
                 .orElseThrow(() -> new BadCredentialsException("Credenciales inválidas"));
 
@@ -58,7 +60,7 @@ public class AuthController {
 
     @PostMapping("/api/customer/auth/login")
     public ResponseEntity<AuthResponse> customerLogin(@Valid @RequestBody CustomerLoginRequest request) {
-        Store store = requireCurrentStore();
+        Store store = TenantContext.requireCurrent();
         Customer customer = customerRepository.findByStoreIdAndEmail(store.getId(), request.email())
                 .orElseThrow(() -> new BadCredentialsException("Credenciales inválidas"));
 
@@ -74,7 +76,7 @@ public class AuthController {
 
     @PostMapping("/api/customer/auth/register")
     public ResponseEntity<AuthResponse> customerRegister(@Valid @RequestBody CustomerRegisterRequest request) {
-        Store store = requireCurrentStore();
+        Store store = TenantContext.requireCurrent();
         if (customerRepository.existsByStoreIdAndEmail(store.getId(), request.email())) {
             throw new IllegalStateException("El correo ya está registrado");
         }
@@ -94,15 +96,6 @@ public class AuthController {
         return ResponseEntity.ok(new AuthResponse(token, saved.getId(), fullName, saved.getEmail(), "CUSTOMER"));
     }
 
-    // Auth always happens in the context of one store's subdomain (TenantResolutionFilter
-    // resolves it before this controller runs) — there's no such thing as a store-less login.
-    private Store requireCurrentStore() {
-        Store store = TenantContext.get();
-        if (store == null) {
-            throw new IllegalStateException("No se pudo determinar la tienda para esta solicitud");
-        }
-        return store;
-    }
 
     private List<String> adminAuthorities(User user) {
         List<String> authorities = new ArrayList<>();

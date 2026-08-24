@@ -8,6 +8,7 @@ import org.uvo.uvostore.entity.order.enums.FulfillmentStatus;
 import org.uvo.uvostore.entity.order.enums.OrderStatus;
 import org.uvo.uvostore.entity.order.enums.PaymentStatus;
 import org.uvo.uvostore.repository.OrderRepository;
+import org.uvo.uvostore.security.TenantContext;
 
 import java.time.Instant;
 import java.util.NoSuchElementException;
@@ -110,6 +111,7 @@ public class AdminOrderServiceImpl implements AdminOrderService {
 
     private Order findOrThrow(Long orderId) {
         return orderRepository.findById(orderId)
+                .filter(o -> o.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("Order " + orderId + " not found"));
     }
 }

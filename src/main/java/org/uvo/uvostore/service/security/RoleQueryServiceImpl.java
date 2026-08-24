@@ -5,6 +5,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.uvo.uvostore.entity.security.Role;
 import org.uvo.uvostore.repository.PermissionRepository;
 import org.uvo.uvostore.repository.RoleRepository;
+import org.uvo.uvostore.security.TenantContext;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -26,13 +27,14 @@ public class RoleQueryServiceImpl implements RoleQueryService {
     @Override
     @Transactional(readOnly = true)
     public List<RoleDto> listAll() {
-        return roleRepository.findAll().stream().map(this::toDto).toList();
+        return roleRepository.findByStoreId(TenantContext.requireStoreId()).stream().map(this::toDto).toList();
     }
 
     @Override
     @Transactional(readOnly = true)
     public RoleDto getById(Long id) {
         Role role = roleRepository.findById(id)
+                .filter(r -> r.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("Role " + id + " not found"));
         return toDto(role);
     }

@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.uvo.uvostore.entity.order.Order;
 import org.uvo.uvostore.repository.OrderRepository;
+import org.uvo.uvostore.security.TenantContext;
 
 import java.util.NoSuchElementException;
 
@@ -20,6 +21,7 @@ public class OrderTrackingServiceImpl implements OrderTrackingService {
     @Transactional(readOnly = true)
     public OrderTrackingDto track(String orderNumber) {
         Order order = orderRepository.findByOrderNumber(orderNumber)
+                .filter(o -> o.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("Order " + orderNumber + " not found"));
 
         return new OrderTrackingDto(

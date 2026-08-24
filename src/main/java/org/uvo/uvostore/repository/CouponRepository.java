@@ -14,4 +14,8 @@ public interface CouponRepository extends JpaRepository<Coupon, Long>, JpaSpecif
     boolean existsByCode(String code);
     List<Coupon> findByIsActiveTrue();
     List<Coupon> findByIsActiveTrueAndExpiresAtAfter(Instant now);
+
+    // Tenant-scoped: code is now UNIQUE(store_id, code), not globally unique.
+    Optional<Coupon> findByStoreIdAndCode(Long storeId, String code);
+    boolean existsByStoreIdAndCode(Long storeId, String code);
 }

@@ -10,4 +10,5 @@ public interface PosConnectionRepository extends JpaRepository<PosConnection, Lo
 
     Optional<PosConnection> findByCompanyId(Long companyId);
     List<PosConnection> findByIsActiveTrue();
+    Optional<PosConnection> findByStoreId(Long storeId);
 }

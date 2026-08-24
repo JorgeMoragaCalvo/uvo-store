@@ -12,4 +12,5 @@ public interface AttributeRepository extends JpaRepository<Attribute, Long> {
 
     Optional<Attribute> findBySlug(String slug);
     List<Attribute> findAllByOrderByNameAsc();
+    List<Attribute> findByStoreIdOrderByNameAsc(Long storeId);
 }

@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.uvo.uvostore.entity.security.User;
 import org.uvo.uvostore.repository.UserRepository;
+import org.uvo.uvostore.security.TenantContext;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -25,6 +26,8 @@ public class UserQueryServiceImpl implements UserQueryService {
     @Transactional(readOnly = true)
     public Page<UserDto> search(String search, Long roleId, Boolean active, Pageable pageable) {
         List<Specification<User>> specs = new ArrayList<>();
+        Long storeId = TenantContext.requireStoreId();
+        specs.add((root, query, cb) -> cb.equal(root.get("store").get("id"), storeId));
 
         if (search != null && !search.isBlank()) {
             String term = "%" + search.toLowerCase() + "%";
@@ -52,6 +55,7 @@ public class UserQueryServiceImpl implements UserQueryService {
     @Transactional(readOnly = true)
     public UserDto getById(Long id) {
         User user = userRepository.findById(id)
+                .filter(u -> u.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("User " + id + " not found"));
         return toDto(user);
     }

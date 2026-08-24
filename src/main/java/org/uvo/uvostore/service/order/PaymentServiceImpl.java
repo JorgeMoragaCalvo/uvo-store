@@ -17,6 +17,7 @@ import org.uvo.uvostore.entity.order.OrderItem;
 import org.uvo.uvostore.entity.order.enums.PaymentStatus;
 import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.repository.SettingRepository;
+import org.uvo.uvostore.security.TenantContext;
 
 import java.math.BigDecimal;
 import java.util.NoSuchElementException;
@@ -61,6 +62,7 @@ public class PaymentServiceImpl implements PaymentService {
         applyApiKey();
 
         Order order = orderRepository.findById(orderId)
+                .filter(o -> o.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("Order " + orderId + " not found"));
 
         if (order.getPaymentStatus() != PaymentStatus.PENDING) {
@@ -188,6 +190,7 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     private String settingValue(String key, String fallback) {
-        return settingRepository.findBySettingKey(key).map(s -> s.getValue()).filter(v -> v != null && !v.isBlank()).orElse(fallback);
+        return settingRepository.findByStoreIdAndSettingKey(TenantContext.requireStoreId(), key)
+                .map(s -> s.getValue()).filter(v -> v != null && !v.isBlank()).orElse(fallback);
     }
 }

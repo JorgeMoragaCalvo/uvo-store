@@ -18,6 +18,7 @@ import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.repository.ProductRepository;
 import org.uvo.uvostore.repository.ProductVariationRepository;
 import org.uvo.uvostore.repository.SettingRepository;
+import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.customer.CustomerService;
 import org.uvo.uvostore.service.order.event.OrderCompletedEvent;
 
@@ -78,6 +79,7 @@ public class CheckoutServiceImpl implements CheckoutService {
         customer = customerService.markInvitedIfGuest(customer);
 
         Order order = new Order();
+        order.setStore(TenantContext.requireCurrent());
         order.setOrderNumber("ORD-" + randomOrderSuffix());
         order.setCustomer(customer);
         order.setCustomerEmail(command.customerEmail());
@@ -163,14 +165,17 @@ public class CheckoutServiceImpl implements CheckoutService {
         BigDecimal unitPrice;
         String sku;
 
+        Long storeId = TenantContext.requireStoreId();
         if (line.variationId() != null) {
             variation = variationRepository.findById(line.variationId())
+                    .filter(v -> v.getStore().getId().equals(storeId))
                     .orElseThrow(() -> new NoSuchElementException("Variation " + line.variationId() + " not found"));
             product = variation.getProduct();
             unitPrice = variation.getPrice();
             sku = variation.getSku();
         } else {
             product = productRepository.findById(line.productId())
+                    .filter(p -> p.getStore().getId().equals(storeId))
                     .orElseThrow(() -> new NoSuchElementException("Product " + line.productId() + " not found"));
             unitPrice = product.getPrice();
             sku = product.getSku();
@@ -213,15 +218,15 @@ public class CheckoutServiceImpl implements CheckoutService {
     }
 
     private String stringSetting(String key, String fallback) {
-        return settingRepository.findBySettingKey(key).map(Setting::getValue).orElse(fallback);
+        return settingRepository.findByStoreIdAndSettingKey(TenantContext.requireStoreId(), key).map(Setting::getValue).orElse(fallback);
     }
 
     private boolean boolSetting(String key, boolean fallback) {
-        return settingRepository.findBySettingKey(key).map(s -> Boolean.parseBoolean(s.getValue())).orElse(fallback);
+        return settingRepository.findByStoreIdAndSettingKey(TenantContext.requireStoreId(), key).map(s -> Boolean.parseBoolean(s.getValue())).orElse(fallback);
     }
 
     private BigDecimal decimalSetting(String key, BigDecimal fallback) {
-        return settingRepository.findBySettingKey(key)
+        return settingRepository.findByStoreIdAndSettingKey(TenantContext.requireStoreId(), key)
                 .map(Setting::getValue)
                 .map(BigDecimal::new)
                 .orElse(fallback);

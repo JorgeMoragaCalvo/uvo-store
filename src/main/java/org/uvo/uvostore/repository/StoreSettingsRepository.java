@@ -11,4 +11,7 @@ public interface StoreSettingsRepository extends JpaRepository<StoreSettings, Lo
     // exposes findFirst(), and a @Service wraps "create the default row if absent"
     // rather than baking that logic into the repository.
     Optional<StoreSettings> findFirstByOrderByIdAsc();
+
+    // Multi-tenant: one row per store now (UNIQUE(store_id) at the DB level), not a global singleton.
+    Optional<StoreSettings> findByStoreId(Long storeId);
 }

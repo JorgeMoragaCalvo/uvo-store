@@ -23,4 +23,11 @@ public interface CustomerRepository extends JpaRepository<Customer, Long>, JpaSp
     long countWithOrders();
 
     long countByCreatedAtAfter(Instant since);
+
+    long countByStoreId(Long storeId);
+
+    @Query("SELECT COUNT(DISTINCT c) FROM Customer c JOIN c.orders o WHERE c.store.id = :storeId")
+    long countWithOrdersByStoreId(@org.springframework.data.repository.query.Param("storeId") Long storeId);
+
+    long countByStoreIdAndCreatedAtAfter(Long storeId, Instant since);
 }

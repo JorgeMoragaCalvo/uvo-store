@@ -7,6 +7,7 @@ import org.uvo.uvostore.entity.security.Role;
 import org.uvo.uvostore.entity.security.User;
 import org.uvo.uvostore.repository.RoleRepository;
 import org.uvo.uvostore.repository.UserRepository;
+import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.catalog.FileStorageService;
 
 import java.time.Instant;
@@ -35,6 +36,7 @@ public class UserServiceImpl implements UserService {
     @Transactional
     public User createUser(UserCreateCommand command) {
         User user = new User();
+        user.setStore(TenantContext.requireCurrent());
         applyCommonFields(user, command);
         user.setPassword(passwordEncoder.encode(command.password()));
         if (command.sendInvitation()) {
@@ -55,6 +57,7 @@ public class UserServiceImpl implements UserService {
     @Transactional
     public User updateUser(Long id, UserCreateCommand command) {
         User user = userRepository.findById(id)
+                .filter(u -> u.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("User " + id + " not found"));
         applyCommonFields(user, command);
         if (command.password() != null && !command.password().isBlank()) {
@@ -76,6 +79,7 @@ public class UserServiceImpl implements UserService {
     @Transactional
     public void deactivateUser(Long id) {
         User user = userRepository.findById(id)
+                .filter(u -> u.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("User " + id + " not found"));
         user.setActive(false);
         userRepository.save(user);
@@ -85,6 +89,7 @@ public class UserServiceImpl implements UserService {
     @Transactional
     public void assignRoles(Long userId, Set<Long> roleIds) {
         User user = userRepository.findById(userId)
+                .filter(u -> u.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("User " + userId + " not found"));
         user.setRoles(resolveRoles(roleIds));
         userRepository.save(user);
@@ -94,6 +99,7 @@ public class UserServiceImpl implements UserService {
     @Transactional
     public User toggleActive(Long id) {
         User user = userRepository.findById(id)
+                .filter(u -> u.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("User " + id + " not found"));
         user.setActive(!user.isActive());
         return userRepository.save(user);
@@ -102,7 +108,10 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public void deleteUser(Long id) {
-        userRepository.deleteById(id);
+        User user = userRepository.findById(id)
+                .filter(u -> u.getStore().getId().equals(TenantContext.requireStoreId()))
+                .orElseThrow(() -> new NoSuchElementException("User " + id + " not found"));
+        userRepository.delete(user);
     }
 
     private void applyCommonFields(User user, UserCreateCommand command) {
@@ -115,9 +124,11 @@ public class UserServiceImpl implements UserService {
     }
 
     private Set<Role> resolveRoles(Set<Long> roleIds) {
+        Long storeId = TenantContext.requireStoreId();
         Set<Role> roles = new HashSet<>();
         for (Long roleId : roleIds) {
             roles.add(roleRepository.findById(roleId)
+                    .filter(r -> r.getStore().getId().equals(storeId))
                     .orElseThrow(() -> new NoSuchElementException("Role " + roleId + " not found")));
         }
         return roles;

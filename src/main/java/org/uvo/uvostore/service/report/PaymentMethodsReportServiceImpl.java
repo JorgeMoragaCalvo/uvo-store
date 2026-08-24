@@ -5,6 +5,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.uvo.uvostore.entity.order.Order;
 import org.uvo.uvostore.entity.order.enums.PaymentStatus;
 import org.uvo.uvostore.repository.OrderRepository;
+import org.uvo.uvostore.security.TenantContext;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -29,9 +30,9 @@ public class PaymentMethodsReportServiceImpl implements PaymentMethodsReportServ
         List<Order> orders = ordersInRange(start, end, paymentStatus);
         BigDecimal totalRevenue = sumPaid(orders);
         long paid = orders.stream().filter(o -> o.getPaymentStatus() == PaymentStatus.PAID).count();
-        long pending = orderRepository.findByCreatedAtBetween(start, end).stream()
+        long pending = orderRepository.findByStoreIdAndCreatedAtBetween(TenantContext.requireStoreId(), start, end).stream()
                 .filter(o -> o.getPaymentStatus() == PaymentStatus.PENDING).count();
-        long failed = orderRepository.findByCreatedAtBetween(start, end).stream()
+        long failed = orderRepository.findByStoreIdAndCreatedAtBetween(TenantContext.requireStoreId(), start, end).stream()
                 .filter(o -> o.getPaymentStatus() == PaymentStatus.FAILED).count();
         return new PaymentMethodsSummaryDto(orders.size(), totalRevenue, paid, pending, failed);
     }
@@ -63,7 +64,7 @@ public class PaymentMethodsReportServiceImpl implements PaymentMethodsReportServ
     @Override
     @Transactional(readOnly = true)
     public List<PaymentStatusDistributionDto> getStatusDistribution(Instant start, Instant end) {
-        List<Order> orders = orderRepository.findByCreatedAtBetween(start, end);
+        List<Order> orders = orderRepository.findByStoreIdAndCreatedAtBetween(TenantContext.requireStoreId(), start, end);
         Map<PaymentStatus, List<Order>> byStatus = orders.stream()
                 .collect(java.util.stream.Collectors.groupingBy(Order::getPaymentStatus, LinkedHashMap::new, java.util.stream.Collectors.toList()));
 
@@ -90,7 +91,7 @@ public class PaymentMethodsReportServiceImpl implements PaymentMethodsReportServ
     }
 
     private List<Order> ordersInRange(Instant start, Instant end, String paymentStatus) {
-        List<Order> orders = orderRepository.findByCreatedAtBetween(start, end);
+        List<Order> orders = orderRepository.findByStoreIdAndCreatedAtBetween(TenantContext.requireStoreId(), start, end);
         if ("paid".equalsIgnoreCase(paymentStatus)) {
             return orders.stream().filter(o -> o.getPaymentStatus() == PaymentStatus.PAID).toList();
         }

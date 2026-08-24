@@ -34,4 +34,5 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
 
     // Admin\Reports\* — every report aggregates in-memory over the orders (+ items) in a date range.
     List<Order> findByCreatedAtBetween(Instant start, Instant end);
+    List<Order> findByStoreIdAndCreatedAtBetween(Long storeId, Instant start, Instant end);
 }

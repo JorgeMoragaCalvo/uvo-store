@@ -25,6 +25,20 @@ public final class TenantContext {
         return store == null ? null : store.getId();
     }
 
+    // Every store-scoped endpoint needs a resolved tenant to do anything meaningful — there's
+    // no legitimate "no store" case for them (only auth-less infra routes like /health skip this).
+    public static Store requireCurrent() {
+        Store store = CURRENT.get();
+        if (store == null) {
+            throw new IllegalStateException("No se pudo determinar la tienda para esta solicitud");
+        }
+        return store;
+    }
+
+    public static Long requireStoreId() {
+        return requireCurrent().getId();
+    }
+
     public static void clear() {
         CURRENT.remove();
     }

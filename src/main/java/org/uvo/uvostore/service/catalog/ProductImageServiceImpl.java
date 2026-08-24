@@ -7,6 +7,7 @@ import org.uvo.uvostore.entity.catalog.Product;
 import org.uvo.uvostore.entity.catalog.ProductImage;
 import org.uvo.uvostore.entity.catalog.enums.ImageType;
 import org.uvo.uvostore.repository.ProductImageRepository;
+import org.uvo.uvostore.security.TenantContext;
 
 import java.util.List;
 
@@ -39,6 +40,7 @@ public class ProductImageServiceImpl implements ProductImageService {
         int nextSortOrder = existing.stream().mapToInt(ProductImage::getSortOrder).max().orElse(0) + 1;
 
         ProductImage image = new ProductImage();
+        image.setStore(TenantContext.requireCurrent());
         image.setProduct(product);
         image.setImagePath(path);
         image.setAltText(product.getName());

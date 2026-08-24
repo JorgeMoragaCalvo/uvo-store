@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.uvo.uvostore.entity.catalog.Category;
 import org.uvo.uvostore.repository.CategoryRepository;
+import org.uvo.uvostore.security.TenantContext;
 
 import java.util.Comparator;
 import java.util.List;
@@ -21,7 +22,7 @@ public class CategoryQueryServiceImpl implements CategoryQueryService {
     @Override
     @Transactional(readOnly = true)
     public List<CategoryDto> rootCategories() {
-        return categoryRepository.findByParentIsNullOrderBySortOrderAsc().stream()
+        return categoryRepository.findByStoreIdAndParentIsNullOrderBySortOrderAsc(TenantContext.requireStoreId()).stream()
                 .filter(Category::isActive)
                 .sorted(Comparator.comparingInt(Category::getSortOrder).thenComparing(Category::getName))
                 .map(CategoryDtoMapper::toDto)
@@ -31,7 +32,7 @@ public class CategoryQueryServiceImpl implements CategoryQueryService {
     @Override
     @Transactional(readOnly = true)
     public CategoryDto getBySlug(String slug) {
-        Category category = categoryRepository.findBySlug(slug)
+        Category category = categoryRepository.findByStoreIdAndSlug(TenantContext.requireStoreId(), slug)
                 .filter(Category::isActive)
                 .orElseThrow(() -> new NoSuchElementException("Category " + slug + " not found"));
         return CategoryDtoMapper.toDto(category);
@@ -40,8 +41,7 @@ public class CategoryQueryServiceImpl implements CategoryQueryService {
     @Override
     @Transactional(readOnly = true)
     public List<CategoryDto> listAll() {
-        return categoryRepository.findAll().stream()
-                .sorted(Comparator.comparing(Category::getName))
+        return categoryRepository.findByStoreIdOrderByNameAsc(TenantContext.requireStoreId()).stream()
                 .map(CategoryDtoMapper::toDto)
                 .toList();
     }
@@ -50,6 +50,7 @@ public class CategoryQueryServiceImpl implements CategoryQueryService {
     @Transactional(readOnly = true)
     public CategoryDto getById(Long id) {
         Category category = categoryRepository.findById(id)
+                .filter(c -> c.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("Category " + id + " not found"));
         return CategoryDtoMapper.toDto(category);
     }
