@@ -10,6 +10,20 @@ jobs:
   backend:
     name: Backend (Maven)
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: uvostore
+          POSTGRES_USER: uvostore
+          POSTGRES_PASSWORD: uvostore
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,6 +36,10 @@ jobs:
           cache: maven
 
       - name: Build and test
+        env:
+          DB_URL: jdbc:postgresql://localhost:5432/uvostore
+          DB_USERNAME: uvostore
+          DB_PASSWORD: uvostore
         run: ./mvnw --batch-mode --no-transfer-progress clean verify
 
   frontend:
