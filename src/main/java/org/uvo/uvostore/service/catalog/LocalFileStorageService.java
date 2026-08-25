@@ -1,6 +1,7 @@
 package org.uvo.uvostore.service.catalog;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -15,7 +16,11 @@ import java.util.UUID;
 // :184/197) — writes under app.upload-dir/{directory}/ with a random filename, preserving the
 // original extension, and returns a path relative to the upload root (matching the relative
 // "products/xxxx.jpg" path Laravel's store() call returns).
+//
+// Default driver (dev/CI-friendly, no cloud credentials required) — set app.storage.driver=s3 to
+// switch to S3FileStorageServiceImpl instead (Fase 4).
 @Service
+@ConditionalOnProperty(prefix = "app.storage", name = "driver", havingValue = "local", matchIfMissing = true)
 public class LocalFileStorageService implements FileStorageService {
 
     private final Path uploadRoot;
@@ -54,5 +59,10 @@ public class LocalFileStorageService implements FileStorageService {
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to delete stored file", e);
         }
+    }
+
+    @Override
+    public String publicUrl(String path) {
+        return path == null ? null : "/uploads/" + path;
     }
 }

@@ -143,7 +143,8 @@ public class HomeBannerServiceImpl implements HomeBannerService {
 
     private HomeBannerDto toDto(HomeBanner b) {
         return new HomeBannerDto(
-                b.getId(), b.getTitle(), b.getSubtitle(), b.getDescription(), b.getImage(), b.getMobileImage(),
+                b.getId(), b.getTitle(), b.getSubtitle(), b.getDescription(),
+                fileStorageService.publicUrl(b.getImage()), fileStorageService.publicUrl(b.getMobileImage()),
                 b.getCtaText(), b.getCtaLink(), b.isCtaNewTab(), b.getCtaSecondaryText(), b.getCtaSecondaryLink(),
                 b.getTextPosition().name().toLowerCase(), b.getTextColor().name().toLowerCase(),
                 b.getOverlayColor(), b.getOverlayOpacity(), b.isActive(), b.getSortOrder()

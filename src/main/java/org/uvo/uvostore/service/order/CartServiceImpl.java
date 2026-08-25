@@ -9,6 +9,7 @@ import org.uvo.uvostore.repository.ProductRepository;
 import org.uvo.uvostore.repository.ProductVariationRepository;
 import org.uvo.uvostore.repository.SettingRepository;
 import org.uvo.uvostore.security.TenantContext;
+import org.uvo.uvostore.service.catalog.FileStorageService;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -23,13 +24,16 @@ public class CartServiceImpl implements CartService {
     private final ProductVariationRepository variationRepository;
     private final CartPricingService cartPricingService;
     private final SettingRepository settingRepository;
+    private final FileStorageService fileStorageService;
 
     public CartServiceImpl(ProductRepository productRepository, ProductVariationRepository variationRepository,
-                            CartPricingService cartPricingService, SettingRepository settingRepository) {
+                            CartPricingService cartPricingService, SettingRepository settingRepository,
+                            FileStorageService fileStorageService) {
         this.productRepository = productRepository;
         this.variationRepository = variationRepository;
         this.cartPricingService = cartPricingService;
         this.settingRepository = settingRepository;
+        this.fileStorageService = fileStorageService;
     }
 
     @Override
@@ -52,7 +56,7 @@ public class CartServiceImpl implements CartService {
                     } else if (variation.getStock() < item.quantity()) {
                         errors.put(key, "Stock insuficiente. Solo hay " + variation.getStock() + " disponibles");
                     } else {
-                        String image = variation.getImage() != null ? "/uploads/" + variation.getImage()
+                        String image = variation.getImage() != null ? fileStorageService.publicUrl(variation.getImage())
                                 : featuredImage(variation.getProduct());
                         validated.add(new CartValidatedItemDto(
                                 variation.getId(), "variation", variation.getProduct().getName(),
@@ -121,7 +125,7 @@ public class CartServiceImpl implements CartService {
                 .filter(img -> img.isFeatured())
                 .findFirst()
                 .or(() -> product.getProductImages().stream().findFirst())
-                .map(img -> "/uploads/" + img.getImagePath())
+                .map(img -> fileStorageService.publicUrl(img.getImagePath()))
                 .orElse(null);
     }
 }

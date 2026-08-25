@@ -7,7 +7,7 @@ final class CategoryDtoMapper {
     private CategoryDtoMapper() {
     }
 
-    static CategoryDto toDto(Category category) {
+    static CategoryDto toDto(Category category, FileStorageService fileStorageService) {
         CategoryRefDto parent = category.getParent() == null ? null
                 : new CategoryRefDto(category.getParent().getId(), category.getParent().getName(), category.getParent().getSlug());
 
@@ -16,7 +16,7 @@ final class CategoryDtoMapper {
                 category.getName(),
                 category.getSlug(),
                 category.getDescription(),
-                category.getImage() == null ? null : "/uploads/" + category.getImage(),
+                fileStorageService.publicUrl(category.getImage()),
                 category.getParent() == null ? null : category.getParent().getId(),
                 category.isActive(),
                 category.getSortOrder(),

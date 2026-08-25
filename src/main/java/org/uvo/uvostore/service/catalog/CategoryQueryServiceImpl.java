@@ -14,9 +14,11 @@ import java.util.NoSuchElementException;
 public class CategoryQueryServiceImpl implements CategoryQueryService {
 
     private final CategoryRepository categoryRepository;
+    private final FileStorageService fileStorageService;
 
-    public CategoryQueryServiceImpl(CategoryRepository categoryRepository) {
+    public CategoryQueryServiceImpl(CategoryRepository categoryRepository, FileStorageService fileStorageService) {
         this.categoryRepository = categoryRepository;
+        this.fileStorageService = fileStorageService;
     }
 
     @Override
@@ -25,7 +27,7 @@ public class CategoryQueryServiceImpl implements CategoryQueryService {
         return categoryRepository.findByStoreIdAndParentIsNullOrderBySortOrderAsc(TenantContext.requireStoreId()).stream()
                 .filter(Category::isActive)
                 .sorted(Comparator.comparingInt(Category::getSortOrder).thenComparing(Category::getName))
-                .map(CategoryDtoMapper::toDto)
+                .map(category -> CategoryDtoMapper.toDto(category, fileStorageService))
                 .toList();
     }
 
@@ -35,14 +37,14 @@ public class CategoryQueryServiceImpl implements CategoryQueryService {
         Category category = categoryRepository.findByStoreIdAndSlug(TenantContext.requireStoreId(), slug)
                 .filter(Category::isActive)
                 .orElseThrow(() -> new NoSuchElementException("Category " + slug + " not found"));
-        return CategoryDtoMapper.toDto(category);
+        return CategoryDtoMapper.toDto(category, fileStorageService);
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<CategoryDto> listAll() {
         return categoryRepository.findByStoreIdOrderByNameAsc(TenantContext.requireStoreId()).stream()
-                .map(CategoryDtoMapper::toDto)
+                .map(category -> CategoryDtoMapper.toDto(category, fileStorageService))
                 .toList();
     }
 
@@ -52,6 +54,6 @@ public class CategoryQueryServiceImpl implements CategoryQueryService {
         Category category = categoryRepository.findById(id)
                 .filter(c -> c.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("Category " + id + " not found"));
-        return CategoryDtoMapper.toDto(category);
+        return CategoryDtoMapper.toDto(category, fileStorageService);
     }
 }

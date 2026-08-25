@@ -22,10 +22,10 @@ final class ProductDtoMapper {
     private ProductDtoMapper() {
     }
 
-    static ProductDto toDto(Product product) {
+    static ProductDto toDto(Product product, FileStorageService fileStorageService) {
         List<ProductImageDto> images = product.getProductImages().stream()
                 .sorted(Comparator.comparingInt(ProductImage::getSortOrder))
-                .map(ProductDtoMapper::toImageDto)
+                .map(image -> toImageDto(image, fileStorageService))
                 .toList();
 
         List<ProductVariation> activeVariations = product.getVariations().stream()
@@ -55,19 +55,19 @@ final class ProductDtoMapper {
                 product.getMetaTitle(),
                 product.getMetaDescription(),
                 category,
-                product.getVariations().stream().map(ProductDtoMapper::toVariationDto).toList(),
+                product.getVariations().stream().map(variation -> toVariationDto(variation, fileStorageService)).toList(),
                 product.getVariations().size(),
                 product.getCreatedAt(),
                 product.getUpdatedAt()
         );
     }
 
-    static ProductImageDto toImageDto(ProductImage image) {
-        String url = "/uploads/" + image.getImagePath();
+    static ProductImageDto toImageDto(ProductImage image, FileStorageService fileStorageService) {
+        String url = fileStorageService.publicUrl(image.getImagePath());
         return new ProductImageDto(image.getId(), url, url, image.getAltText(), image.isFeatured());
     }
 
-    static ProductVariationDto toVariationDto(ProductVariation variation) {
+    static ProductVariationDto toVariationDto(ProductVariation variation, FileStorageService fileStorageService) {
         Map<String, String> attributes = new HashMap<>();
         Map<String, Long> attributeIds = new HashMap<>();
         for (ProductVariationAttribute link : variation.getAttributeAssignments()) {
@@ -75,7 +75,7 @@ final class ProductDtoMapper {
             attributeIds.put(link.getAttribute().getSlug(), link.getAttributeValue().getId());
         }
 
-        String image = variation.getImage() == null ? null : "/uploads/" + variation.getImage();
+        String image = fileStorageService.publicUrl(variation.getImage());
 
         return new ProductVariationDto(
                 variation.getId(),

@@ -101,7 +101,8 @@ public class StoreSettingsServiceImpl implements StoreSettingsService {
 
     private StoreSettingsDto toDto(StoreSettings s) {
         return new StoreSettingsDto(
-                s.getId(), s.getStoreName(), s.getStoreDescription(), s.getStoreLogo(), s.getStoreFavicon(),
+                s.getId(), s.getStoreName(), s.getStoreDescription(),
+                fileStorageService.publicUrl(s.getStoreLogo()), fileStorageService.publicUrl(s.getStoreFavicon()),
                 s.getPrimaryColor(), s.getSecondaryColor(), s.getAccentColor(), s.getDarkColor(),
                 s.isShowHero(), s.getHeroAutoplaySpeed(), s.isShowCategories(), s.getCategoriesTitle(), s.getCategoriesLimit(),
                 s.isShowNewProducts(), s.getNewProductsTitle(), s.getNewProductsLimit(), s.getNewProductsDays(),

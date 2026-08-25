@@ -20,16 +20,18 @@ import java.util.NoSuchElementException;
 public class ProductQueryServiceImpl implements ProductQueryService {
 
     private final ProductRepository productRepository;
+    private final FileStorageService fileStorageService;
 
-    public ProductQueryServiceImpl(ProductRepository productRepository) {
+    public ProductQueryServiceImpl(ProductRepository productRepository, FileStorageService fileStorageService) {
         this.productRepository = productRepository;
+        this.fileStorageService = fileStorageService;
     }
 
     @Override
     @Transactional(readOnly = true)
     public Page<ProductDto> search(ProductSearchCriteria criteria, Pageable pageable) {
         Specification<Product> spec = buildSpecification(criteria);
-        return productRepository.findAll(spec, pageable).map(ProductDtoMapper::toDto);
+        return productRepository.findAll(spec, pageable).map(product -> ProductDtoMapper.toDto(product, fileStorageService));
     }
 
     @Override
@@ -37,7 +39,7 @@ public class ProductQueryServiceImpl implements ProductQueryService {
     public List<ProductDto> featured(int limit) {
         return productRepository.findByStoreIdAndIsFeaturedTrueAndActiveTrue(TenantContext.requireStoreId()).stream()
                 .limit(limit)
-                .map(ProductDtoMapper::toDto)
+                .map(product -> ProductDtoMapper.toDto(product, fileStorageService))
                 .toList();
     }
 
@@ -47,7 +49,7 @@ public class ProductQueryServiceImpl implements ProductQueryService {
         Product product = productRepository.findByStoreIdAndSlug(TenantContext.requireStoreId(), slug)
                 .filter(Product::isActive)
                 .orElseThrow(() -> new NoSuchElementException("Product " + slug + " not found"));
-        return ProductDtoMapper.toDto(product);
+        return ProductDtoMapper.toDto(product, fileStorageService);
     }
 
     @Override
@@ -65,7 +67,7 @@ public class ProductQueryServiceImpl implements ProductQueryService {
                 .filter(p -> !p.getId().equals(product.getId()))
                 .filter(this::isInStock)
                 .limit(limit)
-                .map(ProductDtoMapper::toDto)
+                .map(p -> ProductDtoMapper.toDto(p, fileStorageService))
                 .toList();
     }
 
@@ -75,13 +77,14 @@ public class ProductQueryServiceImpl implements ProductQueryService {
         Product product = productRepository.findById(id)
                 .filter(p -> p.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("Product " + id + " not found"));
-        return ProductDtoMapper.toDto(product);
+        return ProductDtoMapper.toDto(product, fileStorageService);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Page<ProductDto> searchAdmin(AdminProductSearchCriteria criteria, Pageable pageable) {
-        return productRepository.findAll(buildAdminSpecification(criteria), pageable).map(ProductDtoMapper::toDto);
+        return productRepository.findAll(buildAdminSpecification(criteria), pageable)
+                .map(product -> ProductDtoMapper.toDto(product, fileStorageService));
     }
 
     @Override
