@@ -1,6 +1,7 @@
 package org.uvo.uvostore.service.shipping;
 
 import java.util.List;
+import java.util.Map;
 
 // Ports Admin\Shipping\Methods\{Index,Create,Edit}.
 public interface AdminShippingMethodService {
@@ -10,4 +11,5 @@ public interface AdminShippingMethodService {
     ShippingMethodDto update(Long id, ShippingMethodCommand command);
     void delete(Long id);
     ShippingMethodDto toggleStatus(Long id);
+    ShippingMethodDto updateCredentials(Long id, Map<String, String> credentials);
 }

@@ -1,6 +1,7 @@
 package org.uvo.uvostore.entity.shipping;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -14,6 +15,7 @@ import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.AllArgsConstructor;
@@ -23,10 +25,10 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
-import org.hibernate.type.SqlTypes;
 import org.uvo.uvostore.entity.order.Order;
+import org.uvo.uvostore.entity.payment.EncryptedCredentialsConverter;
+import org.uvo.uvostore.entity.shipping.enums.ShippingCarrier;
 import org.uvo.uvostore.entity.shipping.enums.ShippingMethodType;
 import org.uvo.uvostore.entity.tenant.Store;
 
@@ -67,11 +69,20 @@ public class ShippingMethod {
     @Builder.Default
     private boolean hasApiIntegration = false;
 
-    // Treat as secret material — encrypt at the application/converter layer
-    // before persisting, do not log.
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "api_credentials", columnDefinition = "jsonb")
-    private Map<String, Object> apiCredentials;
+    // Which quote-only carrier integration this method talks to when hasApiIntegration=true — see
+    // service.shipping.carrier.ShippingCarrierQuoteDispatcher. Null for purely local/static
+    // methods (flat/weight/price-based rates from ShippingRate).
+    @Enumerated(EnumType.STRING)
+    @Column
+    private ShippingCarrier carrier;
+
+    // Encrypted at rest — same converter/shape as PaymentGatewayConfig.credentials. Shape depends
+    // on `carrier`: CHILEXPRESS: subscriptionKey, originCountyCode. CORREOS_CHILE: unset (stub,
+    // no real integration yet — see CorreosChileQuoteClient).
+    @Convert(converter = EncryptedCredentialsConverter.class)
+    @Column(name = "api_credentials", columnDefinition = "text")
+    @Builder.Default
+    private Map<String, String> apiCredentials = new HashMap<>();
 
     @Column(name = "min_delivery_days")
     private Integer minDeliveryDays;
