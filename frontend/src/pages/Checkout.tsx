@@ -42,12 +42,34 @@ export default function Checkout() {
     const result = await processCheckout()
     if (!result.success) return
 
+    if (result.webpayForm) {
+      submitWebpayForm(result.webpayForm.url, result.webpayForm.token)
+      return
+    }
+
     if (result.redirectUrl) {
+      // Full-page navigation to an external payment page (Stripe/MercadoPago), not a React-managed value.
+      // eslint-disable-next-line react-hooks/immutability
       window.location.href = result.redirectUrl
       return
     }
 
     navigate(`/order-success?order=${result.orderNumber}`)
+  }
+
+  // Webpay Plus's redirect isn't a simple GET like Stripe/MercadoPago — Transbank requires an
+  // actual browser form POST with a token_ws field (see WebpayCreateResult's backend comment).
+  function submitWebpayForm(url: string, token: string) {
+    const form = document.createElement('form')
+    form.method = 'POST'
+    form.action = url
+    const input = document.createElement('input')
+    input.type = 'hidden'
+    input.name = 'token_ws'
+    input.value = token
+    form.appendChild(input)
+    document.body.appendChild(form)
+    form.submit()
   }
 
   return (
@@ -171,6 +193,22 @@ export default function Checkout() {
                   <label className="flex items-center gap-2 text-sm">
                     <input type="radio" checked={paymentMethod === 'stripe'} onChange={() => setPaymentMethod('stripe')} />
                     Tarjeta (Stripe)
+                  </label>
+                )}
+                {config?.webpayEnabled && (
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="radio" checked={paymentMethod === 'webpay'} onChange={() => setPaymentMethod('webpay')} />
+                    Webpay
+                  </label>
+                )}
+                {config?.mercadopagoEnabled && (
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      checked={paymentMethod === 'mercadopago'}
+                      onChange={() => setPaymentMethod('mercadopago')}
+                    />
+                    MercadoPago
                   </label>
                 )}
                 <label className="flex items-center gap-2 text-sm">

@@ -5,6 +5,8 @@ import java.math.BigDecimal;
 public record CheckoutConfigDto(
         String stripePublicKey,
         boolean stripeEnabled,
+        boolean webpayEnabled,
+        boolean mercadopagoEnabled,
         boolean shippingEnabled,
         BigDecimal defaultShippingCost,
         boolean freeShippingEnabled,
