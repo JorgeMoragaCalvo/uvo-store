@@ -19,4 +19,13 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  {
+    // shadcn/ui-generated components: several export a *Variants cva() helper alongside the
+    // component itself (button.tsx, badge.tsx, tabs.tsx) — the standard, upstream shadcn pattern.
+    // Disabling this rule here (not project-wide) keeps fast-refresh strictness everywhere else.
+    files: ['src/components/ui/**/*.{ts,tsx}'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
 ])
