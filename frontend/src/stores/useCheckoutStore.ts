@@ -6,20 +6,27 @@ import type { CheckoutAddress, CheckoutConfig, CheckoutCustomer, CheckoutRequest
 const EMPTY_CUSTOMER: CheckoutCustomer = { email: '', firstName: '', lastName: '', phone: '' }
 const EMPTY_ADDRESS: CheckoutAddress = { addressLine1: '', addressLine2: '', city: '', state: '', postalCode: '', country: 'CL' }
 
+export type PaymentMethod = 'manual' | 'stripe' | 'webpay' | 'mercadopago'
+
 interface CheckoutState {
   config: CheckoutConfig | null
   customer: CheckoutCustomer
   shippingAddress: CheckoutAddress
-  paymentMethod: 'manual' | 'stripe'
+  paymentMethod: PaymentMethod
   customerNotes: string
   loading: boolean
   error: string | null
   fetchConfig: () => Promise<void>
   setCustomer: (customer: Partial<CheckoutCustomer>) => void
   setShippingAddress: (address: Partial<CheckoutAddress>) => void
-  setPaymentMethod: (method: 'manual' | 'stripe') => void
+  setPaymentMethod: (method: PaymentMethod) => void
   setCustomerNotes: (notes: string) => void
-  processCheckout: () => Promise<{ success: boolean; redirectUrl?: string; orderNumber?: string }>
+  processCheckout: () => Promise<{
+    success: boolean
+    redirectUrl?: string
+    webpayForm?: { url: string; token: string }
+    orderNumber?: string
+  }>
   reset: () => void
 }
 
@@ -73,6 +80,27 @@ export const useCheckoutStore = create<CheckoutState>((set, get) => ({
         const session = await api.payment.createCheckoutSession(confirmation.orderId, successUrl, cancelUrl)
         set({ loading: false })
         return { success: true, redirectUrl: session.url }
+      }
+
+      if (paymentMethod === 'webpay') {
+        // No returnUrl override: the backend defaults it to its OWN host's /api/v1/webpay/return
+        // (WebpayController#defaultReturnUrl) — Transbank must redirect back to the API that can
+        // commit the transaction server-side, not to the frontend's origin, which is a different
+        // host in most deployments (as it already is here in dev).
+        const result = await api.webpay.create(confirmation.orderId)
+        set({ loading: false })
+        // Webpay Plus needs an actual form POST (token_ws field), not a GET redirect — see
+        // Checkout.tsx, which builds and submits the hidden form using this payload.
+        return { success: true, webpayForm: { url: result.url, token: result.token } }
+      }
+
+      if (paymentMethod === 'mercadopago') {
+        const successUrl = `${window.location.origin}/order-success?order=${confirmation.orderNumber}`
+        const failureUrl = `${window.location.origin}/checkout?error=mercadopago`
+        const pendingUrl = `${window.location.origin}/checkout?pending=1`
+        const preference = await api.mercadopago.createPreference(confirmation.orderId, successUrl, failureUrl, pendingUrl)
+        set({ loading: false })
+        return { success: true, redirectUrl: preference.initPoint }
       }
 
       cartState.clearCart()

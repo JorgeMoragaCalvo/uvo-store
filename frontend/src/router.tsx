@@ -21,6 +21,7 @@ import CategoriesList from './admin/pages/categories/CategoriesList'
 import CategoryForm from './admin/pages/categories/CategoryForm'
 import OrdersList from './admin/pages/orders/OrdersList'
 import OrderDetail from './admin/pages/orders/OrderDetail'
+import PaymentGateways from './admin/pages/payment-gateways/PaymentGateways'
 
 export const router = createBrowserRouter([
   {
@@ -59,6 +60,7 @@ export const router = createBrowserRouter([
       { path: 'categories/:id/edit', element: <CategoryForm /> },
       { path: 'orders', element: <OrdersList /> },
       { path: 'orders/:id', element: <OrderDetail /> },
+      { path: 'payment-gateways', element: <PaymentGateways /> },
     ],
   },
 ])

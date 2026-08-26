@@ -13,8 +13,11 @@ import org.uvo.uvostore.entity.order.OrderStatusHistory;
 import org.uvo.uvostore.entity.order.enums.FulfillmentStatus;
 import org.uvo.uvostore.entity.order.enums.OrderStatus;
 import org.uvo.uvostore.entity.order.enums.PaymentStatus;
+import org.uvo.uvostore.entity.payment.PaymentGatewayConfig;
+import org.uvo.uvostore.entity.payment.enums.PaymentGatewayType;
 import org.uvo.uvostore.entity.settings.Setting;
 import org.uvo.uvostore.repository.OrderRepository;
+import org.uvo.uvostore.repository.PaymentGatewayConfigRepository;
 import org.uvo.uvostore.repository.ProductRepository;
 import org.uvo.uvostore.repository.ProductVariationRepository;
 import org.uvo.uvostore.repository.SettingRepository;
@@ -44,6 +47,7 @@ public class CheckoutServiceImpl implements CheckoutService {
     private final ProductRepository productRepository;
     private final ProductVariationRepository variationRepository;
     private final SettingRepository settingRepository;
+    private final PaymentGatewayConfigRepository paymentGatewayConfigRepository;
     private final ApplicationEventPublisher applicationEventPublisher;
 
     public CheckoutServiceImpl(
@@ -54,6 +58,7 @@ public class CheckoutServiceImpl implements CheckoutService {
             ProductRepository productRepository,
             ProductVariationRepository variationRepository,
             SettingRepository settingRepository,
+            PaymentGatewayConfigRepository paymentGatewayConfigRepository,
             ApplicationEventPublisher applicationEventPublisher) {
         this.cartPricingService = cartPricingService;
         this.couponService = couponService;
@@ -62,6 +67,7 @@ public class CheckoutServiceImpl implements CheckoutService {
         this.productRepository = productRepository;
         this.variationRepository = variationRepository;
         this.settingRepository = settingRepository;
+        this.paymentGatewayConfigRepository = paymentGatewayConfigRepository;
         this.applicationEventPublisher = applicationEventPublisher;
     }
 
@@ -144,9 +150,14 @@ public class CheckoutServiceImpl implements CheckoutService {
     @Override
     @Transactional(readOnly = true)
     public CheckoutConfigDto getConfig() {
+        Long storeId = TenantContext.requireStoreId();
         return new CheckoutConfigDto(
                 stringSetting("stripe_public_key", ""),
                 boolSetting("stripe_enabled", false),
+                paymentGatewayConfigRepository.findByStoreIdAndGateway(storeId, PaymentGatewayType.WEBPAY)
+                        .map(PaymentGatewayConfig::isEnabled).orElse(false),
+                paymentGatewayConfigRepository.findByStoreIdAndGateway(storeId, PaymentGatewayType.MERCADOPAGO)
+                        .map(PaymentGatewayConfig::isEnabled).orElse(false),
                 boolSetting("shipping_enabled", true),
                 decimalSetting("default_shipping_cost", BigDecimal.ZERO),
                 boolSetting("free_shipping_enabled", false),

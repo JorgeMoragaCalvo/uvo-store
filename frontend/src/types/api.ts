@@ -172,7 +172,7 @@ export interface CheckoutRequestPayload {
   commune?: string
   items: CartItemInput[]
   couponCode?: string
-  paymentMethod: 'manual' | 'stripe'
+  paymentMethod: 'manual' | 'stripe' | 'webpay' | 'mercadopago'
   customerNotes?: string
 }
 
@@ -185,6 +185,8 @@ export interface OrderConfirmation {
 export interface CheckoutConfig {
   stripePublicKey: string | null
   stripeEnabled: boolean
+  webpayEnabled: boolean
+  mercadopagoEnabled: boolean
   shippingEnabled: boolean
   defaultShippingCost: number
   freeShippingEnabled: boolean
@@ -199,6 +201,16 @@ export interface CheckoutConfig {
 export interface CheckoutSessionResult {
   sessionId: string
   url: string
+}
+
+export interface WebpayCreateResult {
+  token: string
+  url: string
+}
+
+export interface MercadoPagoPreferenceResult {
+  preferenceId: string
+  initPoint: string
 }
 
 export interface PaymentVerificationResult {

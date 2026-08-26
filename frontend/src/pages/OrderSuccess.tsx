@@ -27,6 +27,15 @@ export default function OrderSuccess() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId])
 
+  // Webpay's server-side /webpay/return and MercadoPago's success backUrl both land here with
+  // ?order=... directly (no client-side verification call needed, unlike Stripe's session_id) —
+  // still need to clear the cart, which Stripe's branch above only does on its own path.
+  useEffect(() => {
+    if (!orderParam) return
+    clearCart()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderParam])
+
   if (status === 'loading') {
     return <p className="p-8 text-center text-secondary">Verificando tu pago...</p>
   }
