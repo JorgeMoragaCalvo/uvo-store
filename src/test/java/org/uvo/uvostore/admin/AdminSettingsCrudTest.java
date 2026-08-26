@@ -156,7 +156,10 @@ class AdminSettingsCrudTest extends IntegrationTestSupport {
                         .param("ctaNewTab", "false"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.title").value("Bienvenida"))
-                .andExpect(jsonPath("$.image").exists())
+                // Must be an absolute URL (scheme+host), not root-relative "/uploads/..." — a
+                // relative path resolves against the FRONTEND's origin in the browser, not this
+                // API's, and 404s/serves the SPA's HTML fallback instead of the image.
+                .andExpect(jsonPath("$.image", org.hamcrest.Matchers.startsWith("http://")))
                 .andReturn().getResponse().getContentAsString();
         long bannerId = objectMapper.readTree(createResponse).get("id").asLong();
 
