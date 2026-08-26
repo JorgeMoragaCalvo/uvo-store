@@ -8,9 +8,12 @@ import type {
   AdminOrderSummary,
   AdminProductStats,
   CategoryDto,
+  GeneralSettingsDto,
+  HomeBannerDto,
   PaymentGateway,
   PaymentGatewayConfigDto,
   ProductDto,
+  StoreSettingsDto,
 } from '@/admin/types/admin'
 
 const client = axios.create({
@@ -106,6 +109,26 @@ export const adminApi = {
     list: (): Promise<PaymentGatewayConfigDto[]> => client.get('/payment-gateways'),
     update: (gateway: PaymentGateway, enabled: boolean, credentials: Record<string, string>): Promise<PaymentGatewayConfigDto> =>
       client.put(`/payment-gateways/${gateway}`, { enabled, credentials }),
+  },
+  banners: {
+    list: (search?: string): Promise<HomeBannerDto[]> => client.get('/home/banners', { params: { search } }),
+    getById: (id: number): Promise<HomeBannerDto> => client.get(`/home/banners/${id}`),
+    create: (formData: FormData): Promise<HomeBannerDto> =>
+      client.post('/home/banners', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+    update: (id: number, formData: FormData): Promise<HomeBannerDto> =>
+      client.put(`/home/banners/${id}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+    delete: (id: number): Promise<void> => client.delete(`/home/banners/${id}`),
+    toggle: (id: number): Promise<HomeBannerDto> => client.post(`/home/banners/${id}/toggle`),
+    reorder: (orderedIds: number[]): Promise<void> => client.post('/home/banners/reorder', { orderedIds }),
+  },
+  generalSettings: {
+    get: (): Promise<GeneralSettingsDto> => client.get('/settings/general'),
+    update: (settings: GeneralSettingsDto): Promise<GeneralSettingsDto> => client.put('/settings/general', settings),
+  },
+  storeSettings: {
+    get: (): Promise<StoreSettingsDto> => client.get('/settings/store'),
+    update: (formData: FormData): Promise<StoreSettingsDto> =>
+      client.put('/settings/store', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
   },
 }
 

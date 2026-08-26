@@ -22,6 +22,10 @@ import CategoryForm from './admin/pages/categories/CategoryForm'
 import OrdersList from './admin/pages/orders/OrdersList'
 import OrderDetail from './admin/pages/orders/OrderDetail'
 import PaymentGateways from './admin/pages/payment-gateways/PaymentGateways'
+import BannersList from './admin/pages/banners/BannersList'
+import BannerForm from './admin/pages/banners/BannerForm'
+import GeneralSettings from './admin/pages/settings/GeneralSettings'
+import StoreSettingsPage from './admin/pages/settings/StoreSettingsPage'
 
 export const router = createBrowserRouter([
   {
@@ -61,6 +65,11 @@ export const router = createBrowserRouter([
       { path: 'orders', element: <OrdersList /> },
       { path: 'orders/:id', element: <OrderDetail /> },
       { path: 'payment-gateways', element: <PaymentGateways /> },
+      { path: 'banners', element: <BannersList /> },
+      { path: 'banners/new', element: <BannerForm /> },
+      { path: 'banners/:id/edit', element: <BannerForm /> },
+      { path: 'settings/general', element: <GeneralSettings /> },
+      { path: 'settings/store', element: <StoreSettingsPage /> },
     ],
   },
 ])

@@ -43,10 +43,7 @@ public class SettingsServiceImpl implements SettingsService {
     @Override
     @Transactional
     public GeneralSettingsDto updateGeneralSettings(GeneralSettingsDto command) {
-        Matcher matcher = API_KEY_PATTERN.matcher(command.posApiToken() == null ? "" : command.posApiToken().trim());
-        if (!matcher.matches()) {
-            throw new IllegalArgumentException("API key inválida");
-        }
+        String posToken = command.posApiToken() == null ? "" : command.posApiToken().trim();
 
         set("store_name", command.storeName());
         set("store_email", command.storeEmail());
@@ -77,21 +74,30 @@ public class SettingsServiceImpl implements SettingsService {
         set("instagram_url", command.instagramUrl());
         set("twitter_url", command.twitterUrl());
 
-        Store store = TenantContext.requireCurrent();
-        Long companyId = Long.valueOf(matcher.group(1));
-        PosConnection connection = posConnectionRepository.findByStoreId(store.getId()).orElseGet(PosConnection::new);
-        connection.setStore(store);
-        connection.setCompanyId(companyId);
-        connection.setApiKey(command.posApiToken());
-        connection.setWebhookSecret(command.posWebhookSecret());
-        connection.setActive(true);
-        if (connection.getCompanyName() == null) {
-            connection.setCompanyName("UvoPOS");
+        // POS integration is optional — only validate/upsert the connection when the admin
+        // actually supplied a token, so saving unrelated settings (colors, shipping, checkout
+        // options) never fails just because the store hasn't set up UvoPOS yet.
+        if (!posToken.isEmpty()) {
+            Matcher matcher = API_KEY_PATTERN.matcher(posToken);
+            if (!matcher.matches()) {
+                throw new IllegalArgumentException("API key inválida");
+            }
+            Store store = TenantContext.requireCurrent();
+            Long companyId = Long.valueOf(matcher.group(1));
+            PosConnection connection = posConnectionRepository.findByStoreId(store.getId()).orElseGet(PosConnection::new);
+            connection.setStore(store);
+            connection.setCompanyId(companyId);
+            connection.setApiKey(command.posApiToken());
+            connection.setWebhookSecret(command.posWebhookSecret());
+            connection.setActive(true);
+            if (connection.getCompanyName() == null) {
+                connection.setCompanyName("UvoPOS");
+            }
+            if (connection.getApiUrl() == null) {
+                connection.setApiUrl(command.posApiUrl() == null ? "" : command.posApiUrl());
+            }
+            posConnectionRepository.save(connection);
         }
-        if (connection.getApiUrl() == null) {
-            connection.setApiUrl(command.posApiUrl() == null ? "" : command.posApiUrl());
-        }
-        posConnectionRepository.save(connection);
 
         return getGeneralSettings();
     }

@@ -171,3 +171,107 @@ export interface PaymentGatewayConfigDto {
   enabled: boolean
   credentialsSet: Record<string, boolean>
 }
+
+export interface HomeBannerDto {
+  id: number
+  title: string | null
+  subtitle: string | null
+  description: string | null
+  image: string | null
+  mobileImage: string | null
+  ctaText: string | null
+  ctaLink: string | null
+  ctaNewTab: boolean
+  ctaSecondaryText: string | null
+  ctaSecondaryLink: string | null
+  textPosition: 'left' | 'center' | 'right'
+  textColor: 'light' | 'dark'
+  overlayColor: string | null
+  overlayOpacity: number
+  active: boolean
+  sortOrder: number
+}
+
+// Mirrors GeneralSettingsDto — general/currency/shipping/checkout/stripe/pos/seo/social settings,
+// stored as flat Setting rows keyed by store.
+export interface GeneralSettingsDto {
+  storeName: string
+  storeEmail: string
+  storePhone: string
+  adminEmail: string
+  currency: string
+  currencySymbol: string
+  taxRate: string
+  pricesIncludeTax: boolean
+  shippingEnabled: boolean
+  defaultShippingCost: string
+  freeShippingEnabled: boolean
+  freeShippingThreshold: string
+  allowGuestCheckout: boolean
+  requirePhone: boolean
+  requireCompany: boolean
+  stripePublicKey: string
+  stripeSecretKey: string
+  stripeEnabled: boolean
+  posApiUrl: string
+  posApiToken: string
+  posWebhookSecret: string
+  posSyncEnabled: boolean
+  metaTitle: string
+  metaDescription: string
+  metaKeywords: string
+  facebookUrl: string
+  instagramUrl: string
+  twitterUrl: string
+}
+
+// Mirrors StoreSettingsDto — branding (logo/colors) + home page section toggles.
+export interface StoreSettingsDto {
+  id: number | null
+  storeName: string
+  storeDescription: string | null
+  storeLogo: string | null
+  storeFavicon: string | null
+  primaryColor: string
+  secondaryColor: string
+  accentColor: string
+  darkColor: string
+  showHero: boolean
+  heroAutoplaySpeed: number
+  showCategories: boolean
+  categoriesTitle: string | null
+  categoriesLimit: number
+  showNewProducts: boolean
+  newProductsTitle: string | null
+  newProductsLimit: number
+  newProductsDays: number
+  showFeaturedProducts: boolean
+  featuredProductsTitle: string | null
+  featuredProductsLimit: number
+  showDeals: boolean
+  dealsTitle: string | null
+  dealsLimit: number
+  showBenefits: boolean
+  benefit1Icon: string | null
+  benefit1Title: string | null
+  benefit1Description: string | null
+  benefit2Icon: string | null
+  benefit2Title: string | null
+  benefit2Description: string | null
+  benefit3Icon: string | null
+  benefit3Title: string | null
+  benefit3Description: string | null
+  benefit4Icon: string | null
+  benefit4Title: string | null
+  benefit4Description: string | null
+  contactEmail: string | null
+  contactPhone: string | null
+  whatsappNumber: string | null
+  facebookUrl: string | null
+  instagramUrl: string | null
+  twitterUrl: string | null
+  tiktokUrl: string | null
+  metaTitle: string | null
+  metaDescription: string | null
+  metaKeywords: string | null
+}
