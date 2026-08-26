@@ -162,3 +162,12 @@ export interface AdminOrderStats {
   shipped: number
   cancelled: number
 }
+
+export type PaymentGateway = 'STRIPE' | 'WEBPAY' | 'MERCADOPAGO'
+
+export interface PaymentGatewayConfigDto {
+  id: number
+  gateway: PaymentGateway
+  enabled: boolean
+  credentialsSet: Record<string, boolean>
+}

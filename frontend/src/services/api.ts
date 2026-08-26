@@ -9,6 +9,7 @@ import type {
   CheckoutRequestPayload,
   CheckoutSessionResult,
   HomeBanner,
+  MercadoPagoPreferenceResult,
   OrderConfirmation,
   OrderTracking,
   Page,
@@ -16,6 +17,7 @@ import type {
   Product,
   ProductSearchParams,
   PublicStoreSettings,
+  WebpayCreateResult,
 } from '../types/api'
 
 const client = axios.create({
@@ -71,6 +73,19 @@ export const api = {
       cancelUrl: string,
     ): Promise<CheckoutSessionResult> => client.post('/create-checkout-session', { orderId, successUrl, cancelUrl }),
     verify: (sessionId: string): Promise<PaymentVerificationResult> => client.post('/verify-payment', { sessionId }),
+  },
+  webpay: {
+    create: (orderId: number, returnUrl?: string): Promise<WebpayCreateResult> =>
+      client.post('/webpay/create', { orderId, returnUrl }),
+  },
+  mercadopago: {
+    createPreference: (
+      orderId: number,
+      successUrl?: string,
+      failureUrl?: string,
+      pendingUrl?: string,
+    ): Promise<MercadoPagoPreferenceResult> =>
+      client.post('/mercadopago/create-preference', { orderId, successUrl, failureUrl, pendingUrl }),
   },
   storeSettings: {
     get: (): Promise<PublicStoreSettings> => client.get('/store-settings'),

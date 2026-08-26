@@ -5,6 +5,7 @@ import jakarta.persistence.PersistenceContext;
 import org.junit.jupiter.api.Test;
 import org.uvo.uvostore.entity.catalog.Category;
 import org.uvo.uvostore.entity.catalog.Product;
+import org.uvo.uvostore.entity.security.User;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.support.IntegrationTestSupport;
 
@@ -116,6 +117,30 @@ class PaymentGatewayTest extends IntegrationTestSupport {
                 .getSingleResult();
 
         assertFalse(rawCredentials.contains(secret), "credentials column must not contain the plaintext secret: " + rawCredentials);
+    }
+
+    @Test
+    void checkoutConfigReflectsWhetherWebpayAndMercadoPagoAreEnabledForTheStore() throws Exception {
+        Store store = createStore("checkout-config-flags");
+        User admin = createAdmin(store, "checkout-config-flags");
+        String token = loginAdmin(store, admin);
+
+        mockMvc.perform(get("/api/v1/checkout/config").header("Host", hostHeader(store)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.webpayEnabled").value(false))
+                .andExpect(jsonPath("$.mercadopagoEnabled").value(false));
+
+        mockMvc.perform(put("/api/admin/payment-gateways/WEBPAY")
+                        .header("Host", hostHeader(store))
+                        .header("Authorization", "Bearer " + token)
+                        .contentType("application/json")
+                        .content("{\"enabled\":true,\"credentials\":{\"childCommerceCode\":\"597012345678\"}}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/checkout/config").header("Host", hostHeader(store)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.webpayEnabled").value(true))
+                .andExpect(jsonPath("$.mercadopagoEnabled").value(false));
     }
 
     @Test

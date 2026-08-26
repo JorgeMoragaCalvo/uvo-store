@@ -8,6 +8,8 @@ import type {
   AdminOrderSummary,
   AdminProductStats,
   CategoryDto,
+  PaymentGateway,
+  PaymentGatewayConfigDto,
   ProductDto,
 } from '@/admin/types/admin'
 
@@ -99,6 +101,11 @@ export const adminApi = {
       client.put(`/orders/${id}/payment-status`, { status }),
     saveTracking: (id: number, trackingNumber: string): Promise<AdminOrderDetail> =>
       client.post(`/orders/${id}/tracking`, { trackingNumber }),
+  },
+  paymentGateways: {
+    list: (): Promise<PaymentGatewayConfigDto[]> => client.get('/payment-gateways'),
+    update: (gateway: PaymentGateway, enabled: boolean, credentials: Record<string, string>): Promise<PaymentGatewayConfigDto> =>
+      client.put(`/payment-gateways/${gateway}`, { enabled, credentials }),
   },
 }
 
