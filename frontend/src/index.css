@@ -27,8 +27,11 @@
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
+  /* Bumped from shadcn's default oklch(0.922 0 0) — on a white admin background that pale a
+     border/input outline was nearly invisible until focused (real usability bug, not a
+     stylistic nitpick: users couldn't see where to click to type or find button edges). */
+  --border: oklch(0.75 0 0);
+  --input: oklch(0.75 0 0);
   --ring: oklch(0.708 0 0);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
@@ -42,7 +45,7 @@
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.97 0 0);
   --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-border: oklch(0.75 0 0);
   --sidebar-ring: oklch(0.708 0 0);
 }
 

@@ -1,8 +1,11 @@
 package org.uvo.uvostore.service.catalog;
 
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -61,8 +64,30 @@ public class LocalFileStorageService implements FileStorageService {
         }
     }
 
+    // Must be an ABSOLUTE URL, not root-relative: the frontend and this API are on different
+    // origins (e.g. the Vite dev server vs. demo.localhost:8080, or a static-hosted SPA vs. its
+    // API domain in production). A root-relative "/uploads/..." resolves against whatever origin
+    // the browser page is on — the frontend's — which doesn't serve that path; the browser gets
+    // that dev server's SPA-fallback HTML back instead of image bytes and shows a broken image.
+    // Built from the CURRENT request's own scheme/host (same pattern as WebpayController's
+    // defaultReturnUrl()) rather than a fixed config property, since this app is multi-tenant via
+    // subdomain — a static base URL would strand every store but one.
     @Override
     public String publicUrl(String path) {
-        return path == null ? null : "/uploads/" + path;
+        if (path == null) return null;
+        HttpServletRequest request = currentRequest();
+        if (request == null) {
+            return "/uploads/" + path;
+        }
+        String port = request.getServerPort() == 80 || request.getServerPort() == 443
+                ? "" : ":" + request.getServerPort();
+        return request.getScheme() + "://" + request.getServerName() + port + "/uploads/" + path;
+    }
+
+    private HttpServletRequest currentRequest() {
+        if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes) {
+            return attributes.getRequest();
+        }
+        return null;
     }
 }
