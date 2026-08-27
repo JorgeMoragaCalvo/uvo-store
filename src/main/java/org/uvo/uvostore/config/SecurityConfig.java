@@ -13,6 +13,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.uvo.uvostore.security.JwtAuthenticationFilter;
+import org.uvo.uvostore.security.PlatformApiKeyAuthFilter;
 import org.uvo.uvostore.security.PosApiKeyAuthFilter;
 import org.uvo.uvostore.security.PosWebhookAuthFilter;
 import org.uvo.uvostore.security.TenantResolutionFilter;
@@ -29,6 +30,7 @@ public class SecurityConfig {
             "/api/customer/auth/**",
             "/api/webhooks/pos/**",
             "/api/sync/**",
+            "/api/platform/**",
             "/uploads/**",
             "/health",
             "/v3/api-docs/**",
@@ -47,7 +49,8 @@ public class SecurityConfig {
             TenantResolutionFilter tenantResolutionFilter,
             JwtAuthenticationFilter jwtAuthenticationFilter,
             PosWebhookAuthFilter posWebhookAuthFilter,
-            PosApiKeyAuthFilter posApiKeyAuthFilter) throws Exception {
+            PosApiKeyAuthFilter posApiKeyAuthFilter,
+            PlatformApiKeyAuthFilter platformApiKeyAuthFilter) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
@@ -71,7 +74,8 @@ public class SecurityConfig {
                 // TenantContext is populated in time for the token/subdomain cross-check.
                 .addFilterBefore(tenantResolutionFilter, JwtAuthenticationFilter.class)
                 .addFilterBefore(posWebhookAuthFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterBefore(posApiKeyAuthFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(posApiKeyAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(platformApiKeyAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }

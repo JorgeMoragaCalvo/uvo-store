@@ -18,7 +18,9 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 // The tenant root — every other tenant-scoped table carries a store_id FK to this table
 // (Fase 0 of the multi-tenant retrofit, see docs/plan). slug doubles as the subdomain used by
-// TenantResolutionFilter to identify which store a storefront request belongs to.
+// TenantResolutionFilter to identify which store a storefront request belongs to; domain is the
+// client's own custom domain (optional — resolved ahead of slug when present, see
+// TenantResolutionFilter). slug-based access keeps working regardless, as an internal fallback.
 @Entity
 @Table(name = "stores")
 @Getter
@@ -39,6 +41,9 @@ public class Store {
 
     @Column(nullable = false, unique = true)
     private String slug;
+
+    @Column(unique = true)
+    private String domain;
 
     @Column(name = "owner_user_id")
     private Long ownerUserId;
