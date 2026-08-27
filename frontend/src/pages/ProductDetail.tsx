@@ -131,7 +131,7 @@ export default function ProductDetail() {
                   key={url}
                   type="button"
                   onClick={() => setActiveImage(url)}
-                  className={`h-16 w-16 overflow-hidden rounded border ${activeImage === url ? 'border-primary' : 'border-gray-200'}`}
+                  className={`h-16 w-16 overflow-hidden rounded border ${activeImage === url ? 'border-primary' : 'border-gray-400'}`}
                 >
                   <img src={url} alt="" className="h-full w-full object-cover" />
                 </button>

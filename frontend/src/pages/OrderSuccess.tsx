@@ -65,7 +65,7 @@ export default function OrderSuccess() {
       </div>
 
       <div className="flex justify-center gap-3">
-        <Link to="/" className="rounded border border-gray-200 px-4 py-2 text-sm font-medium text-dark">Volver al inicio</Link>
+        <Link to="/" className="rounded border border-gray-400 px-4 py-2 text-sm font-medium text-dark">Volver al inicio</Link>
         <Link to="/shop" className="rounded bg-primary px-4 py-2 text-sm font-medium text-white">Seguir comprando</Link>
       </div>
     </div>
