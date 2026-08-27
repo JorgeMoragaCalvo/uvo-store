@@ -64,7 +64,7 @@ export default function Cart() {
           <Link to="/checkout" className="rounded bg-primary px-4 py-2.5 text-center text-sm font-medium text-white">
             Finalizar Compra
           </Link>
-          <Link to="/shop" className="rounded border border-gray-200 px-4 py-2.5 text-center text-sm font-medium text-dark">
+          <Link to="/shop" className="rounded border border-gray-400 px-4 py-2.5 text-center text-sm font-medium text-dark">
             Seguir Comprando
           </Link>
         </div>

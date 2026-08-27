@@ -54,7 +54,7 @@ export default function TrackOrder() {
           value={orderNumber}
           onChange={(event) => setOrderNumber(event.target.value)}
           placeholder="ej: ORD-AAXFD5GP"
-          className="flex-1 rounded border border-gray-200 px-3 py-2 text-sm"
+          className="flex-1 rounded border border-gray-400 px-3 py-2 text-sm"
         />
         <button
           type="submit"
@@ -68,7 +68,7 @@ export default function TrackOrder() {
       {error && <p className="rounded bg-red-50 p-3 text-sm text-red-700">{error}</p>}
 
       {result && (
-        <div className="rounded-lg border border-gray-200 p-5">
+        <div className="rounded-lg border border-gray-400 p-5">
           <div className="mb-4 flex items-center justify-between">
             <span className="font-semibold text-dark">{result.orderNumber}</span>
             <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">

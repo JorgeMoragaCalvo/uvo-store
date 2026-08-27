@@ -57,7 +57,7 @@ export default function Header() {
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Buscar productos..."
-            className="hidden w-56 rounded-full border border-gray-200 px-4 py-1.5 text-sm outline-none focus:border-primary sm:block"
+            className="hidden w-56 rounded-full border border-gray-400 px-4 py-1.5 text-sm outline-none focus:border-primary sm:block"
           />
 
           <span className="cursor-not-allowed text-secondary" title="Cuenta (próximamente)" aria-disabled>

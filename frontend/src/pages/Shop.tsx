@@ -78,7 +78,7 @@ export default function Shop() {
               defaultValue={searchTerm}
               onBlur={(event) => updateParam('search', event.target.value || null)}
               placeholder="Buscar productos..."
-              className="w-full rounded border border-gray-200 px-3 py-1.5 text-sm"
+              className="w-full rounded border border-gray-400 px-3 py-1.5 text-sm"
             />
           </div>
 
@@ -108,7 +108,7 @@ export default function Shop() {
                 defaultValue={minPrice}
                 onBlur={(event) => updateParam('min_price', event.target.value || null)}
                 placeholder="Mín"
-                className="w-full rounded border border-gray-200 px-2 py-1.5 text-sm"
+                className="w-full rounded border border-gray-400 px-2 py-1.5 text-sm"
               />
               <span className="text-secondary">-</span>
               <input
@@ -116,7 +116,7 @@ export default function Shop() {
                 defaultValue={maxPrice}
                 onBlur={(event) => updateParam('max_price', event.target.value || null)}
                 placeholder="Máx"
-                className="w-full rounded border border-gray-200 px-2 py-1.5 text-sm"
+                className="w-full rounded border border-gray-400 px-2 py-1.5 text-sm"
               />
             </div>
           </div>
@@ -126,7 +126,7 @@ export default function Shop() {
             <select
               value={type}
               onChange={(event) => updateParam('type', event.target.value || null)}
-              className="w-full rounded border border-gray-200 px-2 py-1.5 text-sm"
+              className="w-full rounded border border-gray-400 px-2 py-1.5 text-sm"
             >
               <option value="">Todos</option>
               <option value="SIMPLE">Simple</option>
@@ -169,7 +169,7 @@ export default function Shop() {
                 next.delete('page')
                 setSearchParams(next)
               }}
-              className="rounded border border-gray-200 px-2 py-1.5 text-sm"
+              className="rounded border border-gray-400 px-2 py-1.5 text-sm"
             >
               {SORT_OPTIONS.map((option) => (
                 <option key={option.label} value={`${option.sortBy}:${option.sortOrder}`}>
@@ -202,7 +202,7 @@ export default function Shop() {
                     next.set('page', String(p))
                     setSearchParams(next)
                   }}
-                  className={`h-8 w-8 rounded text-sm ${p === page ? 'bg-primary text-white' : 'border border-gray-200 text-dark'}`}
+                  className={`h-8 w-8 rounded text-sm ${p === page ? 'bg-primary text-white' : 'border border-gray-400 text-dark'}`}
                 >
                   {p}
                 </button>

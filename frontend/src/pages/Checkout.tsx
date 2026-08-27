@@ -101,27 +101,27 @@ export default function Checkout() {
               placeholder="Email"
               value={customer.email}
               onChange={(e) => setCustomer({ email: e.target.value })}
-              className="w-full rounded border border-gray-200 px-3 py-2 text-sm"
+              className="w-full rounded border border-gray-400 px-3 py-2 text-sm"
             />
             <div className="grid grid-cols-2 gap-3">
               <input
                 placeholder="Nombre"
                 value={customer.firstName}
                 onChange={(e) => setCustomer({ firstName: e.target.value })}
-                className="rounded border border-gray-200 px-3 py-2 text-sm"
+                className="rounded border border-gray-400 px-3 py-2 text-sm"
               />
               <input
                 placeholder="Apellido"
                 value={customer.lastName}
                 onChange={(e) => setCustomer({ lastName: e.target.value })}
-                className="rounded border border-gray-200 px-3 py-2 text-sm"
+                className="rounded border border-gray-400 px-3 py-2 text-sm"
               />
             </div>
             <input
               placeholder="Teléfono"
               value={customer.phone}
               onChange={(e) => setCustomer({ phone: e.target.value })}
-              className="w-full rounded border border-gray-200 px-3 py-2 text-sm"
+              className="w-full rounded border border-gray-400 px-3 py-2 text-sm"
             />
             <button
               type="button"
@@ -140,36 +140,36 @@ export default function Checkout() {
               placeholder="Dirección"
               value={shippingAddress.addressLine1}
               onChange={(e) => setShippingAddress({ addressLine1: e.target.value })}
-              className="w-full rounded border border-gray-200 px-3 py-2 text-sm"
+              className="w-full rounded border border-gray-400 px-3 py-2 text-sm"
             />
             <input
               placeholder="Depto / referencia (opcional)"
               value={shippingAddress.addressLine2 ?? ''}
               onChange={(e) => setShippingAddress({ addressLine2: e.target.value })}
-              className="w-full rounded border border-gray-200 px-3 py-2 text-sm"
+              className="w-full rounded border border-gray-400 px-3 py-2 text-sm"
             />
             <div className="grid grid-cols-2 gap-3">
               <input
                 placeholder="Ciudad"
                 value={shippingAddress.city}
                 onChange={(e) => setShippingAddress({ city: e.target.value })}
-                className="rounded border border-gray-200 px-3 py-2 text-sm"
+                className="rounded border border-gray-400 px-3 py-2 text-sm"
               />
               <input
                 placeholder="Región"
                 value={shippingAddress.state}
                 onChange={(e) => setShippingAddress({ state: e.target.value })}
-                className="rounded border border-gray-200 px-3 py-2 text-sm"
+                className="rounded border border-gray-400 px-3 py-2 text-sm"
               />
             </div>
             <input
               placeholder="Código postal"
               value={shippingAddress.postalCode}
               onChange={(e) => setShippingAddress({ postalCode: e.target.value })}
-              className="w-full rounded border border-gray-200 px-3 py-2 text-sm"
+              className="w-full rounded border border-gray-400 px-3 py-2 text-sm"
             />
             <div className="flex gap-2">
-              <button type="button" onClick={() => setStep(0)} className="rounded border border-gray-200 px-4 py-2 text-sm">
+              <button type="button" onClick={() => setStep(0)} className="rounded border border-gray-400 px-4 py-2 text-sm">
                 Atrás
               </button>
               <button
@@ -222,12 +222,12 @@ export default function Checkout() {
               placeholder="Notas del pedido (opcional)"
               value={customerNotes}
               onChange={(e) => setCustomerNotes(e.target.value)}
-              className="w-full rounded border border-gray-200 px-3 py-2 text-sm"
+              className="w-full rounded border border-gray-400 px-3 py-2 text-sm"
               rows={3}
             />
 
             <div className="flex gap-2">
-              <button type="button" onClick={() => setStep(1)} className="rounded border border-gray-200 px-4 py-2 text-sm">
+              <button type="button" onClick={() => setStep(1)} className="rounded border border-gray-400 px-4 py-2 text-sm">
                 Atrás
               </button>
               <button

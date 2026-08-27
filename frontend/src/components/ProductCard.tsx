@@ -14,7 +14,7 @@ export default function ProductCard({ product }: { product: Product }) {
   }
 
   return (
-    <div className="group relative flex flex-col overflow-hidden rounded-lg border border-gray-200 bg-white">
+    <div className="group relative flex flex-col overflow-hidden rounded-lg border border-gray-400 bg-white">
       <Link to={`/product/${product.slug}`} className="relative block aspect-square overflow-hidden bg-gray-100">
         {product.featuredImage && (
           <img
