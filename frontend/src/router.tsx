@@ -26,6 +26,7 @@ import BannersList from './admin/pages/banners/BannersList'
 import BannerForm from './admin/pages/banners/BannerForm'
 import GeneralSettings from './admin/pages/settings/GeneralSettings'
 import StoreSettingsPage from './admin/pages/settings/StoreSettingsPage'
+import NewStore from './platform/pages/NewStore'
 
 export const router = createBrowserRouter([
   {
@@ -47,6 +48,7 @@ export const router = createBrowserRouter([
     ],
   },
   { path: '/admin/login', element: <AdminLogin /> },
+  { path: '/plataforma/nueva-tienda', element: <NewStore /> },
   {
     path: '/admin',
     element: (

@@ -9,4 +9,7 @@ import java.util.Optional;
 @Repository
 public interface StoreRepository extends JpaRepository<Store, Long> {
     Optional<Store> findBySlug(String slug);
+    Optional<Store> findByDomain(String domain);
+    boolean existsBySlug(String slug);
+    boolean existsByDomain(String domain);
 }
