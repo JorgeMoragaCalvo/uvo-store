@@ -77,6 +77,12 @@ public class Customer {
     @Column(name = "invitation_sent_at")
     private Instant invitationSentAt;
 
+    @Column(name = "password_reset_token", unique = true)
+    private String passwordResetToken;
+
+    @Column(name = "password_reset_expires_at")
+    private Instant passwordResetExpiresAt;
+
     @OneToMany(mappedBy = "customer")
     @Builder.Default
     private List<Order> orders = new ArrayList<>();

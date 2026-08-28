@@ -17,7 +17,7 @@ import type {
 } from '@/admin/types/admin'
 
 const client = axios.create({
-  baseURL: import.meta.env.VITE_ADMIN_API_URL,
+  baseURL: `${window.location.origin}/api/admin`,
   headers: { Accept: 'application/json' },
 })
 
@@ -67,6 +67,9 @@ export const adminApi = {
   auth: {
     login: (email: string, password: string): Promise<AdminLoginResponse> =>
       client.post('/auth/login', { email, password }),
+    forgotPassword: (email: string): Promise<void> => client.post('/auth/forgot-password', { email }),
+    resetPassword: (token: string, password: string): Promise<void> =>
+      client.post('/auth/reset-password', { token, password }),
   },
   products: {
     list: (params: ProductListParams): Promise<Page<ProductDto>> => client.get('/products', { params }),

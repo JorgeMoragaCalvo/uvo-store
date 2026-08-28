@@ -19,7 +19,7 @@ export interface StoreOnboardingResponse {
 }
 
 const client = axios.create({
-  baseURL: import.meta.env.VITE_PLATFORM_API_URL,
+  baseURL: `${window.location.origin}/api/platform`,
   headers: { Accept: 'application/json' },
 })
 

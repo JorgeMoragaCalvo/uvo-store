@@ -14,6 +14,8 @@ import ReturnsPolicy from './pages/legal/ReturnsPolicy'
 import AdminLayout from './admin/layouts/AdminLayout'
 import RequireAdminAuth from './admin/components/RequireAdminAuth'
 import AdminLogin from './admin/pages/Login'
+import AdminForgotPassword from './admin/pages/ForgotPassword'
+import AdminResetPassword from './admin/pages/ResetPassword'
 import AdminDashboard from './admin/pages/Dashboard'
 import ProductsList from './admin/pages/products/ProductsList'
 import ProductForm from './admin/pages/products/ProductForm'
@@ -48,6 +50,8 @@ export const router = createBrowserRouter([
     ],
   },
   { path: '/admin/login', element: <AdminLogin /> },
+  { path: '/admin/forgot-password', element: <AdminForgotPassword /> },
+  { path: '/admin/reset-password', element: <AdminResetPassword /> },
   { path: '/plataforma/nueva-tienda', element: <NewStore /> },
   {
     path: '/admin',

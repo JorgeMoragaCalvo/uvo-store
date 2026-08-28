@@ -20,8 +20,13 @@ import type {
   WebpayCreateResult,
 } from '../types/api'
 
+// Resolved at RUNTIME from the page's own origin, not baked into the build — this SPA is one
+// shared bundle serving every tenant (subdomain or custom domain), and the backend resolves the
+// store from that same Host (see TenantResolutionFilter). In dev, Vite's own proxy (vite.config.ts)
+// forwards /api/* to VITE_DEV_PROXY_TARGET so this still resolves to a real backend without a
+// same-origin production reverse proxy.
 const client = axios.create({
-  baseURL: import.meta.env.VITE_API_URL,
+  baseURL: `${window.location.origin}/api/v1`,
   headers: {
     'Content-Type': 'application/json',
     Accept: 'application/json',
