@@ -97,6 +97,90 @@ export interface AddressDto {
   phone: string | null
 }
 
+export interface SalesSummaryDto {
+  totalOrders: number
+  totalRevenue: number
+  totalItems: number
+  averageOrderValue: number
+  paidOrders: number
+  pendingOrders: number
+  failedOrders: number
+}
+
+export interface SalesByDayDto {
+  date: string
+  ordersCount: number
+  revenue: number
+  paidOrders: number
+}
+
+export interface TopProductDto {
+  id: number
+  name: string
+  totalQuantity: number
+  totalRevenue: number
+  ordersCount: number
+}
+
+export interface PaymentMethodRevenueDto {
+  paymentMethod: string
+  ordersCount: number
+  totalRevenue: number
+}
+
+export interface ProductsSummaryDto {
+  totalRevenue: number
+  totalQuantity: number
+  uniqueProducts: number
+  averagePrice: number
+}
+
+export interface ProductReportRowDto {
+  id: number
+  name: string
+  sku: string
+  currentPrice: number
+  stock: number
+  categoryName: string | null
+  totalQuantity: number
+  totalRevenue: number
+  totalOrders: number
+  averagePrice: number
+}
+
+export interface CategoryRevenueDto {
+  id: number
+  name: string
+  productsCount: number
+  totalQuantity: number
+  totalRevenue: number
+}
+
+export interface PaymentMethodsSummaryDto {
+  totalOrders: number
+  totalRevenue: number
+  totalPaid: number
+  totalPending: number
+  totalFailed: number
+}
+
+export interface PaymentMethodDetailDto {
+  paymentMethod: string
+  ordersCount: number
+  totalRevenue: number
+  paidOrders: number
+  pendingOrders: number
+  failedOrders: number
+  averageOrderValue: number
+  successRate: number
+}
+
+export interface PaymentStatusDistributionDto {
+  paymentStatus: string
+  count: number
+  totalAmount: number
+}
+
 export type ShippingRateType = 'FLAT' | 'WEIGHT_BASED' | 'PRICE_BASED' | 'FREE'
 export type ShippingMethodKind = 'COURIER' | 'PICKUP' | 'CUSTOM'
 export type ShippingCarrier = 'CHILEXPRESS' | 'CORREOS_CHILE'

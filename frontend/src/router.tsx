@@ -38,6 +38,7 @@ import MethodsList from './admin/pages/shipping/MethodsList'
 import MethodForm from './admin/pages/shipping/MethodForm'
 import RatesList from './admin/pages/shipping/RatesList'
 import RateForm from './admin/pages/shipping/RateForm'
+import Reports from './admin/pages/reports/Reports'
 import BannersList from './admin/pages/banners/BannersList'
 import BannerForm from './admin/pages/banners/BannerForm'
 import GeneralSettings from './admin/pages/settings/GeneralSettings'
@@ -104,6 +105,7 @@ export const router = createBrowserRouter([
       { path: 'shipping/rates', element: <RatesList /> },
       { path: 'shipping/rates/new', element: <RateForm /> },
       { path: 'shipping/rates/:id/edit', element: <RateForm /> },
+      { path: 'reports', element: <Reports /> },
       { path: 'payment-gateways', element: <PaymentGateways /> },
       { path: 'banners', element: <BannersList /> },
       { path: 'banners/new', element: <BannerForm /> },

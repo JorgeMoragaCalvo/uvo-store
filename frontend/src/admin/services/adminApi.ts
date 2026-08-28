@@ -12,16 +12,25 @@ import type {
   AdminProductStats,
   AdminUserDto,
   CategoryDto,
+  CategoryRevenueDto,
   CouponDto,
   CouponRequest,
   GeneralSettingsDto,
   HomeBannerDto,
   PaymentGateway,
   PaymentGatewayConfigDto,
+  PaymentMethodDetailDto,
+  PaymentMethodRevenueDto,
+  PaymentMethodsSummaryDto,
+  PaymentStatusDistributionDto,
   PermissionDto,
   ProductDto,
+  ProductReportRowDto,
+  ProductsSummaryDto,
   RoleDto,
   RoleRequest,
+  SalesByDayDto,
+  SalesSummaryDto,
   ShippingAddressDto,
   ShippingMethodDto,
   ShippingMethodRequest,
@@ -30,6 +39,7 @@ import type {
   ShippingZoneDto,
   ShippingZoneRequest,
   StoreSettingsDto,
+  TopProductDto,
 } from '@/admin/types/admin'
 
 const client = axios.create({
@@ -67,6 +77,19 @@ export interface ProductListParams {
   sortField?: string
   sortDirection?: 'asc' | 'desc'
   perPage?: number
+  page?: number
+}
+
+export interface ReportDateRangeParams {
+  startDate?: string
+  endDate?: string
+}
+
+export interface ProductsReportListParams extends ReportDateRangeParams {
+  categoryId?: number
+  search?: string
+  sortBy?: string
+  sortDirection?: 'asc' | 'desc'
   page?: number
 }
 
@@ -135,6 +158,34 @@ export const adminApi = {
       client.put(`/categories/${id}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
     delete: (id: number): Promise<void> => client.delete(`/categories/${id}`),
     removeImage: (id: number): Promise<CategoryDto> => client.delete(`/categories/${id}/image`),
+  },
+  reports: {
+    sales: {
+      summary: (params: ReportDateRangeParams & { paymentStatus?: string }): Promise<SalesSummaryDto> =>
+        client.get('/reports/sales/summary', { params }),
+      byDay: (params: ReportDateRangeParams): Promise<SalesByDayDto[]> => client.get('/reports/sales/by-day', { params }),
+      topProducts: (params: ReportDateRangeParams): Promise<TopProductDto[]> => client.get('/reports/sales/top-products', { params }),
+      byPaymentMethod: (params: ReportDateRangeParams): Promise<PaymentMethodRevenueDto[]> =>
+        client.get('/reports/sales/by-payment-method', { params }),
+    },
+    products: {
+      summary: (params: ReportDateRangeParams & { categoryId?: number; search?: string }): Promise<ProductsSummaryDto> =>
+        client.get('/reports/products/summary', { params }),
+      list: (params: ProductsReportListParams): Promise<Page<ProductReportRowDto>> => client.get('/reports/products', { params }),
+      topByRevenue: (params: ReportDateRangeParams): Promise<ProductReportRowDto[]> =>
+        client.get('/reports/products/top-by-revenue', { params }),
+      topByQuantity: (params: ReportDateRangeParams): Promise<ProductReportRowDto[]> =>
+        client.get('/reports/products/top-by-quantity', { params }),
+      byCategory: (params: ReportDateRangeParams): Promise<CategoryRevenueDto[]> => client.get('/reports/products/by-category', { params }),
+    },
+    paymentMethods: {
+      summary: (params: ReportDateRangeParams & { paymentStatus?: string }): Promise<PaymentMethodsSummaryDto> =>
+        client.get('/reports/payment-methods/summary', { params }),
+      list: (params: ReportDateRangeParams): Promise<PaymentMethodDetailDto[]> => client.get('/reports/payment-methods', { params }),
+      statusDistribution: (params: ReportDateRangeParams): Promise<PaymentStatusDistributionDto[]> =>
+        client.get('/reports/payment-methods/status-distribution', { params }),
+    },
+    exportCsv: (path: string, params: object): Promise<Blob> => client.get(path, { params, responseType: 'blob' }),
   },
   shippingZones: {
     list: (search?: string): Promise<ShippingZoneDto[]> => client.get('/shipping/zones', { params: { search } }),

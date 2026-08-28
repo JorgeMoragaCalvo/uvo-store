@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
   Banknote,
+  BarChart3,
   CreditCard,
   Image,
   LayoutDashboard,
@@ -35,6 +36,7 @@ const NAV_ITEMS = [
   { to: '/admin/shipping/zones', label: 'Zonas de envío', icon: Map },
   { to: '/admin/shipping/methods', label: 'Métodos de envío', icon: Truck },
   { to: '/admin/shipping/rates', label: 'Tarifas de envío', icon: Banknote },
+  { to: '/admin/reports', label: 'Reportes', icon: BarChart3 },
   { to: '/admin/payment-gateways', label: 'Pasarelas de pago', icon: CreditCard },
   { to: '/admin/banners', label: 'Banners', icon: Image },
   { to: '/admin/settings/store', label: 'Config. de tienda', icon: Settings },
