@@ -2,6 +2,9 @@ import axios from 'axios'
 import type { Page } from '@/types/api'
 import { useAdminAuthStore } from '@/admin/stores/useAdminAuthStore'
 import type {
+  AdminCustomerDetailDto,
+  AdminCustomerStatsDto,
+  AdminCustomerSummaryDto,
   AdminLoginResponse,
   AdminOrderDetail,
   AdminOrderStats,
@@ -15,6 +18,7 @@ import type {
   PaymentGateway,
   PaymentGatewayConfigDto,
   ProductDto,
+  ShippingAddressDto,
   StoreSettingsDto,
 } from '@/admin/types/admin'
 
@@ -53,6 +57,13 @@ export interface ProductListParams {
   sortField?: string
   sortDirection?: 'asc' | 'desc'
   perPage?: number
+  page?: number
+}
+
+export interface CustomerListParams {
+  search?: string
+  sortField?: string
+  sortDirection?: 'asc' | 'desc'
   page?: number
 }
 
@@ -100,6 +111,18 @@ export const adminApi = {
       client.put(`/categories/${id}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
     delete: (id: number): Promise<void> => client.delete(`/categories/${id}`),
     removeImage: (id: number): Promise<CategoryDto> => client.delete(`/categories/${id}/image`),
+  },
+  customers: {
+    list: (params: CustomerListParams): Promise<Page<AdminCustomerSummaryDto>> => client.get('/customers', { params }),
+    stats: (): Promise<AdminCustomerStatsDto> => client.get('/customers/stats'),
+    getById: (id: number): Promise<AdminCustomerDetailDto> => client.get(`/customers/${id}`),
+    getOrders: (id: number, page: number): Promise<Page<AdminOrderSummary>> =>
+      client.get(`/customers/${id}/orders`, { params: { page } }),
+    delete: (id: number): Promise<void> => client.delete(`/customers/${id}`),
+    deleteAddress: (customerId: number, addressId: number): Promise<void> =>
+      client.delete(`/customers/${customerId}/addresses/${addressId}`),
+    setDefaultAddress: (customerId: number, addressId: number): Promise<ShippingAddressDto> =>
+      client.post(`/customers/${customerId}/addresses/${addressId}/default`),
   },
   coupons: {
     list: (params: CouponListParams): Promise<Page<CouponDto>> => client.get('/coupons', { params }),

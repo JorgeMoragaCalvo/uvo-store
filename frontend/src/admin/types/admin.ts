@@ -97,6 +97,59 @@ export interface AddressDto {
   phone: string | null
 }
 
+export type CustomerAccountStatus = 'GUEST' | 'INVITED' | 'ACTIVE'
+
+export interface AdminCustomerSummaryDto {
+  id: number
+  email: string
+  firstName: string
+  lastName: string
+  phone: string | null
+  accountStatus: CustomerAccountStatus
+  ordersCount: number
+  createdAt: string
+}
+
+export interface AdminCustomerStatsDto {
+  totalCustomers: number
+  withOrders: number
+  newThisMonth: number
+}
+
+export interface ShippingAddressDto {
+  id: number
+  firstName: string
+  lastName: string
+  company: string | null
+  addressLine1: string
+  addressLine2: string | null
+  city: string
+  state: string | null
+  postalCode: string | null
+  country: string
+  phone: string | null
+  isDefault: boolean
+}
+
+export interface AdminCustomerOrderStatsDto {
+  totalOrders: number
+  totalSpent: number
+  averageOrder: number
+  completedOrders: number
+}
+
+export interface AdminCustomerDetailDto {
+  id: number
+  email: string
+  firstName: string
+  lastName: string
+  phone: string | null
+  accountStatus: CustomerAccountStatus
+  addresses: ShippingAddressDto[]
+  stats: AdminCustomerOrderStatsDto
+  createdAt: string
+}
+
 export type CouponType = 'percentage' | 'fixed'
 
 export interface CouponDto {

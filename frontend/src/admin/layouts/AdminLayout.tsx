@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { CreditCard, Image, LayoutDashboard, LogOut, Menu, Package, Receipt, Settings, Tags, Ticket } from 'lucide-react'
+import { CreditCard, Image, LayoutDashboard, LogOut, Menu, Package, Receipt, Settings, Tags, Ticket, Users } from 'lucide-react'
 import { Toaster } from '@/components/ui/sonner'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { to: '/admin/products', label: 'Productos', icon: Package },
   { to: '/admin/categories', label: 'Categorías', icon: Tags },
   { to: '/admin/orders', label: 'Órdenes', icon: Receipt },
+  { to: '/admin/customers', label: 'Clientes', icon: Users },
   { to: '/admin/coupons', label: 'Cupones', icon: Ticket },
   { to: '/admin/payment-gateways', label: 'Pasarelas de pago', icon: CreditCard },
   { to: '/admin/banners', label: 'Banners', icon: Image },
