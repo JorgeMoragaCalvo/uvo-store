@@ -97,6 +97,302 @@ export interface AddressDto {
   phone: string | null
 }
 
+export interface SalesSummaryDto {
+  totalOrders: number
+  totalRevenue: number
+  totalItems: number
+  averageOrderValue: number
+  paidOrders: number
+  pendingOrders: number
+  failedOrders: number
+}
+
+export interface SalesByDayDto {
+  date: string
+  ordersCount: number
+  revenue: number
+  paidOrders: number
+}
+
+export interface TopProductDto {
+  id: number
+  name: string
+  totalQuantity: number
+  totalRevenue: number
+  ordersCount: number
+}
+
+export interface PaymentMethodRevenueDto {
+  paymentMethod: string
+  ordersCount: number
+  totalRevenue: number
+}
+
+export interface ProductsSummaryDto {
+  totalRevenue: number
+  totalQuantity: number
+  uniqueProducts: number
+  averagePrice: number
+}
+
+export interface ProductReportRowDto {
+  id: number
+  name: string
+  sku: string
+  currentPrice: number
+  stock: number
+  categoryName: string | null
+  totalQuantity: number
+  totalRevenue: number
+  totalOrders: number
+  averagePrice: number
+}
+
+export interface CategoryRevenueDto {
+  id: number
+  name: string
+  productsCount: number
+  totalQuantity: number
+  totalRevenue: number
+}
+
+export interface PaymentMethodsSummaryDto {
+  totalOrders: number
+  totalRevenue: number
+  totalPaid: number
+  totalPending: number
+  totalFailed: number
+}
+
+export interface PaymentMethodDetailDto {
+  paymentMethod: string
+  ordersCount: number
+  totalRevenue: number
+  paidOrders: number
+  pendingOrders: number
+  failedOrders: number
+  averageOrderValue: number
+  successRate: number
+}
+
+export interface PaymentStatusDistributionDto {
+  paymentStatus: string
+  count: number
+  totalAmount: number
+}
+
+export type ShippingRateType = 'FLAT' | 'WEIGHT_BASED' | 'PRICE_BASED' | 'FREE'
+export type ShippingMethodKind = 'COURIER' | 'PICKUP' | 'CUSTOM'
+export type ShippingCarrier = 'CHILEXPRESS' | 'CORREOS_CHILE'
+
+export interface ShippingZoneDto {
+  id: number
+  name: string
+  description: string | null
+  regions: string[]
+  communes: string[]
+  active: boolean
+  sortOrder: number
+}
+
+export interface ShippingZoneRequest {
+  name: string
+  description: string | null
+  regions: string[]
+  communes: string[]
+  active: boolean
+  sortOrder: number
+}
+
+export interface ShippingMethodDto {
+  id: number
+  name: string
+  code: string
+  description: string | null
+  type: ShippingMethodKind
+  hasApiIntegration: boolean
+  carrier: ShippingCarrier | null
+  credentialsSet: Record<string, boolean>
+  minDeliveryDays: number | null
+  maxDeliveryDays: number | null
+  active: boolean
+  sortOrder: number
+  ratesCount: number
+}
+
+export interface ShippingMethodRequest {
+  name: string
+  code: string
+  description: string | null
+  type: ShippingMethodKind
+  hasApiIntegration: boolean
+  carrier: ShippingCarrier | null
+  minDeliveryDays: number | null
+  maxDeliveryDays: number | null
+  active: boolean
+  sortOrder: number
+}
+
+export interface ShippingRateDto {
+  id: number
+  methodId: number
+  methodName: string
+  zoneId: number
+  zoneName: string
+  name: string
+  rateType: ShippingRateType
+  flatRate: number | null
+  weightRatePerKg: number | null
+  baseWeightRate: number | null
+  minOrderAmount: number | null
+  maxOrderAmount: number | null
+  minWeight: number | null
+  maxWeight: number | null
+  freeShippingThreshold: number | null
+  active: boolean
+  sortOrder: number
+}
+
+export interface ShippingRateRequest {
+  methodId: number
+  zoneId: number
+  name: string
+  rateType: ShippingRateType
+  flatRate: number | null
+  weightRatePerKg: number | null
+  baseWeightRate: number | null
+  minOrderAmount: number | null
+  maxOrderAmount: number | null
+  minWeight: number | null
+  maxWeight: number | null
+  freeShippingThreshold: number | null
+  active: boolean
+  sortOrder: number
+}
+
+export interface RoleRefDto {
+  id: number
+  name: string
+}
+
+export interface AdminUserDto {
+  id: number
+  name: string
+  email: string
+  phone: string | null
+  avatar: string | null
+  active: boolean
+  lastLoginAt: string | null
+  notes: string | null
+  roles: RoleRefDto[]
+  createdAt: string
+}
+
+export interface PermissionDto {
+  id: number
+  name: string
+}
+
+export interface RoleDto {
+  id: number
+  name: string
+  guardName: string
+  permissions: PermissionDto[]
+}
+
+export interface RoleRequest {
+  name: string
+  permissionIds: number[]
+}
+
+export type CustomerAccountStatus = 'GUEST' | 'INVITED' | 'ACTIVE'
+
+export interface AdminCustomerSummaryDto {
+  id: number
+  email: string
+  firstName: string
+  lastName: string
+  phone: string | null
+  accountStatus: CustomerAccountStatus
+  ordersCount: number
+  createdAt: string
+}
+
+export interface AdminCustomerStatsDto {
+  totalCustomers: number
+  withOrders: number
+  newThisMonth: number
+}
+
+export interface ShippingAddressDto {
+  id: number
+  firstName: string
+  lastName: string
+  company: string | null
+  addressLine1: string
+  addressLine2: string | null
+  city: string
+  state: string | null
+  postalCode: string | null
+  country: string
+  phone: string | null
+  isDefault: boolean
+}
+
+export interface AdminCustomerOrderStatsDto {
+  totalOrders: number
+  totalSpent: number
+  averageOrder: number
+  completedOrders: number
+}
+
+export interface AdminCustomerDetailDto {
+  id: number
+  email: string
+  firstName: string
+  lastName: string
+  phone: string | null
+  accountStatus: CustomerAccountStatus
+  addresses: ShippingAddressDto[]
+  stats: AdminCustomerOrderStatsDto
+  createdAt: string
+}
+
+export type CouponType = 'percentage' | 'fixed'
+
+export interface CouponDto {
+  id: number
+  code: string
+  name: string
+  description: string | null
+  type: CouponType
+  value: number
+  minimumPurchase: number | null
+  maximumDiscount: number | null
+  startsAt: string | null
+  expiresAt: string | null
+  usageLimit: number | null
+  usageLimitPerCustomer: number | null
+  timesUsed: number
+  active: boolean
+  createdAt: string
+}
+
+export interface CouponRequest {
+  code: string
+  name: string
+  description: string | null
+  type: CouponType
+  value: number
+  minimumPurchase: number | null
+  maximumDiscount: number | null
+  startsAt: string | null
+  expiresAt: string | null
+  usageLimit: number | null
+  usageLimitPerCustomer: number | null
+  active: boolean
+}
+
 export interface AdminOrderSummary {
   id: number
   orderNumber: string
