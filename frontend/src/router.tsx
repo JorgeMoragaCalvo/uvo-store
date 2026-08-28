@@ -28,6 +28,10 @@ import CouponsList from './admin/pages/coupons/CouponsList'
 import CouponForm from './admin/pages/coupons/CouponForm'
 import CustomersList from './admin/pages/customers/CustomersList'
 import CustomerDetail from './admin/pages/customers/CustomerDetail'
+import UsersList from './admin/pages/users/UsersList'
+import UserForm from './admin/pages/users/UserForm'
+import RolesList from './admin/pages/roles/RolesList'
+import RoleForm from './admin/pages/roles/RoleForm'
 import BannersList from './admin/pages/banners/BannersList'
 import BannerForm from './admin/pages/banners/BannerForm'
 import GeneralSettings from './admin/pages/settings/GeneralSettings'
@@ -79,6 +83,12 @@ export const router = createBrowserRouter([
       { path: 'coupons/:id/edit', element: <CouponForm /> },
       { path: 'customers', element: <CustomersList /> },
       { path: 'customers/:id', element: <CustomerDetail /> },
+      { path: 'users', element: <UsersList /> },
+      { path: 'users/new', element: <UserForm /> },
+      { path: 'users/:id/edit', element: <UserForm /> },
+      { path: 'roles', element: <RolesList /> },
+      { path: 'roles/new', element: <RoleForm /> },
+      { path: 'roles/:id/edit', element: <RoleForm /> },
       { path: 'payment-gateways', element: <PaymentGateways /> },
       { path: 'banners', element: <BannersList /> },
       { path: 'banners/new', element: <BannerForm /> },

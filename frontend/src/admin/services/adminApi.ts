@@ -10,6 +10,7 @@ import type {
   AdminOrderStats,
   AdminOrderSummary,
   AdminProductStats,
+  AdminUserDto,
   CategoryDto,
   CouponDto,
   CouponRequest,
@@ -17,7 +18,10 @@ import type {
   HomeBannerDto,
   PaymentGateway,
   PaymentGatewayConfigDto,
+  PermissionDto,
   ProductDto,
+  RoleDto,
+  RoleRequest,
   ShippingAddressDto,
   StoreSettingsDto,
 } from '@/admin/types/admin'
@@ -57,6 +61,15 @@ export interface ProductListParams {
   sortField?: string
   sortDirection?: 'asc' | 'desc'
   perPage?: number
+  page?: number
+}
+
+export interface UserListParams {
+  search?: string
+  roleId?: number
+  active?: boolean
+  sortField?: string
+  sortDirection?: 'asc' | 'desc'
   page?: number
 }
 
@@ -111,6 +124,24 @@ export const adminApi = {
       client.put(`/categories/${id}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
     delete: (id: number): Promise<void> => client.delete(`/categories/${id}`),
     removeImage: (id: number): Promise<CategoryDto> => client.delete(`/categories/${id}/image`),
+  },
+  users: {
+    list: (params: UserListParams): Promise<Page<AdminUserDto>> => client.get('/users', { params }),
+    getById: (id: number): Promise<AdminUserDto> => client.get(`/users/${id}`),
+    create: (formData: FormData): Promise<AdminUserDto> =>
+      client.post('/users', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+    update: (id: number, formData: FormData): Promise<AdminUserDto> =>
+      client.put(`/users/${id}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+    delete: (id: number): Promise<void> => client.delete(`/users/${id}`),
+    toggleStatus: (id: number): Promise<AdminUserDto> => client.post(`/users/${id}/toggle-status`),
+  },
+  roles: {
+    list: (): Promise<RoleDto[]> => client.get('/roles'),
+    getById: (id: number): Promise<RoleDto> => client.get(`/roles/${id}`),
+    permissions: (): Promise<Record<string, PermissionDto[]>> => client.get('/roles/permissions'),
+    create: (request: RoleRequest): Promise<RoleDto> => client.post('/roles', request),
+    update: (id: number, request: RoleRequest): Promise<RoleDto> => client.put(`/roles/${id}`, request),
+    delete: (id: number): Promise<void> => client.delete(`/roles/${id}`),
   },
   customers: {
     list: (params: CustomerListParams): Promise<Page<AdminCustomerSummaryDto>> => client.get('/customers', { params }),

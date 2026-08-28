@@ -97,6 +97,41 @@ export interface AddressDto {
   phone: string | null
 }
 
+export interface RoleRefDto {
+  id: number
+  name: string
+}
+
+export interface AdminUserDto {
+  id: number
+  name: string
+  email: string
+  phone: string | null
+  avatar: string | null
+  active: boolean
+  lastLoginAt: string | null
+  notes: string | null
+  roles: RoleRefDto[]
+  createdAt: string
+}
+
+export interface PermissionDto {
+  id: number
+  name: string
+}
+
+export interface RoleDto {
+  id: number
+  name: string
+  guardName: string
+  permissions: PermissionDto[]
+}
+
+export interface RoleRequest {
+  name: string
+  permissionIds: number[]
+}
+
 export type CustomerAccountStatus = 'GUEST' | 'INVITED' | 'ACTIVE'
 
 export interface AdminCustomerSummaryDto {
