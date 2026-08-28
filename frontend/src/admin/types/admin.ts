@@ -97,6 +97,95 @@ export interface AddressDto {
   phone: string | null
 }
 
+export type ShippingRateType = 'FLAT' | 'WEIGHT_BASED' | 'PRICE_BASED' | 'FREE'
+export type ShippingMethodKind = 'COURIER' | 'PICKUP' | 'CUSTOM'
+export type ShippingCarrier = 'CHILEXPRESS' | 'CORREOS_CHILE'
+
+export interface ShippingZoneDto {
+  id: number
+  name: string
+  description: string | null
+  regions: string[]
+  communes: string[]
+  active: boolean
+  sortOrder: number
+}
+
+export interface ShippingZoneRequest {
+  name: string
+  description: string | null
+  regions: string[]
+  communes: string[]
+  active: boolean
+  sortOrder: number
+}
+
+export interface ShippingMethodDto {
+  id: number
+  name: string
+  code: string
+  description: string | null
+  type: ShippingMethodKind
+  hasApiIntegration: boolean
+  carrier: ShippingCarrier | null
+  credentialsSet: Record<string, boolean>
+  minDeliveryDays: number | null
+  maxDeliveryDays: number | null
+  active: boolean
+  sortOrder: number
+  ratesCount: number
+}
+
+export interface ShippingMethodRequest {
+  name: string
+  code: string
+  description: string | null
+  type: ShippingMethodKind
+  hasApiIntegration: boolean
+  carrier: ShippingCarrier | null
+  minDeliveryDays: number | null
+  maxDeliveryDays: number | null
+  active: boolean
+  sortOrder: number
+}
+
+export interface ShippingRateDto {
+  id: number
+  methodId: number
+  methodName: string
+  zoneId: number
+  zoneName: string
+  name: string
+  rateType: ShippingRateType
+  flatRate: number | null
+  weightRatePerKg: number | null
+  baseWeightRate: number | null
+  minOrderAmount: number | null
+  maxOrderAmount: number | null
+  minWeight: number | null
+  maxWeight: number | null
+  freeShippingThreshold: number | null
+  active: boolean
+  sortOrder: number
+}
+
+export interface ShippingRateRequest {
+  methodId: number
+  zoneId: number
+  name: string
+  rateType: ShippingRateType
+  flatRate: number | null
+  weightRatePerKg: number | null
+  baseWeightRate: number | null
+  minOrderAmount: number | null
+  maxOrderAmount: number | null
+  minWeight: number | null
+  maxWeight: number | null
+  freeShippingThreshold: number | null
+  active: boolean
+  sortOrder: number
+}
+
 export interface RoleRefDto {
   id: number
   name: string

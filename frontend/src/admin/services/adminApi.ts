@@ -23,6 +23,12 @@ import type {
   RoleDto,
   RoleRequest,
   ShippingAddressDto,
+  ShippingMethodDto,
+  ShippingMethodRequest,
+  ShippingRateDto,
+  ShippingRateRequest,
+  ShippingZoneDto,
+  ShippingZoneRequest,
   StoreSettingsDto,
 } from '@/admin/types/admin'
 
@@ -62,6 +68,11 @@ export interface ProductListParams {
   sortDirection?: 'asc' | 'desc'
   perPage?: number
   page?: number
+}
+
+export interface ShippingRateListParams {
+  methodId?: number
+  zoneId?: number
 }
 
 export interface UserListParams {
@@ -124,6 +135,33 @@ export const adminApi = {
       client.put(`/categories/${id}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
     delete: (id: number): Promise<void> => client.delete(`/categories/${id}`),
     removeImage: (id: number): Promise<CategoryDto> => client.delete(`/categories/${id}/image`),
+  },
+  shippingZones: {
+    list: (search?: string): Promise<ShippingZoneDto[]> => client.get('/shipping/zones', { params: { search } }),
+    getById: (id: number): Promise<ShippingZoneDto> => client.get(`/shipping/zones/${id}`),
+    create: (request: ShippingZoneRequest): Promise<ShippingZoneDto> => client.post('/shipping/zones', request),
+    update: (id: number, request: ShippingZoneRequest): Promise<ShippingZoneDto> => client.put(`/shipping/zones/${id}`, request),
+    delete: (id: number): Promise<void> => client.delete(`/shipping/zones/${id}`),
+    toggleStatus: (id: number): Promise<ShippingZoneDto> => client.post(`/shipping/zones/${id}/toggle-status`),
+  },
+  shippingMethods: {
+    list: (): Promise<ShippingMethodDto[]> => client.get('/shipping/methods'),
+    getById: (id: number): Promise<ShippingMethodDto> => client.get(`/shipping/methods/${id}`),
+    create: (request: ShippingMethodRequest): Promise<ShippingMethodDto> => client.post('/shipping/methods', request),
+    update: (id: number, request: ShippingMethodRequest): Promise<ShippingMethodDto> =>
+      client.put(`/shipping/methods/${id}`, request),
+    delete: (id: number): Promise<void> => client.delete(`/shipping/methods/${id}`),
+    toggleStatus: (id: number): Promise<ShippingMethodDto> => client.post(`/shipping/methods/${id}/toggle-status`),
+    updateCredentials: (id: number, credentials: Record<string, string>): Promise<ShippingMethodDto> =>
+      client.put(`/shipping/methods/${id}/credentials`, credentials),
+  },
+  shippingRates: {
+    list: (params: ShippingRateListParams): Promise<ShippingRateDto[]> => client.get('/shipping/rates', { params }),
+    getById: (id: number): Promise<ShippingRateDto> => client.get(`/shipping/rates/${id}`),
+    create: (request: ShippingRateRequest): Promise<ShippingRateDto> => client.post('/shipping/rates', request),
+    update: (id: number, request: ShippingRateRequest): Promise<ShippingRateDto> => client.put(`/shipping/rates/${id}`, request),
+    delete: (id: number): Promise<void> => client.delete(`/shipping/rates/${id}`),
+    toggleStatus: (id: number): Promise<ShippingRateDto> => client.post(`/shipping/rates/${id}/toggle-status`),
   },
   users: {
     list: (params: UserListParams): Promise<Page<AdminUserDto>> => client.get('/users', { params }),

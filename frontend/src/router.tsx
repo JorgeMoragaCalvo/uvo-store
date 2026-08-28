@@ -32,6 +32,12 @@ import UsersList from './admin/pages/users/UsersList'
 import UserForm from './admin/pages/users/UserForm'
 import RolesList from './admin/pages/roles/RolesList'
 import RoleForm from './admin/pages/roles/RoleForm'
+import ZonesList from './admin/pages/shipping/ZonesList'
+import ZoneForm from './admin/pages/shipping/ZoneForm'
+import MethodsList from './admin/pages/shipping/MethodsList'
+import MethodForm from './admin/pages/shipping/MethodForm'
+import RatesList from './admin/pages/shipping/RatesList'
+import RateForm from './admin/pages/shipping/RateForm'
 import BannersList from './admin/pages/banners/BannersList'
 import BannerForm from './admin/pages/banners/BannerForm'
 import GeneralSettings from './admin/pages/settings/GeneralSettings'
@@ -89,6 +95,15 @@ export const router = createBrowserRouter([
       { path: 'roles', element: <RolesList /> },
       { path: 'roles/new', element: <RoleForm /> },
       { path: 'roles/:id/edit', element: <RoleForm /> },
+      { path: 'shipping/zones', element: <ZonesList /> },
+      { path: 'shipping/zones/new', element: <ZoneForm /> },
+      { path: 'shipping/zones/:id/edit', element: <ZoneForm /> },
+      { path: 'shipping/methods', element: <MethodsList /> },
+      { path: 'shipping/methods/new', element: <MethodForm /> },
+      { path: 'shipping/methods/:id/edit', element: <MethodForm /> },
+      { path: 'shipping/rates', element: <RatesList /> },
+      { path: 'shipping/rates/new', element: <RateForm /> },
+      { path: 'shipping/rates/:id/edit', element: <RateForm /> },
       { path: 'payment-gateways', element: <PaymentGateways /> },
       { path: 'banners', element: <BannersList /> },
       { path: 'banners/new', element: <BannerForm /> },

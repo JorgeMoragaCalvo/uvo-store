@@ -1,5 +1,22 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { CreditCard, Image, LayoutDashboard, LogOut, Menu, Package, Receipt, Settings, Shield, Tags, Ticket, UserCog, Users } from 'lucide-react'
+import {
+  Banknote,
+  CreditCard,
+  Image,
+  LayoutDashboard,
+  LogOut,
+  Map,
+  Menu,
+  Package,
+  Receipt,
+  Settings,
+  Shield,
+  Tags,
+  Ticket,
+  Truck,
+  UserCog,
+  Users,
+} from 'lucide-react'
 import { Toaster } from '@/components/ui/sonner'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
@@ -15,6 +32,9 @@ const NAV_ITEMS = [
   { to: '/admin/coupons', label: 'Cupones', icon: Ticket },
   { to: '/admin/users', label: 'Usuarios', icon: UserCog },
   { to: '/admin/roles', label: 'Roles', icon: Shield },
+  { to: '/admin/shipping/zones', label: 'Zonas de envío', icon: Map },
+  { to: '/admin/shipping/methods', label: 'Métodos de envío', icon: Truck },
+  { to: '/admin/shipping/rates', label: 'Tarifas de envío', icon: Banknote },
   { to: '/admin/payment-gateways', label: 'Pasarelas de pago', icon: CreditCard },
   { to: '/admin/banners', label: 'Banners', icon: Image },
   { to: '/admin/settings/store', label: 'Config. de tienda', icon: Settings },
