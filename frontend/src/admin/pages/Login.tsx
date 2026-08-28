@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -76,6 +76,11 @@ export default function Login() {
               {loading ? 'Ingresando…' : 'Ingresar'}
             </Button>
           </form>
+          <p className="mt-4 text-center text-sm text-muted-foreground">
+            <Link to="/admin/forgot-password" className="underline">
+              ¿Olvidaste tu contraseña?
+            </Link>
+          </p>
         </CardContent>
       </Card>
     </div>

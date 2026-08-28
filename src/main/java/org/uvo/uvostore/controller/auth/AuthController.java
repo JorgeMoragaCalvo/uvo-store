@@ -1,6 +1,7 @@
 package org.uvo.uvostore.controller.auth;
 
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -18,25 +19,37 @@ import org.uvo.uvostore.repository.CustomerRepository;
 import org.uvo.uvostore.repository.UserRepository;
 import org.uvo.uvostore.security.JwtService;
 import org.uvo.uvostore.security.TenantContext;
+import org.uvo.uvostore.service.notification.EmailService;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @RestController
 public class AuthController {
+
+    // Reset links expire quickly since, unlike the invitation token, this one can be requested
+    // repeatedly by anyone who knows an email address.
+    private static final Duration PASSWORD_RESET_TTL = Duration.ofHours(1);
 
     private final UserRepository userRepository;
     private final CustomerRepository customerRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final EmailService emailService;
+    private final String frontendUrl;
 
     public AuthController(UserRepository userRepository, CustomerRepository customerRepository,
-                           PasswordEncoder passwordEncoder, JwtService jwtService) {
+                           PasswordEncoder passwordEncoder, JwtService jwtService, EmailService emailService,
+                           @Value("${app.frontend-url}") String frontendUrl) {
         this.userRepository = userRepository;
         this.customerRepository = customerRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
+        this.emailService = emailService;
+        this.frontendUrl = frontendUrl;
     }
 
     @PostMapping("/api/admin/auth/login")
@@ -96,6 +109,42 @@ public class AuthController {
         return ResponseEntity.ok(new AuthResponse(token, saved.getId(), fullName, saved.getEmail(), "CUSTOMER"));
     }
 
+
+    @PostMapping("/api/admin/auth/forgot-password")
+    @Transactional
+    public ResponseEntity<Void> adminForgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        Store store = TenantContext.requireCurrent();
+        // Always respond 200 regardless of whether the email matches an account — don't leak
+        // which admin emails exist on this store.
+        userRepository.findByStoreIdAndEmail(store.getId(), request.email()).ifPresent(user -> {
+            String token = UUID.randomUUID().toString();
+            user.setPasswordResetToken(token);
+            user.setPasswordResetExpiresAt(Instant.now().plus(PASSWORD_RESET_TTL));
+            userRepository.save(user);
+
+            String link = frontendUrl + "/admin/reset-password?token=" + token;
+            emailService.send(user.getEmail(), "Recupera tu contraseña",
+                    "Recibimos una solicitud para restablecer tu contraseña.\n\n"
+                            + "Ingresa al siguiente enlace para elegir una nueva (válido por 1 hora):\n" + link
+                            + "\n\nSi no fuiste tú, puedes ignorar este correo.");
+        });
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/api/admin/auth/reset-password")
+    @Transactional
+    public ResponseEntity<Void> adminResetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        User user = userRepository.findByPasswordResetToken(request.token())
+                .filter(candidate -> candidate.getPasswordResetExpiresAt() != null
+                        && candidate.getPasswordResetExpiresAt().isAfter(Instant.now()))
+                .orElseThrow(() -> new BadCredentialsException("El enlace no es válido o ha expirado"));
+
+        user.setPassword(passwordEncoder.encode(request.password()));
+        user.setPasswordResetToken(null);
+        user.setPasswordResetExpiresAt(null);
+        userRepository.save(user);
+        return ResponseEntity.ok().build();
+    }
 
     private List<String> adminAuthorities(User user) {
         List<String> authorities = new ArrayList<>();

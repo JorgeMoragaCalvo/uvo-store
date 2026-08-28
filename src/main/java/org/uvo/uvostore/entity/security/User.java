@@ -90,6 +90,12 @@ public class User {
     @Column(name = "invitation_accepted_at")
     private Instant invitationAcceptedAt;
 
+    @Column(name = "password_reset_token", unique = true)
+    private String passwordResetToken;
+
+    @Column(name = "password_reset_expires_at")
+    private Instant passwordResetExpiresAt;
+
     // Source verification: present in the real schema but looks vestigial for
     // an admin user (no Stripe checkout flow touches this table) — confirm
     // with the app owner before relying on it for anything.
