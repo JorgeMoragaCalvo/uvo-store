@@ -97,6 +97,41 @@ export interface AddressDto {
   phone: string | null
 }
 
+export type CouponType = 'percentage' | 'fixed'
+
+export interface CouponDto {
+  id: number
+  code: string
+  name: string
+  description: string | null
+  type: CouponType
+  value: number
+  minimumPurchase: number | null
+  maximumDiscount: number | null
+  startsAt: string | null
+  expiresAt: string | null
+  usageLimit: number | null
+  usageLimitPerCustomer: number | null
+  timesUsed: number
+  active: boolean
+  createdAt: string
+}
+
+export interface CouponRequest {
+  code: string
+  name: string
+  description: string | null
+  type: CouponType
+  value: number
+  minimumPurchase: number | null
+  maximumDiscount: number | null
+  startsAt: string | null
+  expiresAt: string | null
+  usageLimit: number | null
+  usageLimitPerCustomer: number | null
+  active: boolean
+}
+
 export interface AdminOrderSummary {
   id: number
   orderNumber: string

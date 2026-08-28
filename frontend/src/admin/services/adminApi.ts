@@ -8,6 +8,8 @@ import type {
   AdminOrderSummary,
   AdminProductStats,
   CategoryDto,
+  CouponDto,
+  CouponRequest,
   GeneralSettingsDto,
   HomeBannerDto,
   PaymentGateway,
@@ -54,6 +56,12 @@ export interface ProductListParams {
   page?: number
 }
 
+export interface CouponListParams {
+  search?: string
+  status?: string
+  page?: number
+}
+
 export interface OrderListParams {
   tab?: string
   search?: string
@@ -92,6 +100,14 @@ export const adminApi = {
       client.put(`/categories/${id}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
     delete: (id: number): Promise<void> => client.delete(`/categories/${id}`),
     removeImage: (id: number): Promise<CategoryDto> => client.delete(`/categories/${id}/image`),
+  },
+  coupons: {
+    list: (params: CouponListParams): Promise<Page<CouponDto>> => client.get('/coupons', { params }),
+    getById: (id: number): Promise<CouponDto> => client.get(`/coupons/${id}`),
+    create: (request: CouponRequest): Promise<CouponDto> => client.post('/coupons', request),
+    update: (id: number, request: CouponRequest): Promise<CouponDto> => client.put(`/coupons/${id}`, request),
+    delete: (id: number): Promise<void> => client.delete(`/coupons/${id}`),
+    toggleStatus: (id: number): Promise<CouponDto> => client.post(`/coupons/${id}/toggle-status`),
   },
   orders: {
     list: (params: OrderListParams): Promise<Page<AdminOrderSummary>> => client.get('/orders', { params }),
