@@ -14,6 +14,8 @@ import org.uvo.uvostore.service.payment.PaymentGatewayConfigDto;
 
 import java.util.List;
 
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Pasarelas de pago (admin)", description = "Configuración de Webpay/MercadoPago por tienda, JWT bearer con rol ADMIN")
+@io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "bearerAuth")
 @RestController
 @RequestMapping("/api/admin/payment-gateways")
 public class AdminPaymentGatewayController {

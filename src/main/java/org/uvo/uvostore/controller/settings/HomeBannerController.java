@@ -17,6 +17,8 @@ import org.uvo.uvostore.service.settings.HomeBannerService;
 
 import java.util.List;
 
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Banners (admin)", description = "CRUD de banners de la portada, JWT bearer con rol ADMIN")
+@io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "bearerAuth")
 @RestController
 @RequestMapping("/api/admin/home/banners")
 public class HomeBannerController {

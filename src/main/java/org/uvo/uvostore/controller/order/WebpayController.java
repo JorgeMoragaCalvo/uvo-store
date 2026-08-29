@@ -19,6 +19,7 @@ import org.uvo.uvostore.service.payment.WebpayService;
 
 import java.net.URI;
 
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Webpay (público)", description = "Creación y confirmación de transacciones Webpay Plus")
 @RestController
 @RequestMapping("/api/v1/webpay")
 public class WebpayController {

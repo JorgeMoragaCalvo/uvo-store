@@ -8,6 +8,7 @@ import org.uvo.uvostore.service.catalog.AttributeQueryService;
 
 import java.util.List;
 
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Atributos (público)", description = "Atributos de producto usados para filtros/variaciones, sin autenticación")
 @RestController
 @RequestMapping("/api/v1/attributes")
 public class AttributeController {

@@ -11,6 +11,7 @@ import org.uvo.uvostore.service.pos.SyncProductResult;
 
 import java.util.Map;
 
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Sincronización POS", description = "Sincronización de productos con UvoPOS — API key (Authorization: Bearer + X-Company-ID)")
 @RestController
 @RequestMapping("/api/sync")
 public class PosSyncController {

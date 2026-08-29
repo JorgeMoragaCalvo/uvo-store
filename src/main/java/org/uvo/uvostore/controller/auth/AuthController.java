@@ -27,6 +27,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Autenticación", description = "Login/registro de admin y cliente, recuperación de contraseña — todo público, emite el JWT bearer usado por las superficies admin y cliente")
 @RestController
 public class AuthController {
 

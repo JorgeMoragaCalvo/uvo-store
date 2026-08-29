@@ -16,6 +16,7 @@ import java.util.List;
 // Public, unauthenticated read endpoints for the React storefront — mirrors what the admin-only
 // StoreSettingsController/SettingsController/HomeBannerController already expose, filtered/merged
 // down to what a customer-facing home page needs. See PublicStoreSettingsDto for what's excluded.
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Configuración de tienda (público)", description = "Branding, banners y ajustes públicos de la tienda")
 @RestController
 @RequestMapping("/api/v1")
 public class PublicStorefrontSettingsController {

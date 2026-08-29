@@ -19,6 +19,8 @@ import org.uvo.uvostore.service.security.RoleService;
 import java.util.List;
 import java.util.Map;
 
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Roles (admin)", description = "Roles y permisos de administradores, JWT bearer con rol ADMIN")
+@io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "bearerAuth")
 @RestController
 @RequestMapping("/api/admin/roles")
 public class AdminRoleController {

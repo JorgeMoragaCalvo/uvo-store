@@ -18,6 +18,8 @@ import org.uvo.uvostore.service.order.AdminOrderService;
 import org.uvo.uvostore.service.order.AdminOrderStatsDto;
 import org.uvo.uvostore.service.order.AdminOrderSummaryDto;
 
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Órdenes (admin)", description = "Gestión de órdenes de la tienda, JWT bearer con rol ADMIN")
+@io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "bearerAuth")
 @RestController
 @RequestMapping("/api/admin/orders")
 public class AdminOrderController {

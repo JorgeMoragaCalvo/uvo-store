@@ -17,6 +17,8 @@ import org.uvo.uvostore.service.shipping.ShippingMethodDto;
 import java.util.List;
 import java.util.Map;
 
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Métodos de envío (admin)", description = "CRUD de métodos de envío y sus credenciales de transportista, JWT bearer con rol ADMIN")
+@io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "bearerAuth")
 @RestController
 @RequestMapping("/api/admin/shipping/methods")
 public class AdminShippingMethodController {

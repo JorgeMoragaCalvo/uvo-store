@@ -15,6 +15,8 @@ import org.uvo.uvostore.service.catalog.AttributeValueCommand;
 
 import java.util.List;
 
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Atributos (admin)", description = "CRUD de atributos y sus valores, JWT bearer con rol ADMIN")
+@io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "bearerAuth")
 @RestController
 @RequestMapping("/api/admin/attributes")
 public class AdminAttributeController {

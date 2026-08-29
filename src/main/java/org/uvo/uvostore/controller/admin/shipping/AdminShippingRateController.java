@@ -17,6 +17,8 @@ import org.uvo.uvostore.service.shipping.ShippingRateDto;
 
 import java.util.List;
 
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Tarifas de envío (admin)", description = "CRUD de tarifas por método+zona, JWT bearer con rol ADMIN")
+@io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "bearerAuth")
 @RestController
 @RequestMapping("/api/admin/shipping/rates")
 public class AdminShippingRateController {

@@ -8,6 +8,8 @@ import org.springframework.web.bind.annotation.RestController;
 import org.uvo.uvostore.service.settings.GeneralSettingsDto;
 import org.uvo.uvostore.service.settings.SettingsService;
 
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Configuración general (admin)", description = "Moneda, impuestos, envío y checkout, JWT bearer con rol ADMIN")
+@io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "bearerAuth")
 @RestController
 @RequestMapping("/api/admin/settings/general")
 public class SettingsController {

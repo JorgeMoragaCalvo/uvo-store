@@ -14,6 +14,7 @@ import org.uvo.uvostore.service.pos.StockUpdatePayload;
 
 import java.util.Map;
 
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Webhooks POS", description = "UvoPOS notifica cambios de stock/producto — firma HMAC (X-Signature/X-Company-ID/X-Timestamp), no probable desde el botón Authorize")
 @RestController
 @RequestMapping("/api/webhooks/pos")
 public class PosWebhookController {

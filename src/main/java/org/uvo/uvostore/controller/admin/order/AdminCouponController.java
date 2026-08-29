@@ -18,6 +18,8 @@ import org.uvo.uvostore.service.order.AdminCouponService;
 import org.uvo.uvostore.service.order.CouponCommand;
 import org.uvo.uvostore.service.order.CouponDto;
 
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Cupones (admin)", description = "CRUD de cupones de descuento, JWT bearer con rol ADMIN")
+@io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "bearerAuth")
 @RestController
 @RequestMapping("/api/admin/coupons")
 public class AdminCouponController {

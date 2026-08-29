@@ -10,6 +10,7 @@ import org.uvo.uvostore.service.order.CartItemCommand;
 import org.uvo.uvostore.service.order.CartService;
 import org.uvo.uvostore.service.order.CartValidationResult;
 
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Carrito (público)", description = "Validación y cálculo del carrito del storefront, sin autenticación")
 @RestController
 @RequestMapping("/api/v1/cart")
 public class CartController {

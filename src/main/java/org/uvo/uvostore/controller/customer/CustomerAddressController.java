@@ -18,6 +18,8 @@ import org.uvo.uvostore.service.customer.ShippingAddressDto;
 
 import java.util.List;
 
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Direcciones (cliente)", description = "CRUD de direcciones de envío del comprador, JWT bearer con rol CUSTOMER")
+@io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "bearerAuth")
 @RestController
 @RequestMapping("/api/customer/addresses")
 public class CustomerAddressController {

@@ -17,6 +17,8 @@ import org.uvo.uvostore.service.shipping.ShippingZoneDto;
 
 import java.util.List;
 
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Zonas de envío (admin)", description = "CRUD de zonas de cobertura por región/comuna, JWT bearer con rol ADMIN")
+@io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "bearerAuth")
 @RestController
 @RequestMapping("/api/admin/shipping/zones")
 public class AdminShippingZoneController {

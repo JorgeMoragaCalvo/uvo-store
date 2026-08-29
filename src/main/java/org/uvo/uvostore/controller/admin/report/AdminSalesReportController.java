@@ -16,6 +16,8 @@ import org.uvo.uvostore.service.report.TopProductDto;
 import java.time.LocalDate;
 import java.util.List;
 
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Reportes de ventas (admin)", description = "Resumen, serie diaria y desgloses de ventas, JWT bearer con rol ADMIN")
+@io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "bearerAuth")
 @RestController
 @RequestMapping("/api/admin/reports/sales")
 public class AdminSalesReportController {

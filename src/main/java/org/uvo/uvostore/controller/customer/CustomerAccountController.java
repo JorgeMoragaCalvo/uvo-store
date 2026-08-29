@@ -14,6 +14,8 @@ import org.uvo.uvostore.service.customer.CustomerService;
 import org.uvo.uvostore.service.customer.PasswordUpdateCommand;
 import org.uvo.uvostore.service.customer.ProfileUpdateCommand;
 
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Cuenta (cliente)", description = "Perfil y contraseña del comprador, JWT bearer con rol CUSTOMER")
+@io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "bearerAuth")
 @RestController
 @RequestMapping("/api/customer/account")
 public class CustomerAccountController {
