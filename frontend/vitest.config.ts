@@ -12,5 +12,9 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
+    // Multi-step form flows driven by @testing-library/user-event (real per-keystroke typing
+    // across several fields) legitimately take longer than the 5s default, especially on slower
+    // machines/CI runners.
+    testTimeout: 15000,
   },
 })
