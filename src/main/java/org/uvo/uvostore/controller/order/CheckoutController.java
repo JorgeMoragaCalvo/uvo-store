@@ -15,6 +15,7 @@ import org.uvo.uvostore.service.order.OrderConfirmation;
 
 import java.util.List;
 
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Checkout (público)", description = "Creación de órdenes desde el storefront, sin autenticación")
 @RestController
 @RequestMapping("/api/v1")
 public class CheckoutController {

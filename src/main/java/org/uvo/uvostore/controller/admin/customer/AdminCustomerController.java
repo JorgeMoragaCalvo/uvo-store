@@ -19,6 +19,8 @@ import org.uvo.uvostore.service.customer.CustomerAddressService;
 import org.uvo.uvostore.service.customer.ShippingAddressDto;
 import org.uvo.uvostore.service.order.AdminOrderSummaryDto;
 
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Clientes (admin)", description = "Lectura, direcciones y estadísticas de clientes, JWT bearer con rol ADMIN")
+@io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "bearerAuth")
 @RestController
 @RequestMapping("/api/admin/customers")
 public class AdminCustomerController {

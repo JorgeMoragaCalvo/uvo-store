@@ -17,6 +17,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Set;
 
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Catálogo (público)", description = "Productos visibles en el storefront, sin autenticación")
 @RestController
 @RequestMapping("/api/v1/products")
 public class ProductController {

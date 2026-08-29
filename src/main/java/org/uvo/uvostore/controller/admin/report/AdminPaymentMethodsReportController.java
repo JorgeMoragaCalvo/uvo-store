@@ -15,6 +15,8 @@ import org.uvo.uvostore.service.report.PaymentStatusDistributionDto;
 import java.time.LocalDate;
 import java.util.List;
 
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Reportes de métodos de pago (admin)", description = "Desglose de ingresos y éxito por método de pago, JWT bearer con rol ADMIN")
+@io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "bearerAuth")
 @RestController
 @RequestMapping("/api/admin/reports/payment-methods")
 public class AdminPaymentMethodsReportController {

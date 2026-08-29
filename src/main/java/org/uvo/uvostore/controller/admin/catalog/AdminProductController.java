@@ -24,6 +24,8 @@ import org.uvo.uvostore.service.catalog.ProductService;
 
 import java.util.List;
 
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Productos (admin)", description = "CRUD de productos, JWT bearer con rol ADMIN")
+@io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "bearerAuth")
 @RestController
 @RequestMapping("/api/admin/products")
 public class AdminProductController {

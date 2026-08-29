@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.Map;
 
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Pagos Stripe (público)", description = "Checkout Session y verificación de pago con Stripe")
 @RestController
 @RequestMapping("/api/v1")
 public class PaymentController {

@@ -24,6 +24,8 @@ import org.uvo.uvostore.service.security.UserService;
 
 import java.util.Set;
 
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Usuarios (admin)", description = "Administradores de la tienda, JWT bearer con rol ADMIN")
+@io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "bearerAuth")
 @RestController
 @RequestMapping("/api/admin/users")
 public class AdminUserController {

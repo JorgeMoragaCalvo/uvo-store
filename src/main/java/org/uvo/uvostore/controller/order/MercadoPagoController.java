@@ -14,6 +14,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
+@io.swagger.v3.oas.annotations.tags.Tag(name = "MercadoPago (público)", description = "Creación de preferencias de pago con MercadoPago")
 @RestController
 @RequestMapping("/api/v1/mercadopago")
 public class MercadoPagoController {

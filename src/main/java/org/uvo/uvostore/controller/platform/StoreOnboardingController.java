@@ -14,6 +14,8 @@ import org.uvo.uvostore.service.platform.StoreOnboardingService;
 // Protected by PlatformApiKeyAuthFilter (X-Platform-Key header), not by the per-store JWT scheme
 // the rest of /api/admin/** uses — there's no tenant yet when a store is being created, and this
 // is only ever called by the operator team, never by a client.
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Alta de tiendas (plataforma)", description = "Creación de tiendas nuevas por el equipo operador, header X-Platform-Key")
+@io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "platformApiKey")
 @RestController
 @RequestMapping("/api/platform/stores")
 public class StoreOnboardingController {

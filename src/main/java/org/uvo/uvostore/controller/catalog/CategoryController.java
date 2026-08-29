@@ -9,6 +9,7 @@ import org.uvo.uvostore.service.catalog.CategoryQueryService;
 
 import java.util.List;
 
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Categorías (público)", description = "Categorías visibles en el storefront, sin autenticación")
 @RestController
 @RequestMapping("/api/v1/categories")
 public class CategoryController {

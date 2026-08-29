@@ -13,6 +13,8 @@ import org.uvo.uvostore.service.catalog.ProductQueryService;
 import org.uvo.uvostore.service.catalog.ProductVariationService;
 import org.uvo.uvostore.service.catalog.VariationCommand;
 
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Variaciones de producto (admin)", description = "CRUD de variaciones de un producto, JWT bearer con rol ADMIN")
+@io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "bearerAuth")
 @RestController
 @RequestMapping("/api/admin/products/{productId}/variations")
 public class AdminProductVariationController {
