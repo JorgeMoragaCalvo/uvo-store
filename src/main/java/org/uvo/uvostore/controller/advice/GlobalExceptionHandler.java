@@ -1,5 +1,6 @@
 package org.uvo.uvostore.controller.advice;
 
+import io.sentry.Sentry;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -46,5 +47,16 @@ public class GlobalExceptionHandler {
                 fieldErrors.put(error.getField(), error.getDefaultMessage()));
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ApiError.of(HttpStatus.BAD_REQUEST.value(), "Validation Failed", "Uno o más campos son inválidos", fieldErrors));
+    }
+
+    // Catches only what the handlers above don't — genuinely unexpected exceptions, not the
+    // expected 4xx business cases already handled specifically. Reported to Sentry (a no-op if
+    // SENTRY_DSN isn't configured, see UvoStoreApplication.main()) before returning a generic 500,
+    // so real bugs surface without leaking internals to the client.
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ApiError> handleUnexpected(Exception ex) {
+        Sentry.captureException(ex);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ApiError.of(HttpStatus.INTERNAL_SERVER_ERROR.value(), "Internal Server Error", "Ocurrió un error inesperado"));
     }
 }
