@@ -16,6 +16,7 @@ import type {
   CouponDto,
   CouponRequest,
   GeneralSettingsDto,
+  GeneralSettingsUpdateRequest,
   HomeBannerDto,
   PaymentGateway,
   PaymentGatewayConfigDto,
@@ -285,7 +286,7 @@ export const adminApi = {
   },
   generalSettings: {
     get: (): Promise<GeneralSettingsDto> => client.get('/settings/general'),
-    update: (settings: GeneralSettingsDto): Promise<GeneralSettingsDto> => client.put('/settings/general', settings),
+    update: (settings: GeneralSettingsUpdateRequest): Promise<GeneralSettingsDto> => client.put('/settings/general', settings),
   },
   storeSettings: {
     get: (): Promise<StoreSettingsDto> => client.get('/settings/store'),

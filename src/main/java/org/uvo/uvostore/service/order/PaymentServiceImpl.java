@@ -143,7 +143,7 @@ public class PaymentServiceImpl implements PaymentService {
     public void handleWebhook(String payload, String signatureHeader) {
         // Webhook.constructEvent only verifies the HMAC signature locally — it never calls the
         // Stripe API, so it needs no API key.
-        String webhookSecret = settingValue("stripe_webhook_secret", fallbackWebhookSecret);
+        String webhookSecret = encryptedSettingValue("stripe_webhook_secret", fallbackWebhookSecret);
 
         Event event;
         try {
@@ -184,12 +184,24 @@ public class PaymentServiceImpl implements PaymentService {
     // Per-call, not a shared static field (com.stripe.Stripe.apiKey is a JVM-global static — under
     // concurrent requests from different stores, one tenant's checkout could run under another
     // tenant's Stripe key). Every real Stripe API call in this class must pass this explicitly.
-    private RequestOptions requestOptions() {
-        return RequestOptions.builder().setApiKey(settingValue("stripe_secret_key", fallbackSecretKey)).build();
+    // Package-visible for the same reason as buildSessionParams — lets tests assert the decrypted
+    // API key without a real Stripe call.
+    RequestOptions requestOptions() {
+        return RequestOptions.builder().setApiKey(encryptedSettingValue("stripe_secret_key", fallbackSecretKey)).build();
     }
 
     private String settingValue(String key, String fallback) {
         return settingRepository.findByStoreIdAndSettingKey(TenantContext.requireStoreId(), key)
                 .map(s -> s.getValue()).filter(v -> v != null && !v.isBlank()).orElse(fallback);
+    }
+
+    // Like settingValue(), but for secrets stored encrypted by SettingsServiceImpl.setSecret()
+    // (see SecretCrypto) — decrypts the stored value. The fallback (from application.properties)
+    // is used as-is, un-decrypted, since it was never encrypted in the first place.
+    private String encryptedSettingValue(String key, String fallback) {
+        return settingRepository.findByStoreIdAndSettingKey(TenantContext.requireStoreId(), key)
+                .map(s -> s.getValue()).filter(v -> v != null && !v.isBlank())
+                .map(org.uvo.uvostore.service.settings.SecretCrypto::decrypt)
+                .orElse(fallback);
     }
 }

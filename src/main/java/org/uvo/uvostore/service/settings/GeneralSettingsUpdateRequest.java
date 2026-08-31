@@ -1,11 +1,10 @@
 package org.uvo.uvostore.service.settings;
 
-// Mirrors Admin\Settings\SettingsForm's flat key/value settings (general/currency/shipping/
-// checkout/stripe/pos/seo/social tabs) — GET response only. Secrets (Stripe secret key, POS API
-// token/webhook secret) are never echoed back in plaintext — only a "*Configured" flag, same
-// pattern as PaymentGatewayConfigDto.credentialsSet. See GeneralSettingsUpdateRequest for the PUT
-// body, which still carries the raw secret values (write-only).
-public record GeneralSettingsDto(
+// PUT body for /api/admin/settings/general. Carries raw secret values (write-only — never
+// returned, see GeneralSettingsDto). A blank/null secret means "leave the stored value
+// unchanged" — the frontend can't pre-fill these fields with the real value anymore, so a submit
+// that doesn't touch them must not wipe out what's already saved.
+public record GeneralSettingsUpdateRequest(
         String storeName,
         String storeEmail,
         String storePhone,
@@ -22,11 +21,11 @@ public record GeneralSettingsDto(
         boolean requirePhone,
         boolean requireCompany,
         String stripePublicKey,
-        boolean stripeSecretKeyConfigured,
+        String stripeSecretKey,
         boolean stripeEnabled,
         String posApiUrl,
-        boolean posApiTokenConfigured,
-        boolean posWebhookSecretConfigured,
+        String posApiToken,
+        String posWebhookSecret,
         boolean posSyncEnabled,
         String metaTitle,
         String metaDescription,

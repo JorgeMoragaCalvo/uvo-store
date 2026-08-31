@@ -1,12 +1,12 @@
 import { create } from 'zustand'
 import adminApi from '@/admin/services/adminApi'
-import type { GeneralSettingsDto } from '@/admin/types/admin'
+import type { GeneralSettingsDto, GeneralSettingsUpdateRequest } from '@/admin/types/admin'
 
 interface AdminGeneralSettingsState {
   settings: GeneralSettingsDto | null
   loading: boolean
   fetch: () => Promise<void>
-  update: (settings: GeneralSettingsDto) => Promise<void>
+  update: (settings: GeneralSettingsUpdateRequest) => Promise<GeneralSettingsDto>
 }
 
 export const useAdminGeneralSettingsStore = create<AdminGeneralSettingsState>((set) => ({
@@ -25,5 +25,6 @@ export const useAdminGeneralSettingsStore = create<AdminGeneralSettingsState>((s
   update: async (settings) => {
     const updated = await adminApi.generalSettings.update(settings)
     set({ settings: updated })
+    return updated
   },
 }))

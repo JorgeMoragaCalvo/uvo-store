@@ -5,5 +5,5 @@ public interface SettingsService {
 
     // Ports SettingsForm::save() — also validates pos_api_token against the "uvp_{digits}_{alnum}"
     // format and, when valid, upserts the single PosConnection row (id=1) from it, same as Laravel.
-    GeneralSettingsDto updateGeneralSettings(GeneralSettingsDto command);
+    GeneralSettingsDto updateGeneralSettings(GeneralSettingsUpdateRequest command);
 }

@@ -6,6 +6,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.uvo.uvostore.service.settings.GeneralSettingsDto;
+import org.uvo.uvostore.service.settings.GeneralSettingsUpdateRequest;
 import org.uvo.uvostore.service.settings.SettingsService;
 
 @io.swagger.v3.oas.annotations.tags.Tag(name = "Configuración general (admin)", description = "Moneda, impuestos, envío y checkout, JWT bearer con rol ADMIN")
@@ -26,7 +27,7 @@ public class SettingsController {
     }
 
     @PutMapping
-    public GeneralSettingsDto update(@RequestBody GeneralSettingsDto request) {
+    public GeneralSettingsDto update(@RequestBody GeneralSettingsUpdateRequest request) {
         return settingsService.updateGeneralSettings(request);
     }
 }

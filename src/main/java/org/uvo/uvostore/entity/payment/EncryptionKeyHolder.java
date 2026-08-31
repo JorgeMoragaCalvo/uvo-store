@@ -28,7 +28,7 @@ public class EncryptionKeyHolder {
         instance = new SecretKeySpec(keyBytes, "AES");
     }
 
-    static SecretKey key() {
+    public static SecretKey key() {
         if (instance == null) {
             throw new IllegalStateException("EncryptionKeyHolder no ha sido inicializado todavía por Spring");
         }

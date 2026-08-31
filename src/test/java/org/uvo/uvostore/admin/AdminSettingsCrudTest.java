@@ -65,7 +65,7 @@ class AdminSettingsCrudTest extends IntegrationTestSupport {
                         .contentType("application/json")
                         .content(body))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.posApiToken").value("uvp_1_abc123XYZ"));
+                .andExpect(jsonPath("$.posApiTokenConfigured").value(true));
     }
 
     @Test

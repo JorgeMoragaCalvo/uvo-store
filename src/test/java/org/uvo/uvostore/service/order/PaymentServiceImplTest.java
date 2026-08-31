@@ -1,15 +1,19 @@
 package org.uvo.uvostore.service.order;
 
+import com.stripe.net.RequestOptions;
 import com.stripe.param.checkout.SessionCreateParams;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.uvo.uvostore.entity.order.Order;
 import org.uvo.uvostore.entity.order.OrderItem;
+import org.uvo.uvostore.entity.payment.EncryptionKeyHolder;
+import org.uvo.uvostore.entity.settings.Setting;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.repository.SettingRepository;
 import org.uvo.uvostore.security.TenantContext;
+import org.uvo.uvostore.service.settings.SecretCrypto;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -31,6 +35,11 @@ class PaymentServiceImplTest {
 
     @BeforeEach
     void setUp() {
+        // EncryptionKeyHolder is normally Spring-constructed, but its constructor's only real job
+        // is setting a static field — safe to construct directly here so SecretCrypto (used by
+        // requestOptions()) has a key to work with, without needing a full Spring context.
+        new EncryptionKeyHolder("d/S6b0SJRrMoJhWogobxo7fJzLyhQox5Nq709OLTiNI=");
+
         paymentService = new PaymentServiceImpl(
                 orderRepository, settingRepository, orderStatusService,
                 "sk_test_fallback", "whsec_fallback", "clp", "http://localhost:5173");
@@ -38,6 +47,7 @@ class PaymentServiceImplTest {
         Store store = Store.builder().id(1L).name("Tienda de prueba").slug("test").status("active").build();
         TenantContext.set(store);
         when(settingRepository.findByStoreIdAndSettingKey(1L, "currency")).thenReturn(java.util.Optional.empty());
+        when(settingRepository.findByStoreIdAndSettingKey(1L, "stripe_secret_key")).thenReturn(java.util.Optional.empty());
     }
 
     @AfterEach
@@ -110,5 +120,27 @@ class PaymentServiceImplTest {
         paymentService.buildSessionParams(order, null, null);
 
         assertEquals(null, com.stripe.Stripe.apiKey);
+    }
+
+    @Test
+    void decryptsTheStripeSecretKeyStoredByAdminSettings() {
+        // C3 fix — SettingsServiceImpl.setSecret() now stores stripe_secret_key encrypted (see
+        // SecretCrypto), so requestOptions() must decrypt it before handing it to the Stripe SDK.
+        String realKey = "sk_test_real_key_from_admin_settings";
+        Setting encrypted = new Setting();
+        encrypted.setValue(SecretCrypto.encrypt(realKey));
+        when(settingRepository.findByStoreIdAndSettingKey(1L, "stripe_secret_key")).thenReturn(java.util.Optional.of(encrypted));
+
+        RequestOptions options = paymentService.requestOptions();
+
+        assertEquals(realKey, options.getApiKey());
+    }
+
+    @Test
+    void fallsBackToTheUndecryptedConfiguredKeyWhenNoSettingIsStored() {
+        // The application.properties fallback was never encrypted, so it must be used as-is.
+        RequestOptions options = paymentService.requestOptions();
+
+        assertEquals("sk_test_fallback", options.getApiKey());
     }
 }

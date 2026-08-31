@@ -8,7 +8,7 @@ import { Switch } from '@/components/ui/switch'
 import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAdminGeneralSettingsStore } from '@/admin/stores/useAdminGeneralSettingsStore'
-import type { GeneralSettingsDto } from '@/admin/types/admin'
+import type { GeneralSettingsDto, GeneralSettingsUpdateRequest } from '@/admin/types/admin'
 
 function Field({
   id,
@@ -40,6 +40,40 @@ function Toggle({ id, label, checked, onChange }: { id: string; label: string; c
   )
 }
 
+// For secrets: never pre-filled with the real value (the GET response only carries a "configured"
+// flag). Left blank on submit means "no cambiar" — see SettingsServiceImpl.setSecret.
+function SecretField({
+  id,
+  label,
+  value,
+  configured,
+  onChange,
+}: {
+  id: string
+  label: string
+  value: string
+  configured: boolean
+  onChange: (value: string) => void
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <Label htmlFor={id}>{label}</Label>
+        <span className={`text-xs ${configured ? 'text-green-600' : 'text-muted-foreground'}`}>
+          {configured ? 'Configurado' : 'No configurado'}
+        </span>
+      </div>
+      <Input
+        id={id}
+        type="password"
+        value={value}
+        placeholder="Dejar en blanco para no cambiar"
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </div>
+  )
+}
+
 export default function GeneralSettings() {
   const settings = useAdminGeneralSettingsStore((state) => state.settings)
   const loading = useAdminGeneralSettingsStore((state) => state.loading)
@@ -58,12 +92,22 @@ export default function GeneralSettings() {
   return <GeneralSettingsForm key="loaded" initial={settings} />
 }
 
+function toUpdateRequest(dto: GeneralSettingsDto): GeneralSettingsUpdateRequest {
+  const { stripeSecretKeyConfigured: _s, posApiTokenConfigured: _t, posWebhookSecretConfigured: _w, ...rest } = dto
+  return { ...rest, stripeSecretKey: '', posApiToken: '', posWebhookSecret: '' }
+}
+
 function GeneralSettingsForm({ initial }: { initial: GeneralSettingsDto }) {
   const update = useAdminGeneralSettingsStore((state) => state.update)
-  const [form, setForm] = useState<GeneralSettingsDto>(initial)
+  const [configured, setConfigured] = useState({
+    stripeSecretKey: initial.stripeSecretKeyConfigured,
+    posApiToken: initial.posApiTokenConfigured,
+    posWebhookSecret: initial.posWebhookSecretConfigured,
+  })
+  const [form, setForm] = useState<GeneralSettingsUpdateRequest>(toUpdateRequest(initial))
   const [saving, setSaving] = useState(false)
 
-  function set<K extends keyof GeneralSettingsDto>(key: K, value: GeneralSettingsDto[K]) {
+  function set<K extends keyof GeneralSettingsUpdateRequest>(key: K, value: GeneralSettingsUpdateRequest[K]) {
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
@@ -71,8 +115,16 @@ function GeneralSettingsForm({ initial }: { initial: GeneralSettingsDto }) {
     event.preventDefault()
     setSaving(true)
     try {
-      await update(form)
+      const updated = await update(form)
       toast.success('Configuración guardada')
+      setConfigured({
+        stripeSecretKey: updated.stripeSecretKeyConfigured,
+        posApiToken: updated.posApiTokenConfigured,
+        posWebhookSecret: updated.posWebhookSecretConfigured,
+      })
+      set('stripeSecretKey', '')
+      set('posApiToken', '')
+      set('posWebhookSecret', '')
     } catch (err) {
       const message = (err as { message?: string })?.message
       toast.error(message ?? 'No se pudo guardar la configuración')
@@ -176,11 +228,11 @@ function GeneralSettingsForm({ initial }: { initial: GeneralSettingsDto }) {
               <CardContent className="grid grid-cols-1 gap-4 pt-6 sm:grid-cols-2">
                 <Toggle id="stripeEnabled" label="Stripe habilitado" checked={form.stripeEnabled} onChange={(v) => set('stripeEnabled', v)} />
                 <Field id="stripePublicKey" label="Public key" value={form.stripePublicKey} onChange={(v) => set('stripePublicKey', v)} />
-                <Field
+                <SecretField
                   id="stripeSecretKey"
                   label="Secret key"
-                  type="password"
                   value={form.stripeSecretKey}
+                  configured={configured.stripeSecretKey}
                   onChange={(v) => set('stripeSecretKey', v)}
                 />
               </CardContent>
@@ -201,17 +253,18 @@ function GeneralSettingsForm({ initial }: { initial: GeneralSettingsDto }) {
                     onChange={(v) => set('posSyncEnabled', v)}
                   />
                   <Field id="posApiUrl" label="URL de la API del POS" value={form.posApiUrl} onChange={(v) => set('posApiUrl', v)} />
-                  <Field
+                  <SecretField
                     id="posApiToken"
                     label="Token de la API (uvp_&#123;companyId&#125;_&#123;clave&#125;)"
                     value={form.posApiToken}
+                    configured={configured.posApiToken}
                     onChange={(v) => set('posApiToken', v)}
                   />
-                  <Field
+                  <SecretField
                     id="posWebhookSecret"
                     label="Secreto de webhook"
-                    type="password"
                     value={form.posWebhookSecret}
+                    configured={configured.posWebhookSecret}
                     onChange={(v) => set('posWebhookSecret', v)}
                   />
                 </div>
