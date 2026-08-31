@@ -49,12 +49,14 @@ public class PosConnection {
     @Column(name = "api_url", nullable = false)
     private String apiUrl;
 
-    // Secret — store encrypted (e.g. via a JPA AttributeConverter), never log.
+    // Secret — encrypted at rest (AES-256-GCM, see EncryptedStringConverter), never log.
     @Column(name = "api_key", nullable = false)
+    @jakarta.persistence.Convert(converter = org.uvo.uvostore.entity.payment.EncryptedStringConverter.class)
     private String apiKey;
 
-    // Secret — store encrypted.
+    // Secret — encrypted at rest.
     @Column(name = "webhook_secret", nullable = false)
+    @jakarta.persistence.Convert(converter = org.uvo.uvostore.entity.payment.EncryptedStringConverter.class)
     private String webhookSecret;
 
     @Column(name = "is_active", nullable = false)

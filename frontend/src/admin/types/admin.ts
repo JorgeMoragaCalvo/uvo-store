@@ -488,8 +488,9 @@ export interface HomeBannerDto {
   sortOrder: number
 }
 
-// Mirrors GeneralSettingsDto — general/currency/shipping/checkout/stripe/pos/seo/social settings,
-// stored as flat Setting rows keyed by store.
+// Mirrors GeneralSettingsDto — GET response only. Secrets are never returned in plaintext, only a
+// "*Configured" flag (same pattern as PaymentGatewayConfigDto.credentialsSet). See
+// GeneralSettingsUpdateRequest for the PUT body.
 export interface GeneralSettingsDto {
   storeName: string
   storeEmail: string
@@ -507,11 +508,11 @@ export interface GeneralSettingsDto {
   requirePhone: boolean
   requireCompany: boolean
   stripePublicKey: string
-  stripeSecretKey: string
+  stripeSecretKeyConfigured: boolean
   stripeEnabled: boolean
   posApiUrl: string
-  posApiToken: string
-  posWebhookSecret: string
+  posApiTokenConfigured: boolean
+  posWebhookSecretConfigured: boolean
   posSyncEnabled: boolean
   metaTitle: string
   metaDescription: string
@@ -519,6 +520,14 @@ export interface GeneralSettingsDto {
   facebookUrl: string
   instagramUrl: string
   twitterUrl: string
+}
+
+// Mirrors GeneralSettingsUpdateRequest — PUT body. Secret fields are write-only: blank/omitted
+// means "leave the stored value unchanged" (see SettingsServiceImpl.setSecret).
+export interface GeneralSettingsUpdateRequest extends Omit<GeneralSettingsDto, 'stripeSecretKeyConfigured' | 'posApiTokenConfigured' | 'posWebhookSecretConfigured'> {
+  stripeSecretKey: string
+  posApiToken: string
+  posWebhookSecret: string
 }
 
 // Mirrors StoreSettingsDto — branding (logo/colors) + home page section toggles.

@@ -18,6 +18,18 @@ export default defineConfig([
     languageOptions: {
       globals: globals.browser,
     },
+    rules: {
+      // typescript-eslint's no-unused-vars ships stricter defaults than ESLint's core rule:
+      // `ignoreRestSiblings` is false and there are no ignore patterns. These options only relax
+      // the rule, restoring the conventional behavior: `const { omitted, ...rest } = obj` to drop
+      // a property, and a leading `_` to mark a binding as deliberately unused.
+      '@typescript-eslint/no-unused-vars': ['error', {
+        ignoreRestSiblings: true,
+        varsIgnorePattern: '^_',
+        argsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_',
+      }],
+    },
   },
   {
     // shadcn/ui-generated components: several export a *Variants cva() helper alongside the
