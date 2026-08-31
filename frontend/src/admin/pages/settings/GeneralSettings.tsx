@@ -93,7 +93,12 @@ export default function GeneralSettings() {
 }
 
 function toUpdateRequest(dto: GeneralSettingsDto): GeneralSettingsUpdateRequest {
-  const { stripeSecretKeyConfigured: _s, posApiTokenConfigured: _t, posWebhookSecretConfigured: _w, ...rest } = dto
+  const {
+    stripeSecretKeyConfigured,
+    posApiTokenConfigured,
+    posWebhookSecretConfigured,
+    ...rest
+  } = dto
   return { ...rest, stripeSecretKey: '', posApiToken: '', posWebhookSecret: '' }
 }
 
