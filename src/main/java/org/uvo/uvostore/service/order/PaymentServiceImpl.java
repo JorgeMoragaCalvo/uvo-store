@@ -1,25 +1,23 @@
 package org.uvo.uvostore.service.order;
 
-import com.stripe.Stripe;
 import com.stripe.exception.SignatureVerificationException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Event;
 import com.stripe.model.PaymentIntent;
 import com.stripe.model.StripeObject;
 import com.stripe.model.checkout.Session;
+import com.stripe.net.RequestOptions;
 import com.stripe.net.Webhook;
 import com.stripe.param.checkout.SessionCreateParams;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.uvo.uvostore.entity.order.Order;
-import org.uvo.uvostore.entity.order.OrderItem;
 import org.uvo.uvostore.entity.order.enums.PaymentStatus;
 import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.repository.SettingRepository;
 import org.uvo.uvostore.security.TenantContext;
 
-import java.math.BigDecimal;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 
@@ -59,8 +57,6 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     @Transactional
     public CheckoutSessionResult createCheckoutSession(Long orderId, String successUrl, String cancelUrl) {
-        applyApiKey();
-
         Order order = orderRepository.findById(orderId)
                 .filter(o -> o.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("Order " + orderId + " not found"));
@@ -69,36 +65,10 @@ public class PaymentServiceImpl implements PaymentService {
             throw new IllegalStateException("Esta orden ya fue procesada");
         }
 
-        String currency = settingValue("currency", defaultCurrency);
-        SessionCreateParams.Builder builder = SessionCreateParams.builder()
-                .addPaymentMethodType(SessionCreateParams.PaymentMethodType.CARD)
-                .setMode(SessionCreateParams.Mode.PAYMENT)
-                .setSuccessUrl(successUrl != null ? successUrl : frontendUrl + "/order/success?session_id={CHECKOUT_SESSION_ID}")
-                .setCancelUrl(cancelUrl != null ? cancelUrl : frontendUrl + "/checkout?canceled=1")
-                .setClientReferenceId(order.getOrderNumber())
-                .putMetadata("order_id", String.valueOf(order.getId()))
-                .putMetadata("order_number", order.getOrderNumber())
-                .setCustomerEmail(order.getCustomerEmail());
-
-        for (OrderItem item : order.getItems()) {
-            builder.addLineItem(lineItem(currency, item.getProductName(), item.getProductSku(), item.getPrice(), item.getQuantity()));
-        }
-        if (order.getShippingCost() != null && order.getShippingCost().signum() > 0) {
-            builder.addLineItem(lineItem(currency, "Envío", "Costo de envío a domicilio", order.getShippingCost(), 1));
-        }
-        if (order.getTaxAmount() != null && order.getTaxAmount().signum() > 0) {
-            builder.addLineItem(lineItem(currency, "IVA", "Impuesto al Valor Agregado", order.getTaxAmount(), 1));
-        }
-
-        builder.setPaymentIntentData(SessionCreateParams.PaymentIntentData.builder()
-                .putMetadata("order_id", String.valueOf(order.getId()))
-                .putMetadata("order_number", order.getOrderNumber())
-                .putMetadata("customer_name", order.getCustomerFirstName() + " " + order.getCustomerLastName())
-                .putMetadata("customer_phone", order.getCustomerPhone() == null ? "" : order.getCustomerPhone())
-                .build());
+        SessionCreateParams params = buildSessionParams(order, successUrl, cancelUrl);
 
         try {
-            Session session = Session.create(builder.build());
+            Session session = Session.create(params, requestOptions());
             order.setStripeCheckoutSessionId(session.getId());
             orderRepository.save(order);
             return new CheckoutSessionResult(session.getId(), session.getUrl());
@@ -107,14 +77,53 @@ public class PaymentServiceImpl implements PaymentService {
         }
     }
 
+    // Package-visible so tests can assert the built params (line items, total) without making a
+    // real Stripe API call.
+    SessionCreateParams buildSessionParams(Order order, String successUrl, String cancelUrl) {
+        String currency = settingValue("currency", defaultCurrency);
+
+        // A single line item for order.getTotal() — the total already computed correctly on the
+        // server (discount subtracted, tax not double-counted when prices are tax-inclusive; see
+        // CartPricingServiceImpl) — instead of reconstructing items+shipping+tax separately here,
+        // which previously dropped the discount entirely and double-charged tax whenever
+        // prices_include_tax was on. This guarantees Stripe always charges exactly the order total.
+        SessionCreateParams.LineItem totalLineItem = SessionCreateParams.LineItem.builder()
+                .setQuantity(1L)
+                .setPriceData(SessionCreateParams.LineItem.PriceData.builder()
+                        .setCurrency(currency)
+                        .setUnitAmount(order.getTotal().setScale(0, java.math.RoundingMode.HALF_UP).longValueExact())
+                        .setProductData(SessionCreateParams.LineItem.PriceData.ProductData.builder()
+                                .setName("Pedido " + order.getOrderNumber())
+                                .setDescription(order.getItems().size() + " producto(s)")
+                                .build())
+                        .build())
+                .build();
+
+        return SessionCreateParams.builder()
+                .addPaymentMethodType(SessionCreateParams.PaymentMethodType.CARD)
+                .setMode(SessionCreateParams.Mode.PAYMENT)
+                .setSuccessUrl(successUrl != null ? successUrl : frontendUrl + "/order/success?session_id={CHECKOUT_SESSION_ID}")
+                .setCancelUrl(cancelUrl != null ? cancelUrl : frontendUrl + "/checkout?canceled=1")
+                .setClientReferenceId(order.getOrderNumber())
+                .putMetadata("order_id", String.valueOf(order.getId()))
+                .putMetadata("order_number", order.getOrderNumber())
+                .setCustomerEmail(order.getCustomerEmail())
+                .addLineItem(totalLineItem)
+                .setPaymentIntentData(SessionCreateParams.PaymentIntentData.builder()
+                        .putMetadata("order_id", String.valueOf(order.getId()))
+                        .putMetadata("order_number", order.getOrderNumber())
+                        .putMetadata("customer_name", order.getCustomerFirstName() + " " + order.getCustomerLastName())
+                        .putMetadata("customer_phone", order.getCustomerPhone() == null ? "" : order.getCustomerPhone())
+                        .build())
+                .build();
+    }
+
     @Override
     @Transactional
     public PaymentVerificationResult verifyPayment(String sessionId) {
-        applyApiKey();
-
         Session session;
         try {
-            session = Session.retrieve(sessionId);
+            session = Session.retrieve(sessionId, requestOptions());
         } catch (StripeException e) {
             throw new IllegalStateException("Error al verificar pago: " + e.getMessage(), e);
         }
@@ -132,7 +141,8 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     @Transactional
     public void handleWebhook(String payload, String signatureHeader) {
-        applyApiKey();
+        // Webhook.constructEvent only verifies the HMAC signature locally — it never calls the
+        // Stripe API, so it needs no API key.
         String webhookSecret = settingValue("stripe_webhook_secret", fallbackWebhookSecret);
 
         Event event;
@@ -171,22 +181,11 @@ public class PaymentServiceImpl implements PaymentService {
         return event.getDataObjectDeserializer().getObject().filter(type::isInstance).map(obj -> (T) obj);
     }
 
-    private SessionCreateParams.LineItem lineItem(String currency, String name, String description, BigDecimal amount, int quantity) {
-        return SessionCreateParams.LineItem.builder()
-                .setQuantity((long) quantity)
-                .setPriceData(SessionCreateParams.LineItem.PriceData.builder()
-                        .setCurrency(currency)
-                        .setUnitAmount(amount.setScale(0, java.math.RoundingMode.HALF_UP).longValueExact())
-                        .setProductData(SessionCreateParams.LineItem.PriceData.ProductData.builder()
-                                .setName(name)
-                                .setDescription(description)
-                                .build())
-                        .build())
-                .build();
-    }
-
-    private void applyApiKey() {
-        Stripe.apiKey = settingValue("stripe_secret_key", fallbackSecretKey);
+    // Per-call, not a shared static field (com.stripe.Stripe.apiKey is a JVM-global static — under
+    // concurrent requests from different stores, one tenant's checkout could run under another
+    // tenant's Stripe key). Every real Stripe API call in this class must pass this explicitly.
+    private RequestOptions requestOptions() {
+        return RequestOptions.builder().setApiKey(settingValue("stripe_secret_key", fallbackSecretKey)).build();
     }
 
     private String settingValue(String key, String fallback) {
