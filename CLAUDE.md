@@ -122,6 +122,24 @@ and sales/products/payment-methods reports with date-range filters and CSV expor
 `controller/customer/**` (account + addresses, JWT), `controller/platform/**` (store onboarding,
 `X-Platform-Key`), and `controller/auth` (admin/customer JWT login+register, password reset).
 
+**Stock and coupon uses are never written with read-modify-write** (C5). `Product.stock`,
+`ProductVariation.stock` and `Coupon.timesUsed` move only through the conditional `@Modifying`
+queries in their repositories — `decrementStock` carries `AND stock >= :quantity`, `claimUsage`
+carries `AND (usageLimit IS NULL OR timesUsed < usageLimit)`, and **the affected-row count is the
+only trustworthy result**: 0 means someone else got there first. Reading the entity, comparing in
+Java and saving it back lets two concurrent payments both sell the last unit. The database backs
+this up with `CHECK (stock >= 0)` on both tables (V13). All of the order-lifecycle stock movement
+lives in `OrderInventoryService`, guarded by `orders.stock_applied`/`stock_restored`, because four
+separate paths can cancel an order and a second cancellation would otherwise invent inventory.
+`StockConcurrencyTest` is the only test in the project that runs real concurrent threads — it
+deliberately does not extend `IntegrationTestSupport`, whose per-test transaction would hide the
+race.
+
+Two related gaps that are **not** covered: `PosWebhookServiceImpl.handleStockUpdated` still
+overwrites stock blindly from the POS and can clobber a decrement, and marking an order paid from
+the admin panel (`AdminOrderServiceImpl.updatePaymentStatus`) does **not** decrement stock — only
+the gateway paths publish `PaymentConfirmedEvent`.
+
 `OpenApiConfig` wires springdoc — API docs at `/swagger-ui.html`, grouped into five surfaces
 (public/admin/customer/pos/platform) with a `bearerAuth` JWT scheme wired to the "Authorize"
 button. Error tracking is `io.sentry:sentry` (the **core SDK**, not

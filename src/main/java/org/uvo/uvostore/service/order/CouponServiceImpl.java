@@ -75,12 +75,27 @@ public class CouponServiceImpl implements CouponService {
         return coupon.getValue().min(subtotal);
     }
 
+    // C5: validate() above is a read, so two concurrent checkouts can both pass its usage_limit
+    // check. This is the statement that actually enforces the limit — the condition lives in the
+    // UPDATE, so the database serialises the claims and only one of them affects a row.
+    @Override
+    @Transactional
+    public boolean claimUsage(Coupon coupon) {
+        return couponRepository.claimUsage(coupon.getId()) == 1;
+    }
+
+    @Override
+    @Transactional
+    public void releaseUsage(Coupon coupon) {
+        couponRepository.releaseUsage(coupon.getId());
+    }
+
+    // Only the usage row: incrementing times_used is claimUsage's job, and it already ran before
+    // the order was saved. Both happen inside the checkout's transaction, so a later failure rolls
+    // back the claim too.
     @Override
     @Transactional
     public void recordUsage(Coupon coupon, Order order, Customer customer) {
-        coupon.setTimesUsed(coupon.getTimesUsed() + 1);
-        couponRepository.save(coupon);
-
         CouponUsage usage = new CouponUsage();
         usage.setCoupon(coupon);
         usage.setOrder(order);
