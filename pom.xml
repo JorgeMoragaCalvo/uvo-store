@@ -82,7 +82,7 @@
         <dependency>
             <groupId>me.paulschwarz</groupId>
             <artifactId>spring-dotenv</artifactId>
-            <version>4.0.0</version>
+            <version>5.1.0</version>
         </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>
@@ -173,6 +173,25 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!-- The three configuration secrets lost their defaults in application.properties
+                         (C4), so the tests — plain @SpringBootTest against that same file, there is no
+                         src/test/resources — need their own. System properties outrank
+                         application.properties in Spring's Environment, so this makes `mvnw test` and
+                         `mvnw verify` self-sufficient on any machine and in CI, with no env vars in the
+                         workflows and no @ActiveProfiles on the test classes.
+                         These are throwaway literals, deliberately different from the old committed
+                         defaults so they don't trip RequiredSecret.rejectLegacyDefault. -->
+                    <systemPropertyVariables>
+                        <jwt.secret>test-only-jwt-secret-not-a-real-one-at-least-32-bytes</jwt.secret>
+                        <app.encryption-key>dGVzdC1vbmx5LWtleS1ub3QtYS1yZWFsLW9uZS0zMmI=</app.encryption-key>
+                        <app.platform-api-key>test-only-platform-key-not-a-real-one</app.platform-api-key>
+                    </systemPropertyVariables>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
