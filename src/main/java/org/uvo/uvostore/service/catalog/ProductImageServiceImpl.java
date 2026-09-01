@@ -9,7 +9,9 @@ import org.uvo.uvostore.entity.catalog.enums.ImageType;
 import org.uvo.uvostore.repository.ProductImageRepository;
 import org.uvo.uvostore.security.TenantContext;
 
+import java.util.Comparator;
 import java.util.List;
+import java.util.NoSuchElementException;
 
 @Service
 public class ProductImageServiceImpl implements ProductImageService {
@@ -47,6 +49,45 @@ public class ProductImageServiceImpl implements ProductImageService {
         image.setSortOrder(nextSortOrder);
         image.setFeatured(featured);
         image.setType(ImageType.GALLERY);
-        return productImageRepository.save(image);
+        ProductImage saved = productImageRepository.save(image);
+
+        // Keep the owning side in sync. ProductDtoMapper builds the response from
+        // product.getProductImages(), so without this the caller gets a product with an empty
+        // `images` array right after uploading one — the row is in the database, but the entity
+        // already in the persistence context never learns about it.
+        product.getProductImages().add(saved);
+        return saved;
+    }
+
+    // Mirrors CategoryServiceImpl.removeImage: the stored file goes with the row, so deleting a
+    // photo doesn't leave an orphan in uploads/products/ forever. Scoped by product AND store —
+    // an image belonging to another tenant must read as "not found", never be deletable.
+    @Override
+    @Transactional
+    public void removeImage(Long productId, Long imageId) {
+        ProductImage image = productImageRepository.findById(imageId)
+                .filter(i -> i.getProduct().getId().equals(productId))
+                .filter(i -> i.getStore().getId().equals(TenantContext.requireStoreId()))
+                .orElseThrow(() -> new NoSuchElementException("Product image " + imageId + " not found"));
+
+        boolean wasFeatured = image.isFeatured();
+        Product product = image.getProduct();
+
+        fileStorageService.delete(image.getImagePath());
+        product.getProductImages().removeIf(i -> i.getId().equals(imageId));
+        productImageRepository.delete(image);
+
+        // Without this the product keeps a gallery but loses its thumbnail: the admin listing
+        // renders ProductDto.featuredImage, which is derived from whichever image is flagged
+        // featured. Works off the in-memory collection so the DTO built right after this call
+        // reflects the promotion.
+        if (wasFeatured) {
+            product.getProductImages().stream()
+                    .min(Comparator.comparingInt(ProductImage::getSortOrder))
+                    .ifPresent(promoted -> {
+                        promoted.setFeatured(true);
+                        productImageRepository.save(promoted);
+                    });
+        }
     }
 }
