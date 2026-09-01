@@ -18,10 +18,13 @@ public class AdminOrderServiceImpl implements AdminOrderService {
 
     private final OrderRepository orderRepository;
     private final AdminOrderQueryService adminOrderQueryService;
+    private final OrderInventoryService orderInventoryService;
 
-    public AdminOrderServiceImpl(OrderRepository orderRepository, AdminOrderQueryService adminOrderQueryService) {
+    public AdminOrderServiceImpl(OrderRepository orderRepository, AdminOrderQueryService adminOrderQueryService,
+                                 OrderInventoryService orderInventoryService) {
         this.orderRepository = orderRepository;
         this.adminOrderQueryService = adminOrderQueryService;
+        this.orderInventoryService = orderInventoryService;
     }
 
     @Override
@@ -63,6 +66,7 @@ public class AdminOrderServiceImpl implements AdminOrderService {
         Order order = findOrThrow(orderId);
         order.setStatus(OrderStatus.CANCELLED);
         appendHistory(order, "Orden cancelada");
+        releaseInventory(order);
         orderRepository.save(order);
         return adminOrderQueryService.getById(orderId);
     }
@@ -71,8 +75,12 @@ public class AdminOrderServiceImpl implements AdminOrderService {
     @Transactional
     public AdminOrderDetailDto updateStatus(Long orderId, String status) {
         Order order = findOrThrow(orderId);
-        order.setStatus(OrderStatus.valueOf(status.toUpperCase()));
+        OrderStatus newStatus = OrderStatus.valueOf(status.toUpperCase());
+        order.setStatus(newStatus);
         appendHistory(order, "Estado actualizado manualmente");
+        if (newStatus == OrderStatus.CANCELLED || newStatus == OrderStatus.REFUNDED) {
+            releaseInventory(order);
+        }
         orderRepository.save(order);
         return adminOrderQueryService.getById(orderId);
     }
@@ -99,6 +107,14 @@ public class AdminOrderServiceImpl implements AdminOrderService {
         appendHistory(order, "Número de seguimiento guardado");
         orderRepository.save(order);
         return adminOrderQueryService.getById(orderId);
+    }
+
+    // C5: an admin cancelling or refunding an order has to give the inventory back, the same way
+    // the automatic cancellation path does. Both calls are guarded internally, so they do nothing
+    // for an order that was never paid, and nothing again on a second cancellation.
+    private void releaseInventory(Order order) {
+        orderInventoryService.restoreOrderStock(order);
+        orderInventoryService.releaseCouponUsage(order);
     }
 
     private void appendHistory(Order order, String notes) {

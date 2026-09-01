@@ -41,6 +41,7 @@ public class CheckoutServiceImpl implements CheckoutService {
     private static final String SKU_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
     private final CartPricingService cartPricingService;
+    private final CartService cartService;
     private final CouponService couponService;
     private final CustomerService customerService;
     private final OrderRepository orderRepository;
@@ -52,6 +53,7 @@ public class CheckoutServiceImpl implements CheckoutService {
 
     public CheckoutServiceImpl(
             CartPricingService cartPricingService,
+            CartService cartService,
             CouponService couponService,
             CustomerService customerService,
             OrderRepository orderRepository,
@@ -61,6 +63,7 @@ public class CheckoutServiceImpl implements CheckoutService {
             PaymentGatewayConfigRepository paymentGatewayConfigRepository,
             ApplicationEventPublisher applicationEventPublisher) {
         this.cartPricingService = cartPricingService;
+        this.cartService = cartService;
         this.couponService = couponService;
         this.customerService = customerService;
         this.orderRepository = orderRepository;
@@ -76,6 +79,20 @@ public class CheckoutServiceImpl implements CheckoutService {
     public OrderConfirmation checkout(CheckoutCommand command) {
         if (command.lines() == null || command.lines().isEmpty()) {
             throw new IllegalArgumentException("El carrito no puede estar vacío");
+        }
+
+        // C5: the checkout used to create the order without looking at stock at all — the only
+        // check lived in StockDecrementListener, AFTER the customer had paid. Reuses the cart's own
+        // validation (CartServiceImpl.validateItems) rather than duplicating it: same manageStock
+        // handling, same Spanish messages, same per-item error keys the SPA already renders.
+        // This closes the common case; the conditional UPDATE at payment time still covers the
+        // narrow window between here and the gateway's confirmation.
+        CartValidationResult stockCheck = cartService.validateItems(toCartItems(command.lines()));
+        if (!stockCheck.valid()) {
+            // Resolve the lines first: a product belonging to another store must still answer 404
+            // (tenant isolation), never a 409 that would confirm it exists somewhere else.
+            command.lines().forEach(this::resolveLineOrThrow);
+            throw new OutOfStockException(stockCheck.errors());
         }
 
         CartTotals totals = cartPricingService.price(command.lines(), command.couponCode(), command.region(), command.commune());
@@ -117,6 +134,14 @@ public class CheckoutServiceImpl implements CheckoutService {
         if (command.couponCode() != null && !command.couponCode().isBlank()) {
             CouponValidationResult couponResult = couponService.validate(command.couponCode(), totals.subtotalWithoutTax(), customer.getId());
             if (couponResult.valid()) {
+                // Claimed here, before the order is built, because the discount is already baked
+                // into `totals` above. If the coupon ran out in the meantime we can't quietly
+                // re-price without it — the customer would be charged an amount they never saw —
+                // so the checkout fails and they can retry. The claim is part of this transaction,
+                // so any later failure rolls it back.
+                if (!couponService.claimUsage(couponResult.coupon())) {
+                    throw new IllegalStateException("El cupón alcanzó su límite de usos.");
+                }
                 order.setCoupon(couponResult.coupon());
                 order.setCouponCode(command.couponCode());
             }
@@ -168,6 +193,33 @@ public class CheckoutServiceImpl implements CheckoutService {
                 stringSetting("currency", "CLP"),
                 stringSetting("currency_symbol", "$")
         );
+    }
+
+    // Same tenant-scoped lookup buildOrderItem does, without building anything — used to keep the
+    // 404-before-409 ordering above.
+    private void resolveLineOrThrow(CartLineCommand line) {
+        Long storeId = TenantContext.requireStoreId();
+        if (line.variationId() != null) {
+            variationRepository.findById(line.variationId())
+                    .filter(v -> v.getStore().getId().equals(storeId))
+                    .orElseThrow(() -> new NoSuchElementException("Variation " + line.variationId() + " not found"));
+        } else {
+            productRepository.findById(line.productId())
+                    .filter(p -> p.getStore().getId().equals(storeId))
+                    .orElseThrow(() -> new NoSuchElementException("Product " + line.productId() + " not found"));
+        }
+    }
+
+    // CartService speaks (id, type) while checkout speaks (productId, variationId) — same items,
+    // two shapes that predate each other.
+    private List<CartItemCommand> toCartItems(List<CartLineCommand> lines) {
+        List<CartItemCommand> items = new ArrayList<>();
+        for (CartLineCommand line : lines) {
+            items.add(line.variationId() != null
+                    ? new CartItemCommand(line.variationId(), "variation", line.quantity())
+                    : new CartItemCommand(line.productId(), "product", line.quantity()));
+        }
+        return items;
     }
 
     private OrderItem buildOrderItem(Order order, CartLineCommand line) {

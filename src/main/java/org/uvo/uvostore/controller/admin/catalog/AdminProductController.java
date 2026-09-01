@@ -19,6 +19,7 @@ import org.uvo.uvostore.service.catalog.AdminProductSearchCriteria;
 import org.uvo.uvostore.service.catalog.AdminProductStatsDto;
 import org.uvo.uvostore.service.catalog.ProductCreateCommand;
 import org.uvo.uvostore.service.catalog.ProductDto;
+import org.uvo.uvostore.service.catalog.ProductImageService;
 import org.uvo.uvostore.service.catalog.ProductQueryService;
 import org.uvo.uvostore.service.catalog.ProductService;
 
@@ -32,10 +33,13 @@ public class AdminProductController {
 
     private final ProductService productService;
     private final ProductQueryService productQueryService;
+    private final ProductImageService productImageService;
 
-    public AdminProductController(ProductService productService, ProductQueryService productQueryService) {
+    public AdminProductController(ProductService productService, ProductQueryService productQueryService,
+                                  ProductImageService productImageService) {
         this.productService = productService;
         this.productQueryService = productQueryService;
+        this.productImageService = productImageService;
     }
 
     @GetMapping
@@ -82,6 +86,15 @@ public class AdminProductController {
     public ProductDto update(@PathVariable Long id, @ModelAttribute ProductRequest request) {
         Product product = productService.updateProduct(id, toCommand(request));
         return productQueryService.getById(product.getId());
+    }
+
+    // Same shape as AdminCategoryController's DELETE /{id}/image, but per-image because products
+    // have a gallery. Returns the refreshed product so the form can re-render from the response
+    // instead of firing a second request.
+    @DeleteMapping("/{id}/images/{imageId}")
+    public ProductDto removeImage(@PathVariable Long id, @PathVariable Long imageId) {
+        productImageService.removeImage(id, imageId);
+        return productQueryService.getById(id);
     }
 
     @DeleteMapping("/{id}")

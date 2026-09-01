@@ -10,6 +10,7 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.uvo.uvostore.service.order.OutOfStockException;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -42,6 +43,14 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleBadRequest(RuntimeException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ApiError.of(HttpStatus.BAD_REQUEST.value(), "Bad Request", ex.getMessage()));
+    }
+
+    // 409, not 400: nothing is wrong with the request — the stock ran out. The SPA needs to tell
+    // the two apart to show "alguien lo compró antes" instead of a validation error.
+    @ExceptionHandler(OutOfStockException.class)
+    public ResponseEntity<ApiError> handleOutOfStock(OutOfStockException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiError.of(HttpStatus.CONFLICT.value(), "Conflict", ex.getMessage(), ex.getErrors()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

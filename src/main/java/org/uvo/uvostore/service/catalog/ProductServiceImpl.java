@@ -89,7 +89,15 @@ public class ProductServiceImpl implements ProductService {
             product.setStock(command.stock() != null ? command.stock() : 0);
             product.setManageStock(command.manageStock());
         }
-        return productRepository.save(product);
+        Product saved = productRepository.save(product);
+        // The update path used to drop featuredImage/images on the floor even though ProductRequest
+        // accepted them, so the admin panel had no way to add or change a photo after creation —
+        // the only fix was deleting the product and making it again. persistImages skips null/empty
+        // files, so saving without touching the file inputs still changes nothing. It appends
+        // rather than replaces: a new featured image un-features the previous one (see
+        // ProductImageServiceImpl.store), and removing one is ProductImageService.removeImage's job.
+        persistImages(saved, command.featuredImage(), command.images());
+        return saved;
     }
 
     @Override

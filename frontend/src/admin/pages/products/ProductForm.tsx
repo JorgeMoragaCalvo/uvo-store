@@ -10,7 +10,7 @@ import { Switch } from '@/components/ui/switch'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import adminApi from '@/admin/services/adminApi'
-import type { CategoryDto } from '@/admin/types/admin'
+import type { CategoryDto, ProductImageDto } from '@/admin/types/admin'
 
 interface FormState {
   name: string
@@ -47,9 +47,12 @@ export default function ProductForm() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [featuredImage, setFeaturedImage] = useState<File | null>(null)
   const [galleryImages, setGalleryImages] = useState<File[]>([])
-  const [existingImages, setExistingImages] = useState<string[]>([])
+  // Kept as full DTOs, not just urls: `id` is what the delete endpoint needs and `isFeatured` is
+  // what tells the admin which photo the storefront and the product listing actually show.
+  const [existingImages, setExistingImages] = useState<ProductImageDto[]>([])
   const [loading, setLoading] = useState(isEdit)
   const [saving, setSaving] = useState(false)
+  const [removingImageId, setRemovingImageId] = useState<number | null>(null)
 
   useEffect(() => {
     adminApi.categories.list().then(setCategories).catch(() => toast.error('No se pudieron cargar las categorías'))
@@ -72,7 +75,7 @@ export default function ProductForm() {
           active: product.active,
           isFeatured: product.featured,
         })
-        setExistingImages(product.images.map((image) => image.url))
+        setExistingImages(product.images)
       })
       .catch(() => toast.error('No se pudo cargar el producto'))
       .finally(() => setLoading(false))
@@ -94,10 +97,11 @@ export default function ProductForm() {
     data.append('price', form.price || '0')
     data.append('stock', form.stock || '0')
     data.append('manageStock', String(form.manageStock))
-    if (!isEdit) {
-      if (featuredImage) data.append('featuredImage', featuredImage)
-      galleryImages.forEach((file) => data.append('images', file))
-    }
+    // Sent on both create and update: PUT /api/admin/products/{id} accepts them and
+    // ProductServiceImpl.updateProduct persists them, so photos can be added or replaced after
+    // creation. Empty inputs mean nothing is sent, and nothing changes.
+    if (featuredImage) data.append('featuredImage', featuredImage)
+    galleryImages.forEach((file) => data.append('images', file))
     return data
   }
 
@@ -119,6 +123,22 @@ export default function ProductForm() {
       toast.error(message ?? 'No se pudo guardar el producto')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleRemoveImage(imageId: number) {
+    if (!id) return
+    setRemovingImageId(imageId)
+    try {
+      // The endpoint returns the refreshed product, so the gallery (including which image was
+      // promoted to featured after deleting the featured one) comes straight from the response.
+      const product = await adminApi.products.removeImage(Number(id), imageId)
+      setExistingImages(product.images)
+      toast.success('Imagen eliminada')
+    } catch {
+      toast.error('No se pudo eliminar la imagen')
+    } finally {
+      setRemovingImageId(null)
     }
   }
 
@@ -245,47 +265,55 @@ export default function ProductForm() {
           </CardContent>
         </Card>
 
-        {isEdit ? (
-          existingImages.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Imágenes actuales</CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-wrap gap-3">
-                {existingImages.map((url) => (
-                  <img key={url} src={url} alt="" className="size-20 rounded object-cover" />
+        <Card>
+          <CardHeader>
+            <CardTitle>Imágenes</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            {existingImages.length > 0 && (
+              <div className="flex flex-wrap gap-3">
+                {existingImages.map((image) => (
+                  <div key={image.id} className="flex flex-col items-center gap-1">
+                    <img src={image.url} alt={image.alt ?? ''} className="size-20 rounded object-cover" />
+                    {image.isFeatured && (
+                      <span className="text-xs text-muted-foreground">Destacada</span>
+                    )}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={removingImageId === image.id}
+                      onClick={() => handleRemoveImage(image.id)}
+                    >
+                      {removingImageId === image.id ? 'Quitando…' : 'Quitar'}
+                    </Button>
+                  </div>
                 ))}
-              </CardContent>
-            </Card>
-          )
-        ) : (
-          <Card>
-            <CardHeader>
-              <CardTitle>Imágenes</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-4">
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="featuredImage">Imagen destacada</Label>
-                <Input
-                  id="featuredImage"
-                  type="file"
-                  accept="image/*"
-                  onChange={(event) => setFeaturedImage(event.target.files?.[0] ?? null)}
-                />
               </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="images">Galería</Label>
-                <Input
-                  id="images"
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={(event) => setGalleryImages(Array.from(event.target.files ?? []))}
-                />
-              </div>
-            </CardContent>
-          </Card>
-        )}
+            )}
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="featuredImage">
+                {existingImages.some((image) => image.isFeatured) ? 'Reemplazar destacada' : 'Imagen destacada'}
+              </Label>
+              <Input
+                id="featuredImage"
+                type="file"
+                accept="image/*"
+                onChange={(event) => setFeaturedImage(event.target.files?.[0] ?? null)}
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="images">{isEdit ? 'Añadir a galería' : 'Galería'}</Label>
+              <Input
+                id="images"
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={(event) => setGalleryImages(Array.from(event.target.files ?? []))}
+              />
+            </div>
+          </CardContent>
+        </Card>
 
         <div className="flex justify-end gap-2">
           <Button type="button" variant="outline" onClick={() => navigate('/admin/products')}>

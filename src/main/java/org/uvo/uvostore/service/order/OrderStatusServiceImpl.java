@@ -17,10 +17,13 @@ public class OrderStatusServiceImpl implements OrderStatusService {
 
     private final OrderRepository orderRepository;
     private final ApplicationEventPublisher applicationEventPublisher;
+    private final OrderInventoryService orderInventoryService;
 
-    public OrderStatusServiceImpl(OrderRepository orderRepository, ApplicationEventPublisher applicationEventPublisher) {
+    public OrderStatusServiceImpl(OrderRepository orderRepository, ApplicationEventPublisher applicationEventPublisher,
+                                  OrderInventoryService orderInventoryService) {
         this.orderRepository = orderRepository;
         this.applicationEventPublisher = applicationEventPublisher;
+        this.orderInventoryService = orderInventoryService;
     }
 
     @Override
@@ -52,6 +55,9 @@ public class OrderStatusServiceImpl implements OrderStatusService {
         Order order = findOrThrow(orderId);
         order.setPaymentStatus(PaymentStatus.FAILED);
         appendHistory(order, order.getStatus(), "Pago fallido");
+        // C5: the coupon use was claimed at checkout, before the payment. Without giving it back, a
+        // failed payment would burn it permanently.
+        orderInventoryService.releaseCouponUsage(order);
         return orderRepository.save(order);
     }
 
@@ -62,6 +68,10 @@ public class OrderStatusServiceImpl implements OrderStatusService {
         order.setPaymentStatus(PaymentStatus.FAILED);
         order.setStatus(OrderStatus.CANCELLED);
         appendHistory(order, OrderStatus.CANCELLED, "Sesión de pago expirada o cancelada");
+        // C5: both are no-ops when the order never got paid (nothing was decremented, and the
+        // guards inside handle the repeat case), so this is safe on any cancellation.
+        orderInventoryService.restoreOrderStock(order);
+        orderInventoryService.releaseCouponUsage(order);
         return orderRepository.save(order);
     }
 

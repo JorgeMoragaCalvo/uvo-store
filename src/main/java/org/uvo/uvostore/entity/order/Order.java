@@ -193,6 +193,18 @@ public class Order {
     @Column(name = "last_sync_error", columnDefinition = "text")
     private String lastSyncError;
 
+    // C5: stock moves on payment confirmation and comes back on cancellation, and four different
+    // paths can cancel an order (OrderStatusService.markCancelled/markPaymentFailed,
+    // AdminOrderService.cancelOrder/updateStatus). These flags are what stops a second cancellation
+    // from inventing inventory — see OrderInventoryService.
+    @Column(name = "stock_applied", nullable = false)
+    @Builder.Default
+    private boolean stockApplied = false;
+
+    @Column(name = "stock_restored", nullable = false)
+    @Builder.Default
+    private boolean stockRestored = false;
+
     @Column(columnDefinition = "text")
     private String notes;
 

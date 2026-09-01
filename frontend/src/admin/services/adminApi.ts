@@ -147,6 +147,10 @@ export const adminApi = {
     update: (id: number, formData: FormData): Promise<ProductDto> =>
       client.put(`/products/${id}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
     delete: (id: number): Promise<void> => client.delete(`/products/${id}`),
+    // Per-image, unlike categories.removeImage — products have a gallery. Returns the refreshed
+    // product so the caller sees which image was promoted to featured.
+    removeImage: (id: number, imageId: number): Promise<ProductDto> =>
+      client.delete(`/products/${id}/images/${imageId}`),
     toggleActive: (id: number): Promise<ProductDto> => client.post(`/products/${id}/toggle-active`),
     toggleFeatured: (id: number): Promise<ProductDto> => client.post(`/products/${id}/toggle-featured`),
   },
