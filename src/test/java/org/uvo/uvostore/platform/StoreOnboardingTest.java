@@ -1,6 +1,7 @@
 package org.uvo.uvostore.platform;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Value;
 import org.uvo.uvostore.support.IntegrationTestSupport;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -14,7 +15,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 // slug as the fallback every store keeps working under regardless.
 class StoreOnboardingTest extends IntegrationTestSupport {
 
-    private static final String PLATFORM_KEY = "dev-only-insecure-platform-key-change-me";
+    // Injected rather than hardcoded: app.platform-api-key lost its committed default in C4, so
+    // there is no fixed literal to assert against — surefire supplies a test-only value (pom.xml).
+    @Value("${app.platform-api-key}")
+    private String platformKey;
 
     @Test
     void creatingAStoreRequiresTheCorrectPlatformKey() throws Exception {
@@ -34,7 +38,7 @@ class StoreOnboardingTest extends IntegrationTestSupport {
     void creatingAStoreWithoutADomainWorksAndTheAdminCanLogInBySubdomain() throws Exception {
         String slug = "onboard-" + nextSeq();
         String response = mockMvc.perform(post("/api/platform/stores")
-                        .header("X-Platform-Key", PLATFORM_KEY)
+                        .header("X-Platform-Key", platformKey)
                         .contentType("application/json")
                         .content(onboardingBody(slug, "", "Tienda de prueba")))
                 .andExpect(status().isOk())
@@ -58,7 +62,7 @@ class StoreOnboardingTest extends IntegrationTestSupport {
         String domain = "tienda" + nextSeq() + ".cl";
 
         String response = mockMvc.perform(post("/api/platform/stores")
-                        .header("X-Platform-Key", PLATFORM_KEY)
+                        .header("X-Platform-Key", platformKey)
                         .contentType("application/json")
                         .content(onboardingBody(slug, domain, "Tienda con dominio")))
                 .andExpect(status().isOk())
@@ -89,13 +93,13 @@ class StoreOnboardingTest extends IntegrationTestSupport {
     void creatingAStoreRejectsADuplicateSlug() throws Exception {
         String slug = "onboard-dup-" + nextSeq();
         mockMvc.perform(post("/api/platform/stores")
-                        .header("X-Platform-Key", PLATFORM_KEY)
+                        .header("X-Platform-Key", platformKey)
                         .contentType("application/json")
                         .content(onboardingBody(slug, "", "Primera tienda")))
                 .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/platform/stores")
-                        .header("X-Platform-Key", PLATFORM_KEY)
+                        .header("X-Platform-Key", platformKey)
                         .contentType("application/json")
                         .content(onboardingBody(slug, "", "Segunda tienda")))
                 .andExpect(status().isBadRequest());
@@ -104,7 +108,7 @@ class StoreOnboardingTest extends IntegrationTestSupport {
     @Test
     void creatingAStoreRejectsAnInvalidSlugFormat() throws Exception {
         mockMvc.perform(post("/api/platform/stores")
-                        .header("X-Platform-Key", PLATFORM_KEY)
+                        .header("X-Platform-Key", platformKey)
                         .contentType("application/json")
                         .content(onboardingBody("Not Valid Slug!", "", "Tienda")))
                 .andExpect(status().isBadRequest());
@@ -118,7 +122,7 @@ class StoreOnboardingTest extends IntegrationTestSupport {
         String domainB = "tienda-b-" + nextSeq() + ".cl";
 
         String responseA = mockMvc.perform(post("/api/platform/stores")
-                        .header("X-Platform-Key", PLATFORM_KEY)
+                        .header("X-Platform-Key", platformKey)
                         .contentType("application/json")
                         .content(onboardingBody(slugA, "", "Tienda A")))
                 .andExpect(status().isOk())
@@ -126,20 +130,20 @@ class StoreOnboardingTest extends IntegrationTestSupport {
         long storeIdA = objectMapper.readTree(responseA).get("storeId").asLong();
 
         mockMvc.perform(post("/api/platform/stores")
-                        .header("X-Platform-Key", PLATFORM_KEY)
+                        .header("X-Platform-Key", platformKey)
                         .contentType("application/json")
                         .content(onboardingBody(slugB, domainB, "Tienda B")))
                 .andExpect(status().isOk());
 
         mockMvc.perform(put("/api/platform/stores/" + storeIdA + "/domain")
-                        .header("X-Platform-Key", PLATFORM_KEY)
+                        .header("X-Platform-Key", platformKey)
                         .contentType("application/json")
                         .content("{\"domain\":\"" + domainA + "\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.domain").value(domainA));
 
         mockMvc.perform(put("/api/platform/stores/" + storeIdA + "/domain")
-                        .header("X-Platform-Key", PLATFORM_KEY)
+                        .header("X-Platform-Key", platformKey)
                         .contentType("application/json")
                         .content("{\"domain\":\"" + domainB + "\"}"))
                 .andExpect(status().isBadRequest());

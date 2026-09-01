@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.uvo.uvostore.config.RequiredSecret;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -25,6 +26,11 @@ public class PlatformApiKeyAuthFilter extends OncePerRequestFilter {
     private final String platformApiKey;
 
     public PlatformApiKeyAuthFilter(@Value("${app.platform-api-key:}") String platformApiKey) {
+        // Fails the startup, not the request: a blank key used to silently turn every
+        // /api/platform/** call into a 401, so a missing env var only surfaced the day an operator
+        // tried to onboard a store.
+        RequiredSecret.require(platformApiKey, "PLATFORM_API_KEY");
+        RequiredSecret.rejectLegacyDefault(platformApiKey, RequiredSecret.LEGACY_PLATFORM_API_KEY, "PLATFORM_API_KEY");
         this.platformApiKey = platformApiKey;
     }
 
@@ -37,7 +43,8 @@ public class PlatformApiKeyAuthFilter extends OncePerRequestFilter {
         }
 
         String key = request.getHeader("X-Platform-Key");
-        if (platformApiKey.isBlank() || key == null || !constantTimeEquals(platformApiKey, key)) {
+        // No blank check on platformApiKey any more — the constructor guarantees it's set.
+        if (key == null || !constantTimeEquals(platformApiKey, key)) {
             reject(response);
             return;
         }
@@ -52,6 +59,6 @@ public class PlatformApiKeyAuthFilter extends OncePerRequestFilter {
     private void reject(HttpServletResponse response) throws IOException {
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        response.getWriter().write("{\"message\":\"API key de plataforma inválida o no configurada\"}");
+        response.getWriter().write("{\"message\":\"API key de plataforma inválida\"}");
     }
 }

@@ -70,11 +70,27 @@ cd frontend && npm run preview    # preview a production build
   `C:\pgdata`) — it starts on its own with Windows, no manual step needed. Database `uvostore`,
   role `uvostore` / password `uvostore` (superuser locally; not the same as the nonexistent
   `postgres` role).
-- **Backend config**: `.env` at the repo root (gitignored) holds `DB_URL` / `DB_USERNAME` /
-  `DB_PASSWORD`. It's loaded automatically at startup via the `me.paulschwarz:spring-dotenv`
-  dependency in `pom.xml` — no need to export env vars manually, from a terminal or from
+- **Backend config**: `.env` at the repo root (gitignored) — copy `.env.example` and fill it in. It
+  holds `DB_URL` / `DB_USERNAME` / `DB_PASSWORD` plus three **required** secrets that no longer have
+  defaults (see below). Loaded at startup by `me.paulschwarz:spring-dotenv`, registered explicitly
+  in `UvoStoreApplication.main()` — no need to export env vars manually, from a terminal or from
   IntelliJ's Run Configuration. `DB_URL` must include `?charSet=UTF8` — see the encoding gotcha
-  below.
+  below. `SENTRY_DSN` is the one exception: `main()` reads it with `System.getenv()` before Spring
+  is up, so it has to be a real environment variable, not a `.env` entry.
+- **The three secrets have no defaults and the app refuses to start without them** (C4). Generate
+  each with `openssl rand -base64 32`:
+  - `JWT_SECRET` — signs admin and customer JWTs, minimum 32 bytes (`JwtService`).
+  - `PLATFORM_API_KEY` — guards `/api/platform/**` store onboarding (`PlatformApiKeyAuthFilter`).
+  - `APP_ENCRYPTION_KEY` — AES-256 (base64, exactly 32 bytes) for payment gateway credentials and
+    the Stripe/POS secrets in `settings`, at rest (`EncryptionKeyHolder`).
+
+  All three shipped with working values committed in `application.properties` until C4, so those
+  values are in git history and are treated as public: `JWT_SECRET` and `PLATFORM_API_KEY` refuse to
+  start if set to their old value. `APP_ENCRYPTION_KEY` only **warns**, because rotating it makes
+  every already-encrypted row unreadable — the local `.env` deliberately keeps the old value so the
+  existing `payment_gateway_configs` row still decrypts; **production must use a fresh key**.
+  Tests don't read `.env`: surefire supplies its own throwaway values in `pom.xml`, which is why CI
+  needs no secrets in its workflow.
 - **Frontend config**: `frontend/.env` holds `VITE_DEV_PROXY_TARGET` (dev proxy target, see
   "Multi-tenancy" above) and optionally `VITE_SENTRY_DSN` (blank = Sentry inactive). There is no
   `VITE_API_URL` anymore — the API base URL is computed at runtime, not build time.
@@ -180,6 +196,13 @@ login (`/admin/login`) is separate and fully functional.
 ## Known gotchas
 
 - **`README.md` and `HELP.md` are unmodified Spring Initializr boilerplate.**
+- **`.env` only works because `UvoStoreApplication.main()` registers the initializer by hand.**
+  spring-dotenv 4.x announced itself through `META-INF/spring.factories`, which Spring Boot 4 no
+  longer reads, so the dependency sat on the classpath doing nothing and `.env` was silently
+  ignored for months — invisible because every value in it happened to match its own default in
+  `application.properties`. 5.x ships no auto-registration at all. Don't "simplify"
+  `new SpringApplicationBuilder(...).initializers(new DotenvApplicationInitializer())` back to
+  `SpringApplication.run(...)`: it fails silently, not loudly.
 - **On Windows, the JDBC URL needs `?charSet=UTF8`** (already set in `.env` and the
   `application.properties` default). Without it, pgjdbc encodes strings using the JVM's platform
   default charset (Windows-125x, not UTF-8) instead of the `charSet` connection property — any
