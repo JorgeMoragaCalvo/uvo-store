@@ -139,7 +139,7 @@ class AdminSettingsCrudTest extends IntegrationTestSupport {
         String token = loginAdmin(store, admin);
 
         org.springframework.mock.web.MockMultipartFile image =
-                new org.springframework.mock.web.MockMultipartFile("newImage", "banner.jpg", "image/jpeg", "fake-image-bytes".getBytes());
+                new org.springframework.mock.web.MockMultipartFile("newImage", "banner.png", "image/png", pngBytes());
 
         String createResponse = mockMvc.perform(multipart("/api/admin/home/banners")
                         .file(image)
@@ -190,7 +190,7 @@ class AdminSettingsCrudTest extends IntegrationTestSupport {
         String tokenB = loginAdmin(storeB, adminB);
 
         org.springframework.mock.web.MockMultipartFile image =
-                new org.springframework.mock.web.MockMultipartFile("newImage", "banner.jpg", "image/jpeg", "fake-image-bytes".getBytes());
+                new org.springframework.mock.web.MockMultipartFile("newImage", "banner.png", "image/png", pngBytes());
 
         String createResponse = mockMvc.perform(multipart("/api/admin/home/banners")
                         .file(image)

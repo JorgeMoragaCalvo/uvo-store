@@ -9,16 +9,12 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.web.cors.CorsConfiguration;
-import org.springframework.web.cors.CorsConfigurationSource;
-import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.uvo.uvostore.security.JwtAuthenticationFilter;
 import org.uvo.uvostore.security.PlatformApiKeyAuthFilter;
 import org.uvo.uvostore.security.PosApiKeyAuthFilter;
 import org.uvo.uvostore.security.PosWebhookAuthFilter;
+import org.uvo.uvostore.security.RateLimitFilter;
 import org.uvo.uvostore.security.TenantResolutionFilter;
-
-import java.util.List;
 
 @Configuration
 @EnableMethodSecurity
@@ -32,7 +28,11 @@ public class SecurityConfig {
             "/api/sync/**",
             "/api/platform/**",
             "/uploads/**",
-            "/health",
+            // A3: "/health" used to be here, but nothing ever served that path — actuator's real
+            // endpoint is /actuator/health, and that one wasn't public. A liveness/readiness probe
+            // got a 404 on one and a 401 on the other. Exposure is pinned to `health` alone in
+            // application.properties, so opening this doesn't open the rest of actuator.
+            "/actuator/health",
             "/v3/api-docs/**",
             "/swagger-ui/**",
             "/swagger-ui.html"
@@ -46,6 +46,8 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
+            TenantCorsConfigurationSource corsConfigurationSource,
+            RateLimitFilter rateLimitFilter,
             TenantResolutionFilter tenantResolutionFilter,
             JwtAuthenticationFilter jwtAuthenticationFilter,
             PosWebhookAuthFilter posWebhookAuthFilter,
@@ -53,10 +55,15 @@ public class SecurityConfig {
             PlatformApiKeyAuthFilter platformApiKeyAuthFilter) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                .cors(cors -> cors.configurationSource(corsConfigurationSource))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .httpBasic(httpBasic -> httpBasic.disable())
                 .formLogin(formLogin -> formLogin.disable())
+                // A8: explicit rather than relying on Spring Security's default, because it's the
+                // header that stops a browser from second-guessing the content type of anything
+                // under /uploads/** — public files served from this same origin — and rendering it
+                // as HTML. This chain covers static resources too, so it applies there.
+                .headers(headers -> headers.contentTypeOptions(contentType -> {}))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_PATHS).permitAll()
                         // POS webhook/sync routes authenticate themselves via HMAC signature /
@@ -75,21 +82,12 @@ public class SecurityConfig {
                 .addFilterBefore(tenantResolutionFilter, JwtAuthenticationFilter.class)
                 .addFilterBefore(posWebhookAuthFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(posApiKeyAuthFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterBefore(platformApiKeyAuthFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(platformApiKeyAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                // A4: first in the chain on purpose — a throttled request should be rejected before
+                // resolving a tenant or parsing a JWT, so flooding costs the server as little as
+                // possible.
+                .addFilterBefore(rateLimitFilter, TenantResolutionFilter.class);
 
         return http.build();
-    }
-
-    @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOriginPatterns(List.of("*"));
-        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(List.of("*"));
-        configuration.setAllowCredentials(true);
-
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", configuration);
-        return source;
     }
 }

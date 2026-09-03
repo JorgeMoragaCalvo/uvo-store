@@ -19,6 +19,7 @@ import org.uvo.uvostore.repository.CustomerRepository;
 import org.uvo.uvostore.repository.UserRepository;
 import org.uvo.uvostore.security.JwtService;
 import org.uvo.uvostore.security.TenantContext;
+import org.uvo.uvostore.security.TokenVersionService;
 import org.uvo.uvostore.service.notification.EmailService;
 
 import java.time.Duration;
@@ -40,16 +41,19 @@ public class AuthController {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final EmailService emailService;
+    private final TokenVersionService tokenVersionService;
     private final String frontendUrl;
 
     public AuthController(UserRepository userRepository, CustomerRepository customerRepository,
                            PasswordEncoder passwordEncoder, JwtService jwtService, EmailService emailService,
+                           TokenVersionService tokenVersionService,
                            @Value("${app.frontend-url}") String frontendUrl) {
         this.userRepository = userRepository;
         this.customerRepository = customerRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.emailService = emailService;
+        this.tokenVersionService = tokenVersionService;
         this.frontendUrl = frontendUrl;
     }
 
@@ -68,7 +72,8 @@ public class AuthController {
         userRepository.save(user);
 
         List<String> authorities = adminAuthorities(user);
-        String token = jwtService.generateToken(user.getId(), user.getEmail(), "ADMIN", store.getId(), authorities);
+        String token = jwtService.generateToken(user.getId(), user.getEmail(), "ADMIN", store.getId(),
+                authorities, user.getTokenVersion());
         return ResponseEntity.ok(new AuthResponse(token, user.getId(), user.getName(), user.getEmail(), "ADMIN"));
     }
 
@@ -83,7 +88,8 @@ public class AuthController {
             throw new BadCredentialsException("Credenciales inválidas");
         }
 
-        String token = jwtService.generateToken(customer.getId(), customer.getEmail(), "CUSTOMER", store.getId(), List.of("ROLE_CUSTOMER"));
+        String token = jwtService.generateToken(customer.getId(), customer.getEmail(), "CUSTOMER", store.getId(),
+                List.of("ROLE_CUSTOMER"), customer.getTokenVersion());
         String fullName = customer.getFirstName() + " " + customer.getLastName();
         return ResponseEntity.ok(new AuthResponse(token, customer.getId(), fullName, customer.getEmail(), "CUSTOMER"));
     }
@@ -105,7 +111,8 @@ public class AuthController {
         customer.setAccountStatus(AccountStatus.ACTIVE);
         Customer saved = customerRepository.save(customer);
 
-        String token = jwtService.generateToken(saved.getId(), saved.getEmail(), "CUSTOMER", store.getId(), List.of("ROLE_CUSTOMER"));
+        String token = jwtService.generateToken(saved.getId(), saved.getEmail(), "CUSTOMER", store.getId(),
+                List.of("ROLE_CUSTOMER"), saved.getTokenVersion());
         String fullName = saved.getFirstName() + " " + saved.getLastName();
         return ResponseEntity.ok(new AuthResponse(token, saved.getId(), fullName, saved.getEmail(), "CUSTOMER"));
     }
@@ -143,7 +150,11 @@ public class AuthController {
         user.setPassword(passwordEncoder.encode(request.password()));
         user.setPasswordResetToken(null);
         user.setPasswordResetExpiresAt(null);
+        // A5: a password reset is exactly the case where old sessions must die — whoever prompted
+        // the reset may be locking someone else out of the account.
+        user.setTokenVersion(user.getTokenVersion() + 1);
         userRepository.save(user);
+        tokenVersionService.evict(TokenVersionService.ADMIN, user.getId());
         return ResponseEntity.ok().build();
     }
 

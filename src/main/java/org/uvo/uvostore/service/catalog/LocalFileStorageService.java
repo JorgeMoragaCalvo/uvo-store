@@ -27,23 +27,24 @@ import java.util.UUID;
 public class LocalFileStorageService implements FileStorageService {
 
     private final Path uploadRoot;
+    private final UploadedImageValidator imageValidator;
 
-    public LocalFileStorageService(@Value("${app.upload-dir:uploads}") String uploadDir) {
+    public LocalFileStorageService(@Value("${app.upload-dir:uploads}") String uploadDir,
+                                   UploadedImageValidator imageValidator) {
         this.uploadRoot = Path.of(uploadDir).toAbsolutePath().normalize();
+        this.imageValidator = imageValidator;
     }
 
     @Override
     public String store(MultipartFile file, String directory) {
+        // A8: the extension now comes from the file's own magic bytes, never from the client's
+        // getOriginalFilename() — which had no allow-list and could carry path separators.
+        UploadedImageValidator.ImageKind kind = imageValidator.validate(file);
         try {
             Path targetDir = uploadRoot.resolve(directory);
             Files.createDirectories(targetDir);
 
-            String extension = "";
-            String originalName = file.getOriginalFilename();
-            if (originalName != null && originalName.contains(".")) {
-                extension = originalName.substring(originalName.lastIndexOf('.'));
-            }
-            String filename = UUID.randomUUID() + extension;
+            String filename = UUID.randomUUID() + kind.extension();
 
             Path target = targetDir.resolve(filename);
             file.transferTo(target);

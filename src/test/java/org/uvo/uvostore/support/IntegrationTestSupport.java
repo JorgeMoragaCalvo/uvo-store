@@ -26,6 +26,11 @@ import org.uvo.uvostore.repository.SettingRepository;
 import org.uvo.uvostore.repository.StoreRepository;
 import org.uvo.uvostore.repository.UserRepository;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.math.BigDecimal;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -68,6 +73,20 @@ public abstract class IntegrationTestSupport {
 
     protected static long nextSeq() {
         return SEQ.incrementAndGet();
+    }
+
+    /**
+     * Bytes of a real 1x1 PNG. Uploads are validated by magic bytes since A8, so a fixture can no
+     * longer be an arbitrary string with a .png name — that's exactly what the validator rejects.
+     */
+    protected static byte[] pngBytes() {
+        try {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            ImageIO.write(new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB), "png", out);
+            return out.toByteArray();
+        } catch (IOException e) {
+            throw new UncheckedIOException("No se pudo generar el PNG de prueba", e);
+        }
     }
 
     protected String hostHeader(Store store) {

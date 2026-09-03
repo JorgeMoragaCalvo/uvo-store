@@ -43,6 +43,7 @@ public class S3FileStorageServiceImpl implements FileStorageService {
     private final String region;
     private final String endpointOverride;
     private final String publicBaseUrl;
+    private final UploadedImageValidator imageValidator;
 
     public S3FileStorageServiceImpl(
             @Value("${app.storage.s3.bucket}") String bucket,
@@ -50,7 +51,9 @@ public class S3FileStorageServiceImpl implements FileStorageService {
             @Value("${app.storage.s3.access-key:}") String accessKey,
             @Value("${app.storage.s3.secret-key:}") String secretKey,
             @Value("${app.storage.s3.endpoint:}") String endpointOverride,
-            @Value("${app.storage.s3.public-base-url:}") String publicBaseUrl) {
+            @Value("${app.storage.s3.public-base-url:}") String publicBaseUrl,
+            UploadedImageValidator imageValidator) {
+        this.imageValidator = imageValidator;
         this.bucket = bucket;
         this.region = region;
         this.endpointOverride = endpointOverride.isBlank() ? null : endpointOverride;
@@ -61,19 +64,18 @@ public class S3FileStorageServiceImpl implements FileStorageService {
     @Override
     public String store(MultipartFile file, String directory) {
         Long storeId = TenantContext.requireStoreId();
-        String extension = "";
-        String originalName = file.getOriginalFilename();
-        if (originalName != null && originalName.contains(".")) {
-            extension = originalName.substring(originalName.lastIndexOf('.'));
-        }
-        String key = directory + "/" + storeId + "/" + UUID.randomUUID() + extension;
+        // A8: same rule as the local driver — extension AND the content type stored on the object
+        // both come from the detected type, not from anything the client supplied. Getting the
+        // content type right matters more here: S3 serves it back verbatim to every viewer.
+        UploadedImageValidator.ImageKind kind = imageValidator.validate(file);
+        String key = directory + "/" + storeId + "/" + UUID.randomUUID() + kind.extension();
 
         try {
             s3Client.putObject(
                     PutObjectRequest.builder()
                             .bucket(bucket)
                             .key(key)
-                            .contentType(file.getContentType())
+                            .contentType(kind.contentType())
                             .build(),
                     RequestBody.fromInputStream(file.getInputStream(), file.getSize()));
         } catch (IOException e) {

@@ -8,6 +8,7 @@ import org.uvo.uvostore.entity.security.User;
 import org.uvo.uvostore.repository.RoleRepository;
 import org.uvo.uvostore.repository.UserRepository;
 import org.uvo.uvostore.security.TenantContext;
+import org.uvo.uvostore.security.TokenVersionService;
 import org.uvo.uvostore.service.catalog.FileStorageService;
 
 import java.time.Instant;
@@ -23,13 +24,16 @@ public class UserServiceImpl implements UserService {
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final FileStorageService fileStorageService;
+    private final TokenVersionService tokenVersionService;
 
     public UserServiceImpl(UserRepository userRepository, RoleRepository roleRepository,
-                            PasswordEncoder passwordEncoder, FileStorageService fileStorageService) {
+                            PasswordEncoder passwordEncoder, FileStorageService fileStorageService,
+                            TokenVersionService tokenVersionService) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
         this.fileStorageService = fileStorageService;
+        this.tokenVersionService = tokenVersionService;
     }
 
     @Override
@@ -69,8 +73,17 @@ public class UserServiceImpl implements UserService {
             }
             user.setAvatar(fileStorageService.store(command.avatar(), "avatars"));
         }
+        // A5: a changed password or a changed role set has to invalidate sessions already open —
+        // permissions are frozen into the JWT at login, so without this a demoted admin keeps the
+        // old ones until the token expires. A plain profile edit deliberately doesn't revoke:
+        // logging someone out for renaming themselves would be gratuitous.
+        boolean credentialsOrRolesChanged = command.password() != null && !command.password().isBlank();
         if (command.roleIds() != null) {
             user.setRoles(resolveRoles(command.roleIds()));
+            credentialsOrRolesChanged = true;
+        }
+        if (credentialsOrRolesChanged) {
+            revokeTokens(user);
         }
         return userRepository.save(user);
     }
@@ -82,6 +95,7 @@ public class UserServiceImpl implements UserService {
                 .filter(u -> u.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("User " + id + " not found"));
         user.setActive(false);
+        revokeTokens(user);
         userRepository.save(user);
     }
 
@@ -92,6 +106,7 @@ public class UserServiceImpl implements UserService {
                 .filter(u -> u.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("User " + userId + " not found"));
         user.setRoles(resolveRoles(roleIds));
+        revokeTokens(user);
         userRepository.save(user);
     }
 
@@ -102,6 +117,7 @@ public class UserServiceImpl implements UserService {
                 .filter(u -> u.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("User " + id + " not found"));
         user.setActive(!user.isActive());
+        revokeTokens(user);
         return userRepository.save(user);
     }
 
@@ -112,6 +128,17 @@ public class UserServiceImpl implements UserService {
                 .filter(u -> u.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("User " + id + " not found"));
         userRepository.delete(user);
+        // No version to bump — the row is gone, so currentVersion() answers -1 and nothing matches.
+        // The eviction is what matters: a cached version would otherwise keep a deleted admin's
+        // token working until the entry expired.
+        tokenVersionService.evict(TokenVersionService.ADMIN, id);
+    }
+
+    // Bumps in memory so the caller's own save() persists it in the same transaction, and drops the
+    // cached value so revocation takes effect on the very next request.
+    private void revokeTokens(User user) {
+        user.setTokenVersion(user.getTokenVersion() + 1);
+        tokenVersionService.evict(TokenVersionService.ADMIN, user.getId());
     }
 
     private void applyCommonFields(User user, UserCreateCommand command) {

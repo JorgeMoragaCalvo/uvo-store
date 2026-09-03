@@ -74,7 +74,7 @@ class SecretValidationTest {
     @DisplayName("JwtService: un secreto válido construye y firma")
     void jwtSecretValid() {
         JwtService service = new JwtService(VALID_JWT_SECRET, 86400000L);
-        String token = service.generateToken(1L, "admin@uvostore.cl", "ADMIN", 1L, java.util.List.of());
+        String token = service.generateToken(1L, "admin@uvostore.cl", "ADMIN", 1L, java.util.List.of(), 0);
         assertThat(service.parseClaims(token).getSubject()).isEqualTo("admin@uvostore.cl");
     }
 

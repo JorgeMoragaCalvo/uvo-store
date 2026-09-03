@@ -96,6 +96,13 @@ public class User {
     @Column(name = "password_reset_expires_at")
     private Instant passwordResetExpiresAt;
 
+    // A5: bumped whenever this account must stop being trusted (deactivated, deleted, roles
+    // changed, password reset). The JWT carries the version it was issued against, so raising this
+    // invalidates every token already handed out — see TokenVersionService.
+    @Column(name = "token_version", nullable = false)
+    @Builder.Default
+    private int tokenVersion = 0;
+
     // Source verification: present in the real schema but looks vestigial for
     // an admin user (no Stripe checkout flow touches this table) — confirm
     // with the app owner before relying on it for anything.

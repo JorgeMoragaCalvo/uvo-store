@@ -149,7 +149,7 @@ class AdminProductImageTest extends IntegrationTestSupport {
     }
 
     private MockMultipartFile image(String field, String filename) {
-        return new MockMultipartFile(field, filename, "image/png", ("fake-png-" + filename).getBytes());
+        return new MockMultipartFile(field, filename, "image/png", pngBytes());
     }
 
     /** Issues the multipart PUT the admin form sends, and returns the product it responds with. */

@@ -84,6 +84,14 @@
             <artifactId>spring-dotenv</artifactId>
             <version>5.1.0</version>
         </dependency>
+        <!-- Bounded, self-evicting in-memory storage for the two things that keep per-caller state:
+             the rate limiter's counters (A4) and the token-version cache (A5). Version managed by
+             the Spring Boot BOM. A plain ConcurrentHashMap would be a DoS vector in the limiter's
+             case — anyone can vary their source IP and grow it without bound. -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
@@ -190,6 +198,16 @@
                         <jwt.secret>test-only-jwt-secret-not-a-real-one-at-least-32-bytes</jwt.secret>
                         <app.encryption-key>dGVzdC1vbmx5LWtleS1ub3QtYS1yZWFsLW9uZS0zMmI=</app.encryption-key>
                         <app.platform-api-key>test-only-platform-key-not-a-real-one</app.platform-api-key>
+                        <!-- A4: IntegrationTestSupport.loginAdmin hits the real login endpoint and
+                             nearly every test uses it, so the production limit of 5/min would make
+                             the suite fail intermittently once more than five tests ran inside the
+                             same minute from 127.0.0.1. Raised rather than disabled, so the filter
+                             stays in the chain for every test; RateLimitTest sets tiny limits of
+                             its own via @SpringBootTest(properties = ...). -->
+                        <app.rate-limit.login>100000</app.rate-limit.login>
+                        <app.rate-limit.register>100000</app.rate-limit.register>
+                        <app.rate-limit.forgot-password>100000</app.rate-limit.forgot-password>
+                        <app.rate-limit.track>100000</app.rate-limit.track>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>

@@ -21,9 +21,11 @@ import java.util.List;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
+    private final TokenVersionService tokenVersionService;
 
-    public JwtAuthenticationFilter(JwtService jwtService) {
+    public JwtAuthenticationFilter(JwtService jwtService, TokenVersionService tokenVersionService) {
         this.jwtService = jwtService;
+        this.tokenVersionService = tokenVersionService;
     }
 
     @Override
@@ -54,7 +56,22 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     return;
                 }
 
-                AuthPrincipal principal = new AuthPrincipal(uid, claims.getSubject(), claims.get("type", String.class), sid);
+                // A5: a token stays valid only while it matches the principal's current version.
+                // Deactivating, deleting or re-roling an account bumps that version, which is what
+                // makes revocation possible at all — before this, a 24h token kept working with
+                // its permissions frozen no matter what happened to the account behind it.
+                // A missing claim means a token issued before this existed: treated as version 0,
+                // the column default, so deploying doesn't log everyone out.
+                String principalType = claims.get("type", String.class);
+                Number tvClaim = claims.get("tv", Number.class);
+                int tokenVersion = tvClaim == null ? 0 : tvClaim.intValue();
+                if (tokenVersion != tokenVersionService.currentVersion(principalType, uid)) {
+                    SecurityContextHolder.clearContext();
+                    filterChain.doFilter(request, response);
+                    return;
+                }
+
+                AuthPrincipal principal = new AuthPrincipal(uid, claims.getSubject(), principalType, sid);
                 var authentication = new UsernamePasswordAuthenticationToken(principal, null, authorities);
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             } catch (JwtException | IllegalArgumentException ignored) {

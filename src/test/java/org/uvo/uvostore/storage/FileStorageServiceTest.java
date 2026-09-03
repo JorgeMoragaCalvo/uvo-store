@@ -3,6 +3,7 @@ package org.uvo.uvostore.storage;
 import org.junit.jupiter.api.Test;
 import org.uvo.uvostore.service.catalog.LocalFileStorageService;
 import org.uvo.uvostore.service.catalog.S3FileStorageServiceImpl;
+import org.uvo.uvostore.service.catalog.UploadedImageValidator;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -14,7 +15,11 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 // S3FileStorageServiceImpl's class comment.
 class FileStorageServiceTest {
 
-    private final LocalFileStorageService local = new LocalFileStorageService("uploads");
+    // The validator is irrelevant to these cases: they only exercise publicUrl(), which is pure
+    // string-building and never sees an uploaded file.
+    private static final UploadedImageValidator VALIDATOR = new UploadedImageValidator();
+
+    private final LocalFileStorageService local = new LocalFileStorageService("uploads", VALIDATOR);
 
     @Test
     void localDriverBuildsASameOriginUploadsUrl() {
@@ -28,27 +33,27 @@ class FileStorageServiceTest {
 
     @Test
     void s3DriverBuildsDefaultVirtualHostedUrlWhenNoOverridesAreConfigured() {
-        S3FileStorageServiceImpl s3 = new S3FileStorageServiceImpl("my-bucket", "us-east-1", "", "", "", "");
+        S3FileStorageServiceImpl s3 = new S3FileStorageServiceImpl("my-bucket", "us-east-1", "", "", "", "", VALIDATOR);
         assertEquals("https://my-bucket.s3.us-east-1.amazonaws.com/products/1/abc.jpg", s3.publicUrl("products/1/abc.jpg"));
     }
 
     @Test
     void s3DriverPrefersThePublicBaseUrlOverrideWhenSet() {
         S3FileStorageServiceImpl s3 = new S3FileStorageServiceImpl(
-                "my-bucket", "us-east-1", "", "", "", "https://cdn.example.com/");
+                "my-bucket", "us-east-1", "", "", "", "https://cdn.example.com/", VALIDATOR);
         assertEquals("https://cdn.example.com/products/1/abc.jpg", s3.publicUrl("products/1/abc.jpg"));
     }
 
     @Test
     void s3DriverUsesPathStyleUrlsForAnEndpointOverrideLikeMinioOrSpaces() {
         S3FileStorageServiceImpl s3 = new S3FileStorageServiceImpl(
-                "my-bucket", "us-east-1", "", "", "https://minio.internal:9000", "");
+                "my-bucket", "us-east-1", "", "", "https://minio.internal:9000", "", VALIDATOR);
         assertEquals("https://minio.internal:9000/my-bucket/products/1/abc.jpg", s3.publicUrl("products/1/abc.jpg"));
     }
 
     @Test
     void s3DriverReturnsNullForNullPath() {
-        S3FileStorageServiceImpl s3 = new S3FileStorageServiceImpl("my-bucket", "us-east-1", "", "", "", "");
+        S3FileStorageServiceImpl s3 = new S3FileStorageServiceImpl("my-bucket", "us-east-1", "", "", "", "", VALIDATOR);
         assertNull(s3.publicUrl(null));
     }
 }

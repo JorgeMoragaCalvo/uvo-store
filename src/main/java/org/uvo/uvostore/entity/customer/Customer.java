@@ -83,6 +83,12 @@ public class Customer {
     @Column(name = "password_reset_expires_at")
     private Instant passwordResetExpiresAt;
 
+    // A5: see User.tokenVersion — raising this invalidates every JWT already issued to this
+    // customer, used on password reset.
+    @Column(name = "token_version", nullable = false)
+    @Builder.Default
+    private int tokenVersion = 0;
+
     @OneToMany(mappedBy = "customer")
     @Builder.Default
     private List<Order> orders = new ArrayList<>();

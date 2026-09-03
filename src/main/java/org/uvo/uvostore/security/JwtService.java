@@ -28,7 +28,11 @@ public class JwtService {
         this.expirationMs = expirationMs;
     }
 
-    public String generateToken(Long principalId, String subject, String principalType, Long storeId, List<String> authorities) {
+    // `tv` is the principal's token version at issue time (A5). JwtAuthenticationFilter compares it
+    // against the current one, so bumping the version invalidates every token already out there
+    // without keeping any server-side session state.
+    public String generateToken(Long principalId, String subject, String principalType, Long storeId,
+                                List<String> authorities, int tokenVersion) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + expirationMs);
         return Jwts.builder()
@@ -37,6 +41,7 @@ public class JwtService {
                 .claim("type", principalType)
                 .claim("sid", storeId)
                 .claim("authorities", authorities)
+                .claim("tv", tokenVersion)
                 .issuedAt(now)
                 .expiration(expiry)
                 .signWith(key)

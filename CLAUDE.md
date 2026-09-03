@@ -94,8 +94,37 @@ cd frontend && npm run preview    # preview a production build
 - **Frontend config**: `frontend/.env` holds `VITE_DEV_PROXY_TARGET` (dev proxy target, see
   "Multi-tenancy" above) and optionally `VITE_SENTRY_DSN` (blank = Sentry inactive). There is no
   `VITE_API_URL` anymore — the API base URL is computed at runtime, not build time.
-- CORS (`SecurityConfig`) is wide open for dev (`allowedOriginPatterns: *`, `allowCredentials:
-  true`) — tighten before any production deploy.
+- **CORS is an allowlist derived from the stores themselves** (`TenantCorsConfigurationSource`, A2):
+  an origin is accepted only when its hostname resolves to a real store — custom domain first, then
+  subdomain slug, the same two-step lookup `TenantResolutionFilter` uses, shared via
+  `StoreHostResolver`. Anything else gets no `Access-Control-Allow-*` header and the browser blocks
+  it. `app.cors.additional-origins` is the escape hatch for an origin that isn't a store hostname
+  (a separately hosted SPA build); empty by default, because in dev Vite proxies `/api/*` and
+  requests are same-origin. Note when testing by hand: an `Origin` identical to the request's own
+  host is same-origin and CORS never engages — use a different port.
+- **Rate limiting** (`RateLimitFilter`, A4) on the five unauthenticated endpoints: admin/customer
+  login, customer registration, admin forgot-password (window 5x longer — each hit sends a real
+  email) and order tracking. Keyed by client IP (`X-Forwarded-For` first hop, else the socket
+  address), counters in a bounded Caffeine cache. Limits are properties (`app.rate-limit.*`);
+  **surefire sets them absurdly high** because `IntegrationTestSupport.loginAdmin` hits the real
+  login endpoint and almost every test uses it — production's 5/min would break the suite
+  intermittently. `RateLimitTest` sets its own tiny limits and gives each test a distinct
+  `X-Forwarded-For`, since the counters are shared within a context.
+- **JWTs are revocable** (`TokenVersionService`, A5). `users.token_version`/`customers.token_version`
+  (V14) is carried in the token's `tv` claim and compared on every authenticated request through a
+  60s Caffeine cache. Bumping the version — deactivating, deleting, re-roling a user, or any
+  password change/reset — evicts the cache entry too, so revocation is immediate in a single
+  process. **With more than one instance it would lag by up to the TTL**; there is no multi-instance
+  deployment yet. A token with no `tv` claim counts as version 0 (the column default), so the change
+  didn't log anyone out. Note: an invalid/revoked token yields **403**, not 401 — the chain has no
+  `AuthenticationEntryPoint`.
+- **Uploads are validated by magic bytes** (`UploadedImageValidator`, A8), not by the client's
+  filename or declared content type: JPEG/PNG/GIF/WEBP only, and the stored extension is derived
+  from the detected type. It lives in the storage layer so all six upload endpoints funnel through
+  it. `/uploads/**` is public and same-origin, so responses also carry `X-Content-Type-Options:
+  nosniff` (set in `SecurityConfig`, whose chain covers static resources). **Test fixtures must use
+  real image bytes** — `IntegrationTestSupport.pngBytes()` exists for that; a string named `.png`
+  is now correctly rejected.
 
 ## Architecture
 

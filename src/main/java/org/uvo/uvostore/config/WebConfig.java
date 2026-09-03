@@ -19,6 +19,8 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
         String location = "file:" + Path.of(uploadDir).toAbsolutePath().normalize() + "/";
+        // A8's nosniff header for these files is set in SecurityConfig, whose filter chain also
+        // covers static resources — see the headers() block there.
         registry.addResourceHandler("/uploads/**").addResourceLocations(location);
     }
 }
