@@ -31,6 +31,7 @@ export default function ProductDetail() {
   const { slug } = useParams()
   const navigate = useNavigate()
   const addItem = useCartStore((state) => state.addItem)
+  const ensureItem = useCartStore((state) => state.ensureItem)
   const notify = useNotificationStore((state) => state.notify)
 
   const [product, setProduct] = useState<Product | null>(null)
@@ -103,7 +104,11 @@ export default function ProductDetail() {
 
   function handleBuyNow() {
     if (!product || !canAddToCart) return
-    addItem(product, quantity, selectedVariation)
+    // Neither adds nor replaces: if the product is already in the cart it's left alone, and only the
+    // navigation happens. Adding here used to leave two units after "Agregar al Carrito"; setting it
+    // to the selector's value instead used to REDUCE a cart built by pressing "Agregar" twice, since
+    // the selector stays at 1.
+    ensureItem(product, quantity, selectedVariation)
     navigate('/checkout')
   }
 

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { CartCalculationResult, Product } from '@/types/api'
+import type { CartCalculationResult, Product, ProductVariation } from '@/types/api'
 
 vi.mock('@/services/api', () => ({
   default: {
@@ -47,8 +47,8 @@ const calculationResult: CartCalculationResult = {
   taxRate: 19,
   freeShippingThreshold: null,
   shippingEnabled: false,
-    shippingAvailable: true,
-    couponApplied: false,
+  shippingAvailable: true,
+  couponApplied: false,
 }
 
 describe('useCartStore', () => {
@@ -75,6 +75,63 @@ describe('useCartStore', () => {
     useCartStore.getState().addItem(product, 2)
 
     expect(useCartStore.getState().items).toHaveLength(1)
+    expect(useCartStore.getState().items[0].quantity).toBe(3)
+  })
+
+  it('ensureItem creates the line when the product is not in the cart yet', async () => {
+    const { useCartStore } = await import('./useCartStore')
+    useCartStore.getState().ensureItem(product, 2)
+
+    expect(useCartStore.getState().items).toHaveLength(1)
+    expect(useCartStore.getState().items[0]).toMatchObject({ id: 1, type: 'product', quantity: 2 })
+  })
+
+  // "Comprar Ahora" must neither add nor subtract. Both directions have been shipped as bugs:
+  // adding doubled the product, and setting it to the selector's value reduced a cart the customer
+  // had built by pressing "Agregar al Carrito" more than once.
+  it('ensureItem leaves an existing line exactly as it was', async () => {
+    const { useCartStore } = await import('./useCartStore')
+    useCartStore.getState().addItem(product)
+    useCartStore.getState().addItem(product)
+    useCartStore.getState().ensureItem(product, 1)
+
+    expect(useCartStore.getState().items).toHaveLength(1)
+    expect(useCartStore.getState().items[0].quantity).toBe(2)
+  })
+
+  it('ensureItem does not recalculate totals when there is nothing to change', async () => {
+    const api = (await import('@/services/api')).default
+    const { useCartStore } = await import('./useCartStore')
+    useCartStore.getState().addItem(product)
+    await vi.waitFor(() => expect(api.cart.calculate).toHaveBeenCalled())
+    vi.mocked(api.cart.calculate).mockClear()
+
+    useCartStore.getState().ensureItem(product, 1)
+
+    expect(api.cart.calculate).not.toHaveBeenCalled()
+  })
+
+  it('ensureItem keeps a variation as its own line', async () => {
+    const { useCartStore } = await import('./useCartStore')
+    const variation = { id: 99, stock: 5, inStock: true } as unknown as ProductVariation
+
+    useCartStore.getState().addItem(product, 1)
+    useCartStore.getState().ensureItem(product, 3, variation)
+
+    const items = useCartStore.getState().items
+    expect(items).toHaveLength(2)
+    expect(items.find((i) => i.type === 'product')?.quantity).toBe(1)
+    expect(items.find((i) => i.type === 'variation')?.quantity).toBe(3)
+  })
+
+  it('addItem does not mutate the line objects of the previous state', async () => {
+    const { useCartStore } = await import('./useCartStore')
+    useCartStore.getState().addItem(product, 1)
+    const before = useCartStore.getState().items[0]
+
+    useCartStore.getState().addItem(product, 2)
+
+    expect(before.quantity).toBe(1)
     expect(useCartStore.getState().items[0].quantity).toBe(3)
   })
 
