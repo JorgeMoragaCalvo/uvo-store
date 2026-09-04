@@ -60,6 +60,13 @@ function mapTotals(result: CartCalculationResult): CartTotals {
   }
 }
 
+// A variation is its own cart line; a simple product is keyed by the product itself.
+function lineKey(product: Product, variation: ProductVariation | null) {
+  return variation
+    ? { id: variation.id, type: 'variation' as const }
+    : { id: product.id, type: 'product' as const }
+}
+
 function saveToLocalStorage(items: CartLine[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(items))
 }
@@ -89,6 +96,7 @@ interface CartState {
   closeSidebar: () => void
   toggleSidebar: () => void
   addItem: (product: Product, quantity?: number, variation?: ProductVariation | null) => void
+  ensureItem: (product: Product, quantity: number, variation?: ProductVariation | null) => void
   updateQuantity: (id: number, type: 'product' | 'variation', quantity: number) => void
   removeItem: (id: number, type: 'product' | 'variation') => void
   clearCart: () => void
@@ -111,18 +119,41 @@ export const useCartStore = create<CartState>((set, get) => ({
   closeSidebar: () => set({ isSidebarOpen: false }),
   toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
 
+  // Adds to whatever is already there: pressing "Agregar al Carrito" three times must leave three.
   addItem(product, quantity = 1, variation = null) {
-    const type = variation ? 'variation' : 'product'
-    const id = variation ? variation.id : product.id
-    const items = [...get().items]
-    const existing = items.find((item) => item.id === id && item.type === type)
+    const { id, type } = lineKey(product, variation)
+    const current = get().items
+    const existing = current.find((item) => item.id === id && item.type === type)
+    // Rebuilt rather than mutated: `[...items]` copies the array but not the line objects, so
+    // `existing.quantity += ...` would also change the quantity held by the previous state. Nothing
+    // compares lines by reference today, so it doesn't show — but it would the moment something did.
+    const items = existing
+      ? current.map((item) =>
+          item.id === id && item.type === type ? { ...item, quantity: item.quantity + quantity } : item,
+        )
+      : [...current, { id, type, product, variation, quantity }]
 
-    if (existing) {
-      existing.quantity += quantity
-    } else {
-      items.push({ id, type, product, variation, quantity })
+    saveToLocalStorage(items)
+    set({ items })
+    get().calculateTotals()
+  },
+
+  // Guarantees the product is in the cart without changing what's already there — what "Comprar
+  // Ahora" needs. It must neither add nor subtract: addItem() would double a product that was
+  // already added, and setting it to the quantity selector's value would silently REDUCE a cart the
+  // customer had built by pressing "Agregar al Carrito" more than once, since the selector stays at
+  // 1 throughout.
+  ensureItem(product, quantity, variation = null) {
+    const { id, type } = lineKey(product, variation)
+    const current = get().items
+    // Already there: leave the cart exactly as the customer left it. No set(), no recalculation —
+    // there's nothing to recalculate, and firing one would cost a request and a re-render for
+    // nothing.
+    if (current.some((item) => item.id === id && item.type === type)) {
+      return
     }
 
+    const items = [...current, { id, type, product, variation, quantity }]
     saveToLocalStorage(items)
     set({ items })
     get().calculateTotals()

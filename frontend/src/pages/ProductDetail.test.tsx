@@ -143,7 +143,82 @@ describe('ProductDetail page', () => {
     await user.click(screen.getByRole('button', { name: /comprar ahora/i }))
 
     expect(useCartStore.getState().items).toHaveLength(1)
+    // The quantity assertion this test was missing — checking only the line count is what let the
+    // duplication bug below through.
+    expect(useCartStore.getState().items[0].quantity).toBe(1)
     expect(navigateMock).toHaveBeenCalledWith('/checkout')
+  })
+
+  it('does not duplicate the product when adding it and then pressing "Comprar Ahora"', async () => {
+    const api = (await import('@/services/api')).default
+    vi.mocked(api.products.getBySlug).mockResolvedValue(simpleProduct)
+    vi.mocked(api.products.getRelated).mockResolvedValue([])
+
+    const user = userEvent.setup()
+    renderAt(simpleProduct.slug)
+
+    await screen.findByText(simpleProduct.name)
+    await user.click(screen.getByRole('button', { name: /agregar al carrito/i }))
+    await user.click(screen.getByRole('button', { name: /comprar ahora/i }))
+
+    expect(useCartStore.getState().items).toHaveLength(1)
+    expect(useCartStore.getState().items[0].quantity).toBe(1)
+    expect(navigateMock).toHaveBeenCalledWith('/checkout')
+  })
+
+  // The regression this replaced the first fix over: the cart said 2, the selector still said 1, and
+  // "Comprar Ahora" took it down to 1 — it must not subtract any more than it may add.
+  it('"Comprar Ahora" does not reduce a cart built by pressing "Agregar" twice', async () => {
+    const api = (await import('@/services/api')).default
+    vi.mocked(api.products.getBySlug).mockResolvedValue(simpleProduct)
+    vi.mocked(api.products.getRelated).mockResolvedValue([])
+
+    const user = userEvent.setup()
+    renderAt(simpleProduct.slug)
+
+    await screen.findByText(simpleProduct.name)
+    const addButton = screen.getByRole('button', { name: /agregar al carrito/i })
+    await user.click(addButton)
+    await user.click(addButton)
+    await user.click(screen.getByRole('button', { name: /comprar ahora/i }))
+
+    expect(useCartStore.getState().items).toHaveLength(1)
+    expect(useCartStore.getState().items[0].quantity).toBe(2)
+    expect(navigateMock).toHaveBeenCalledWith('/checkout')
+  })
+
+  it('"Comprar Ahora" leaves alone whatever is already in the cart', async () => {
+    const api = (await import('@/services/api')).default
+    vi.mocked(api.products.getBySlug).mockResolvedValue(simpleProduct)
+    vi.mocked(api.products.getRelated).mockResolvedValue([])
+
+    const user = userEvent.setup()
+    renderAt(simpleProduct.slug)
+
+    await screen.findByText(simpleProduct.name)
+    await user.click(screen.getByRole('button', { name: '+' }))
+    await user.click(screen.getByRole('button', { name: /agregar al carrito/i }))
+    await user.click(screen.getByRole('button', { name: /comprar ahora/i }))
+
+    // 2: neither doubled to 4 nor reduced.
+    expect(useCartStore.getState().items[0].quantity).toBe(2)
+  })
+
+  it('pressing "Agregar al Carrito" repeatedly still accumulates', async () => {
+    const api = (await import('@/services/api')).default
+    vi.mocked(api.products.getBySlug).mockResolvedValue(simpleProduct)
+    vi.mocked(api.products.getRelated).mockResolvedValue([])
+
+    const user = userEvent.setup()
+    renderAt(simpleProduct.slug)
+
+    await screen.findByText(simpleProduct.name)
+    const addButton = screen.getByRole('button', { name: /agregar al carrito/i })
+    await user.click(addButton)
+    await user.click(addButton)
+    await user.click(addButton)
+
+    expect(useCartStore.getState().items[0].quantity).toBe(3)
   })
 
   it('requires selecting a matching attribute before a variable product can be added', async () => {
