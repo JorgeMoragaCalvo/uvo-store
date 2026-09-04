@@ -67,6 +67,14 @@ export const useCheckoutStore = create<CheckoutState>((set, get) => ({
       const payload: CheckoutRequestPayload = {
         customer,
         shippingAddress,
+        // A7: region/commune/couponCode were declared on this type from the start but never
+        // populated, so the backend priced every order with no destination — no shipping zone could
+        // match and shipping was free on all of them. They live in the cart store, which is what
+        // calls /cart/calculate, so the totals the customer saw and the ones the order is built
+        // from come from the same values.
+        region: cartState.region || undefined,
+        commune: cartState.commune || undefined,
+        couponCode: cartState.couponCode || undefined,
         items: cartState.items.map((item) => ({ id: item.id, type: item.type, quantity: item.quantity })),
         paymentMethod,
         customerNotes: customerNotes || undefined,

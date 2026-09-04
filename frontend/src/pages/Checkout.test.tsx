@@ -6,7 +6,14 @@ import Checkout from './Checkout'
 import { useCartStore } from '@/stores/useCartStore'
 import { useCheckoutStore } from '@/stores/useCheckoutStore'
 import type { CartLine } from '@/stores/useCartStore'
-import type { CheckoutConfig, OrderConfirmation, Product, WebpayCreateResult } from '@/types/api'
+import type {
+  CartCalculationResult,
+  CheckoutConfig,
+  OrderConfirmation,
+  Product,
+  ShippingCoverage,
+  WebpayCreateResult,
+} from '@/types/api'
 
 const navigateMock = vi.fn()
 
@@ -23,6 +30,12 @@ vi.mock('@/services/api', () => ({
     },
     webpay: {
       create: vi.fn(),
+    },
+    cart: {
+      calculate: vi.fn(),
+    },
+    shipping: {
+      coverage: vi.fn(),
     },
   },
 }))
@@ -68,6 +81,29 @@ const baseConfig: CheckoutConfig = {
   requirePhone: true,
 } as CheckoutConfig
 
+const coverage: ShippingCoverage[] = [
+  { region: 'Metropolitana', communes: ['Santiago', 'Providencia'] },
+  { region: 'Valparaíso', communes: [] },
+]
+
+function calculation(overrides: Partial<CartCalculationResult> = {}): CartCalculationResult {
+  return {
+    subtotalWithoutTax: 5000,
+    subtotalWithTax: 5000,
+    shippingCost: 3990,
+    taxAmount: 0,
+    discountAmount: 0,
+    total: 8990,
+    pricesIncludeTax: false,
+    taxRate: 0,
+    freeShippingThreshold: null,
+    shippingEnabled: true,
+    shippingAvailable: true,
+    couponApplied: false,
+    ...overrides,
+  }
+}
+
 function renderCheckout() {
   return render(
     <MemoryRouter>
@@ -84,11 +120,14 @@ async function fillContactStep(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: /continuar/i }))
 }
 
+// Región and Comuna are pickers now, not free text: zone matching is an exact string compare
+// against what the admin configured, so a typed value would essentially never match.
 async function fillAddressStep(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByPlaceholderText('Dirección'), 'Calle Falsa 123')
   await user.type(screen.getByPlaceholderText('Ciudad'), 'Santiago')
-  await user.type(screen.getByPlaceholderText('Región'), 'Metropolitana')
   await user.type(screen.getByPlaceholderText('Código postal'), '8320000')
+  await user.selectOptions(await screen.findByLabelText('Región'), 'Metropolitana')
+  await user.selectOptions(await screen.findByLabelText('Comuna'), 'Santiago')
   await user.click(screen.getByRole('button', { name: /continuar/i }))
 }
 
@@ -98,7 +137,9 @@ describe('Checkout page', () => {
     navigateMock.mockClear()
     const api = (await import('@/services/api')).default
     vi.mocked(api.checkout.getConfig).mockResolvedValue(baseConfig)
-    useCartStore.setState({ items: [line], totals: useCartStore.getInitialState().totals })
+    vi.mocked(api.shipping.coverage).mockResolvedValue(coverage)
+    vi.mocked(api.cart.calculate).mockResolvedValue(calculation())
+    useCartStore.setState({ ...useCartStore.getInitialState(), items: [line] })
     useCheckoutStore.setState(useCheckoutStore.getInitialState())
   })
 
@@ -111,20 +152,44 @@ describe('Checkout page', () => {
     expect(screen.queryByPlaceholderText('Email')).not.toBeInTheDocument()
   })
 
-  it('keeps "Continuar" disabled on the contact step until all fields are filled', async () => {
+  it('refuses to advance with a malformed email, and says why', async () => {
     const user = userEvent.setup()
     renderCheckout()
 
-    const continueButton = screen.getByRole('button', { name: /continuar/i })
-    expect(continueButton).toBeDisabled()
-
-    await user.type(screen.getByPlaceholderText('Email'), 'cliente@test.local')
-    expect(continueButton).toBeDisabled()
-
+    await user.type(screen.getByPlaceholderText('Email'), 'esto-no-es-un-email')
     await user.type(screen.getByPlaceholderText('Nombre'), 'Juan')
     await user.type(screen.getByPlaceholderText('Apellido'), 'Pérez')
     await user.type(screen.getByPlaceholderText('Teléfono'), '+56911111111')
-    expect(continueButton).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: /continuar/i }))
+
+    expect(await screen.findByText('Ingresa un email válido')).toBeInTheDocument()
+    // Still on the contact step — the old truthiness check let this through.
+    expect(screen.queryByPlaceholderText('Dirección')).not.toBeInTheDocument()
+  })
+
+  it('refuses to advance without choosing a region', async () => {
+    const user = userEvent.setup()
+    renderCheckout()
+    await fillContactStep(user)
+
+    await user.type(screen.getByPlaceholderText('Dirección'), 'Calle Falsa 123')
+    await user.type(screen.getByPlaceholderText('Ciudad'), 'Santiago')
+    await user.type(screen.getByPlaceholderText('Código postal'), '8320000')
+    await user.click(screen.getByRole('button', { name: /continuar/i }))
+
+    expect(await screen.findByText('Selecciona una región')).toBeInTheDocument()
+  })
+
+  it('offers the communes of the chosen region, and none for a region covered whole', async () => {
+    const user = userEvent.setup()
+    renderCheckout()
+    await fillContactStep(user)
+
+    await user.selectOptions(await screen.findByLabelText('Región'), 'Metropolitana')
+    expect(await screen.findByLabelText('Comuna')).toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('Región'), 'Valparaíso')
+    expect(screen.queryByLabelText('Comuna')).not.toBeInTheDocument()
   })
 
   it('advances to the address step and back to contact', async () => {
@@ -151,6 +216,50 @@ describe('Checkout page', () => {
     expect(screen.queryByLabelText(/tarjeta \(stripe\)/i)).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/mercadopago/i)).not.toBeInTheDocument()
     expect(screen.getByLabelText(/pago contra entrega/i)).toBeInTheDocument()
+  })
+
+  it('sends the destination with the order — the field that used to be missing', async () => {
+    const api = (await import('@/services/api')).default
+    const confirmation: OrderConfirmation = { orderId: 1, orderNumber: 'ORD-1', total: 5000 }
+    vi.mocked(api.checkout.createOrder).mockResolvedValue(confirmation)
+
+    const user = userEvent.setup()
+    renderCheckout()
+    await fillContactStep(user)
+    await fillAddressStep(user)
+    await user.click(screen.getByRole('button', { name: /confirmar pedido/i }))
+
+    await vi.waitFor(() => expect(api.checkout.createOrder).toHaveBeenCalled())
+    expect(vi.mocked(api.checkout.createOrder).mock.calls[0][0]).toMatchObject({
+      region: 'Metropolitana',
+      commune: 'Santiago',
+    })
+  })
+
+  it('blocks confirmation when the store does not deliver to the chosen address', async () => {
+    const api = (await import('@/services/api')).default
+    vi.mocked(api.cart.calculate).mockResolvedValue(calculation({ shippingAvailable: false, shippingCost: 0 }))
+
+    const user = userEvent.setup()
+    renderCheckout()
+    await fillContactStep(user)
+    await fillAddressStep(user)
+
+    expect(await screen.findByText(/no hay envío disponible/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /confirmar pedido/i })).toBeDisabled()
+  })
+
+  it('tells the customer when a coupon code is rejected', async () => {
+    const api = (await import('@/services/api')).default
+    vi.mocked(api.cart.calculate).mockResolvedValue(calculation({ couponApplied: false }))
+
+    const user = userEvent.setup()
+    renderCheckout()
+
+    await user.type(screen.getByPlaceholderText('Código de descuento'), 'NO-EXISTE')
+    await user.click(screen.getByRole('button', { name: /aplicar/i }))
+
+    expect(await screen.findByText('El código no es válido')).toBeInTheDocument()
   })
 
   it('confirms a manual order and navigates to the success page', async () => {

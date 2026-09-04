@@ -82,14 +82,23 @@ public class CartPricingServiceImpl implements CartPricingService {
             taxAmount = subtotalWithTax.multiply(taxRate).setScale(2, RoundingMode.HALF_UP);
         }
 
+        boolean shippingEnabled = settingRepository.findByStoreIdAndSettingKey(storeId, "shipping_enabled")
+                .map(s -> Boolean.parseBoolean(s.getValue())).orElse(true);
         Optional<ShippingOption> best = shippingRateService.getBestOption(region, commune, subtotalWithTax, totalWeight);
         BigDecimal shippingCost = best.map(ShippingOption::cost).orElse(BigDecimal.ZERO);
+        // A7: the cost alone can't distinguish "free shipping" from "no zone covers this address",
+        // and that ambiguity is exactly why every order shipped for $0 — the SPA never sent a
+        // region, no zone ever matched, and .orElse(ZERO) made it look deliberate. A store that
+        // doesn't ship at all is always "available": there is nothing to quote.
+        boolean shippingAvailable = !shippingEnabled || best.isPresent();
 
         BigDecimal discountAmount = BigDecimal.ZERO;
+        boolean couponApplied = false;
         if (couponCode != null && !couponCode.isBlank()) {
             CouponValidationResult result = couponService.validate(couponCode, subtotalWithoutTax, null);
             if (result.valid()) {
                 discountAmount = couponService.calculateDiscount(result.coupon(), subtotalWithoutTax);
+                couponApplied = true;
             }
         }
 
@@ -97,6 +106,7 @@ public class CartPricingServiceImpl implements CartPricingService {
                 ? subtotalWithTax.add(shippingCost).subtract(discountAmount)
                 : subtotalWithTax.add(taxAmount).add(shippingCost).subtract(discountAmount);
 
-        return new CartTotals(subtotalWithoutTax, taxAmount, subtotalWithTax, shippingCost, discountAmount, total);
+        return new CartTotals(subtotalWithoutTax, taxAmount, subtotalWithTax, shippingCost, discountAmount, total,
+                shippingAvailable, couponApplied);
     }
 }

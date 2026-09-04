@@ -4,46 +4,23 @@ import Home from './pages/Home'
 import Shop from './pages/Shop'
 import ProductDetail from './pages/ProductDetail'
 import Cart from './pages/Cart'
-import Checkout from './pages/Checkout'
 import OrderSuccess from './pages/OrderSuccess'
 import TrackOrder from './pages/TrackOrder'
 import Terms from './pages/legal/Terms'
 import Privacy from './pages/legal/Privacy'
 import ShippingPolicy from './pages/legal/ShippingPolicy'
 import ReturnsPolicy from './pages/legal/ReturnsPolicy'
-import AdminLayout from './admin/layouts/AdminLayout'
-import RequireAdminAuth from './admin/components/RequireAdminAuth'
-import AdminLogin from './admin/pages/Login'
-import AdminForgotPassword from './admin/pages/ForgotPassword'
-import AdminResetPassword from './admin/pages/ResetPassword'
-import AdminDashboard from './admin/pages/Dashboard'
-import ProductsList from './admin/pages/products/ProductsList'
-import ProductForm from './admin/pages/products/ProductForm'
-import CategoriesList from './admin/pages/categories/CategoriesList'
-import CategoryForm from './admin/pages/categories/CategoryForm'
-import OrdersList from './admin/pages/orders/OrdersList'
-import OrderDetail from './admin/pages/orders/OrderDetail'
-import PaymentGateways from './admin/pages/payment-gateways/PaymentGateways'
-import CouponsList from './admin/pages/coupons/CouponsList'
-import CouponForm from './admin/pages/coupons/CouponForm'
-import CustomersList from './admin/pages/customers/CustomersList'
-import CustomerDetail from './admin/pages/customers/CustomerDetail'
-import UsersList from './admin/pages/users/UsersList'
-import UserForm from './admin/pages/users/UserForm'
-import RolesList from './admin/pages/roles/RolesList'
-import RoleForm from './admin/pages/roles/RoleForm'
-import ZonesList from './admin/pages/shipping/ZonesList'
-import ZoneForm from './admin/pages/shipping/ZoneForm'
-import MethodsList from './admin/pages/shipping/MethodsList'
-import MethodForm from './admin/pages/shipping/MethodForm'
-import RatesList from './admin/pages/shipping/RatesList'
-import RateForm from './admin/pages/shipping/RateForm'
-import Reports from './admin/pages/reports/Reports'
-import BannersList from './admin/pages/banners/BannersList'
-import BannerForm from './admin/pages/banners/BannerForm'
-import GeneralSettings from './admin/pages/settings/GeneralSettings'
-import StoreSettingsPage from './admin/pages/settings/StoreSettingsPage'
-import NewStore from './platform/pages/NewStore'
+
+// A6: the whole app used to be one 1.14 MB chunk — someone landing on the storefront downloaded the
+// entire admin panel, recharts and the store-onboarding page before seeing a product.
+//
+// The split is by audience, not by route count. The storefront stays statically imported: it's the
+// hot path, its pages are small, and making them lazy would add a network round trip in the middle
+// of buying. Everything behind /admin and /plataforma is loaded on demand through React Router 7's
+// own `lazy` (the idiomatic form with createBrowserRouter — the router handles the pending state,
+// so no React.lazy or Suspense wrappers are needed).
+const lazyRoute = (load: () => Promise<{ default: React.ComponentType }>) =>
+  async () => ({ Component: (await load()).default })
 
 export const router = createBrowserRouter([
   {
@@ -55,7 +32,10 @@ export const router = createBrowserRouter([
       { path: 'category/:slug', element: <Shop /> },
       { path: 'product/:slug', element: <ProductDetail /> },
       { path: 'cart', element: <Cart /> },
-      { path: 'checkout', element: <Checkout /> },
+      // The one storefront route loaded on demand: zod + react-hook-form live here and
+      // nowhere else, and someone browsing the catalogue shouldn't pay for them. The chunk
+      // arrives while the customer is still filling in the first step.
+      { path: 'checkout', lazy: lazyRoute(() => import('./pages/Checkout')) },
       { path: 'order-success', element: <OrderSuccess /> },
       { path: 'track-order', element: <TrackOrder /> },
       { path: 'terminos-y-condiciones', element: <Terms /> },
@@ -64,54 +44,65 @@ export const router = createBrowserRouter([
       { path: 'politica-de-devoluciones', element: <ReturnsPolicy /> },
     ],
   },
-  { path: '/admin/login', element: <AdminLogin /> },
-  { path: '/admin/forgot-password', element: <AdminForgotPassword /> },
-  { path: '/admin/reset-password', element: <AdminResetPassword /> },
-  { path: '/plataforma/nueva-tienda', element: <NewStore /> },
+  { path: '/admin/login', lazy: lazyRoute(() => import('./admin/pages/Login')) },
+  { path: '/admin/forgot-password', lazy: lazyRoute(() => import('./admin/pages/ForgotPassword')) },
+  { path: '/admin/reset-password', lazy: lazyRoute(() => import('./admin/pages/ResetPassword')) },
+  { path: '/plataforma/nueva-tienda', lazy: lazyRoute(() => import('./platform/pages/NewStore')) },
   {
     path: '/admin',
-    element: (
-      <RequireAdminAuth>
-        <AdminLayout />
-      </RequireAdminAuth>
-    ),
+    // The guarded shell itself is lazy too, so the storefront never pulls in AdminLayout, its nav,
+    // or the auth store.
+    lazy: async () => {
+      const [{ default: RequireAdminAuth }, { default: AdminLayout }] = await Promise.all([
+        import('./admin/components/RequireAdminAuth'),
+        import('./admin/layouts/AdminLayout'),
+      ])
+      return {
+        Component: () => (
+          <RequireAdminAuth>
+            <AdminLayout />
+          </RequireAdminAuth>
+        ),
+      }
+    },
     children: [
-      { index: true, element: <AdminDashboard /> },
-      { path: 'products', element: <ProductsList /> },
-      { path: 'products/new', element: <ProductForm /> },
-      { path: 'products/:id/edit', element: <ProductForm /> },
-      { path: 'categories', element: <CategoriesList /> },
-      { path: 'categories/new', element: <CategoryForm /> },
-      { path: 'categories/:id/edit', element: <CategoryForm /> },
-      { path: 'orders', element: <OrdersList /> },
-      { path: 'orders/:id', element: <OrderDetail /> },
-      { path: 'coupons', element: <CouponsList /> },
-      { path: 'coupons/new', element: <CouponForm /> },
-      { path: 'coupons/:id/edit', element: <CouponForm /> },
-      { path: 'customers', element: <CustomersList /> },
-      { path: 'customers/:id', element: <CustomerDetail /> },
-      { path: 'users', element: <UsersList /> },
-      { path: 'users/new', element: <UserForm /> },
-      { path: 'users/:id/edit', element: <UserForm /> },
-      { path: 'roles', element: <RolesList /> },
-      { path: 'roles/new', element: <RoleForm /> },
-      { path: 'roles/:id/edit', element: <RoleForm /> },
-      { path: 'shipping/zones', element: <ZonesList /> },
-      { path: 'shipping/zones/new', element: <ZoneForm /> },
-      { path: 'shipping/zones/:id/edit', element: <ZoneForm /> },
-      { path: 'shipping/methods', element: <MethodsList /> },
-      { path: 'shipping/methods/new', element: <MethodForm /> },
-      { path: 'shipping/methods/:id/edit', element: <MethodForm /> },
-      { path: 'shipping/rates', element: <RatesList /> },
-      { path: 'shipping/rates/new', element: <RateForm /> },
-      { path: 'shipping/rates/:id/edit', element: <RateForm /> },
-      { path: 'reports', element: <Reports /> },
-      { path: 'payment-gateways', element: <PaymentGateways /> },
-      { path: 'banners', element: <BannersList /> },
-      { path: 'banners/new', element: <BannerForm /> },
-      { path: 'banners/:id/edit', element: <BannerForm /> },
-      { path: 'settings/general', element: <GeneralSettings /> },
-      { path: 'settings/store', element: <StoreSettingsPage /> },
+      { index: true, lazy: lazyRoute(() => import('./admin/pages/Dashboard')) },
+      { path: 'products', lazy: lazyRoute(() => import('./admin/pages/products/ProductsList')) },
+      { path: 'products/new', lazy: lazyRoute(() => import('./admin/pages/products/ProductForm')) },
+      { path: 'products/:id/edit', lazy: lazyRoute(() => import('./admin/pages/products/ProductForm')) },
+      { path: 'categories', lazy: lazyRoute(() => import('./admin/pages/categories/CategoriesList')) },
+      { path: 'categories/new', lazy: lazyRoute(() => import('./admin/pages/categories/CategoryForm')) },
+      { path: 'categories/:id/edit', lazy: lazyRoute(() => import('./admin/pages/categories/CategoryForm')) },
+      { path: 'orders', lazy: lazyRoute(() => import('./admin/pages/orders/OrdersList')) },
+      { path: 'orders/:id', lazy: lazyRoute(() => import('./admin/pages/orders/OrderDetail')) },
+      { path: 'coupons', lazy: lazyRoute(() => import('./admin/pages/coupons/CouponsList')) },
+      { path: 'coupons/new', lazy: lazyRoute(() => import('./admin/pages/coupons/CouponForm')) },
+      { path: 'coupons/:id/edit', lazy: lazyRoute(() => import('./admin/pages/coupons/CouponForm')) },
+      { path: 'customers', lazy: lazyRoute(() => import('./admin/pages/customers/CustomersList')) },
+      { path: 'customers/:id', lazy: lazyRoute(() => import('./admin/pages/customers/CustomerDetail')) },
+      { path: 'users', lazy: lazyRoute(() => import('./admin/pages/users/UsersList')) },
+      { path: 'users/new', lazy: lazyRoute(() => import('./admin/pages/users/UserForm')) },
+      { path: 'users/:id/edit', lazy: lazyRoute(() => import('./admin/pages/users/UserForm')) },
+      { path: 'roles', lazy: lazyRoute(() => import('./admin/pages/roles/RolesList')) },
+      { path: 'roles/new', lazy: lazyRoute(() => import('./admin/pages/roles/RoleForm')) },
+      { path: 'roles/:id/edit', lazy: lazyRoute(() => import('./admin/pages/roles/RoleForm')) },
+      { path: 'shipping/zones', lazy: lazyRoute(() => import('./admin/pages/shipping/ZonesList')) },
+      { path: 'shipping/zones/new', lazy: lazyRoute(() => import('./admin/pages/shipping/ZoneForm')) },
+      { path: 'shipping/zones/:id/edit', lazy: lazyRoute(() => import('./admin/pages/shipping/ZoneForm')) },
+      { path: 'shipping/methods', lazy: lazyRoute(() => import('./admin/pages/shipping/MethodsList')) },
+      { path: 'shipping/methods/new', lazy: lazyRoute(() => import('./admin/pages/shipping/MethodForm')) },
+      { path: 'shipping/methods/:id/edit', lazy: lazyRoute(() => import('./admin/pages/shipping/MethodForm')) },
+      { path: 'shipping/rates', lazy: lazyRoute(() => import('./admin/pages/shipping/RatesList')) },
+      { path: 'shipping/rates/new', lazy: lazyRoute(() => import('./admin/pages/shipping/RateForm')) },
+      { path: 'shipping/rates/:id/edit', lazy: lazyRoute(() => import('./admin/pages/shipping/RateForm')) },
+      // The only route that pulls in recharts — with this split it lands in its own chunk.
+      { path: 'reports', lazy: lazyRoute(() => import('./admin/pages/reports/Reports')) },
+      { path: 'payment-gateways', lazy: lazyRoute(() => import('./admin/pages/payment-gateways/PaymentGateways')) },
+      { path: 'banners', lazy: lazyRoute(() => import('./admin/pages/banners/BannersList')) },
+      { path: 'banners/new', lazy: lazyRoute(() => import('./admin/pages/banners/BannerForm')) },
+      { path: 'banners/:id/edit', lazy: lazyRoute(() => import('./admin/pages/banners/BannerForm')) },
+      { path: 'settings/general', lazy: lazyRoute(() => import('./admin/pages/settings/GeneralSettings')) },
+      { path: 'settings/store', lazy: lazyRoute(() => import('./admin/pages/settings/StoreSettingsPage')) },
     ],
   },
 ])

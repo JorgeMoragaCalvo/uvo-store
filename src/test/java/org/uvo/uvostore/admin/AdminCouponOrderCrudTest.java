@@ -162,6 +162,10 @@ class AdminCouponOrderCrudTest extends IntegrationTestSupport {
     }
 
     private long createPendingOrder(Store store) throws Exception {
+        // These tests are about admin order handling, not delivery. Since A7 a checkout is
+        // refused when the store ships but no zone covers the address, so say plainly that this
+        // store doesn't ship rather than seeding a zone, a method and a rate none of it needs.
+        disableShipping(store);
         Category category = createCategory(store, "Cat");
         Product product = createProduct(store, category, "Producto", BigDecimal.valueOf(1000));
 

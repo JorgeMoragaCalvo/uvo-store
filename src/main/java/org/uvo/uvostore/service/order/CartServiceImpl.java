@@ -108,7 +108,8 @@ public class CartServiceImpl implements CartService {
 
         return new CartCalculationResult(
                 totals.subtotalWithoutTax(), totals.subtotalWithTax(), totals.shippingCost(), totals.taxAmount(),
-                totals.discountAmount(), totals.total(), pricesIncludeTax, taxRate, freeShippingThreshold, shippingEnabled
+                totals.discountAmount(), totals.total(), pricesIncludeTax, taxRate, freeShippingThreshold, shippingEnabled,
+                totals.shippingAvailable(), totals.couponApplied()
         );
     }
 

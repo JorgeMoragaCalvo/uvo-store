@@ -167,6 +167,8 @@ class PaymentGatewayTest extends IntegrationTestSupport {
     }
 
     private long createPendingOrder(Store store) throws Exception {
+        // Gateway behaviour, not delivery — see the note in AdminCouponOrderCrudTest.
+        disableShipping(store);
         Category category = createCategory(store, "Cat");
         Product product = createProduct(store, category, "Producto", BigDecimal.valueOf(1000));
 

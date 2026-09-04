@@ -19,6 +19,8 @@ const { calculationResult } = vi.hoisted(() => ({
     taxRate: 0,
     freeShippingThreshold: null,
     shippingEnabled: false,
+    shippingAvailable: true,
+    couponApplied: false,
   } satisfies CartCalculationResult,
 }))
 

@@ -11,6 +11,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.uvo.uvostore.service.order.OutOfStockException;
+import org.uvo.uvostore.service.order.ShippingUnavailableException;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -51,6 +52,13 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleOutOfStock(OutOfStockException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ApiError.of(HttpStatus.CONFLICT.value(), "Conflict", ex.getMessage(), ex.getErrors()));
+    }
+
+    // Same reasoning as out-of-stock: the request is fine, the store just can't fulfil it.
+    @ExceptionHandler(ShippingUnavailableException.class)
+    public ResponseEntity<ApiError> handleShippingUnavailable(ShippingUnavailableException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiError.of(HttpStatus.CONFLICT.value(), "Conflict", ex.getMessage()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

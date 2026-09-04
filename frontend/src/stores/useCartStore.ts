@@ -24,6 +24,8 @@ export interface CartTotals {
   taxRate: number
   freeShippingThreshold: number | null
   shippingEnabled: boolean
+  shippingAvailable: boolean
+  couponApplied: boolean
 }
 
 const EMPTY_TOTALS: CartTotals = {
@@ -36,6 +38,10 @@ const EMPTY_TOTALS: CartTotals = {
   taxRate: 0,
   freeShippingThreshold: null,
   shippingEnabled: false,
+  // Optimistic until a real calculation says otherwise: an empty cart shouldn't render as
+  // "we don't deliver here".
+  shippingAvailable: true,
+  couponApplied: false,
 }
 
 function mapTotals(result: CartCalculationResult): CartTotals {
@@ -49,6 +55,8 @@ function mapTotals(result: CartCalculationResult): CartTotals {
     taxRate: result.taxRate,
     freeShippingThreshold: result.freeShippingThreshold,
     shippingEnabled: result.shippingEnabled,
+    shippingAvailable: result.shippingAvailable,
+    couponApplied: result.couponApplied,
   }
 }
 
@@ -69,6 +77,12 @@ function loadFromLocalStorage(): CartLine[] {
 interface CartState {
   items: CartLine[]
   totals: CartTotals
+  // A7: destination and coupon live here, next to the totals they determine, rather than in
+  // useCheckoutStore — this store is the one that calls /cart/calculate, and duplicating them
+  // across both is how they'd drift apart. The checkout reads and writes them through the setters.
+  region: string
+  commune: string
+  couponCode: string
   loading: boolean
   isSidebarOpen: boolean
   openSidebar: () => void
@@ -78,6 +92,8 @@ interface CartState {
   updateQuantity: (id: number, type: 'product' | 'variation', quantity: number) => void
   removeItem: (id: number, type: 'product' | 'variation') => void
   clearCart: () => void
+  setDestination: (region: string, commune: string) => Promise<void>
+  setCouponCode: (couponCode: string) => Promise<void>
   calculateTotals: () => Promise<void>
   validateCart: () => Promise<{ valid: boolean }>
 }
@@ -85,6 +101,9 @@ interface CartState {
 export const useCartStore = create<CartState>((set, get) => ({
   items: loadFromLocalStorage(),
   totals: EMPTY_TOTALS,
+  region: '',
+  commune: '',
+  couponCode: '',
   loading: false,
   isSidebarOpen: false,
 
@@ -127,7 +146,19 @@ export const useCartStore = create<CartState>((set, get) => ({
 
   clearCart() {
     saveToLocalStorage([])
-    set({ items: [], totals: EMPTY_TOTALS })
+    set({ items: [], totals: EMPTY_TOTALS, region: '', commune: '', couponCode: '' })
+  },
+
+  // Both re-price immediately: destination decides the shipping cost and the coupon decides the
+  // discount, so leaving the old totals on screen would show a number that is no longer true.
+  async setDestination(region, commune) {
+    set({ region, commune })
+    await get().calculateTotals()
+  },
+
+  async setCouponCode(couponCode) {
+    set({ couponCode })
+    await get().calculateTotals()
   },
 
   async calculateTotals() {
@@ -139,7 +170,10 @@ export const useCartStore = create<CartState>((set, get) => ({
 
     try {
       const payload: CartItemInput[] = items.map((item) => ({ id: item.id, type: item.type, quantity: item.quantity }))
-      const result = await api.cart.calculate(payload)
+      // A7: these three were never passed, so the backend priced every cart with region=null —
+      // no shipping zone could ever match and shipping came out free on every single order.
+      const { region, commune, couponCode } = get()
+      const result = await api.cart.calculate(payload, region || undefined, commune || undefined, couponCode || undefined)
       set({ totals: mapTotals(result) })
     } catch (error) {
       console.error('Error calculating cart totals', error)

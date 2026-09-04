@@ -47,6 +47,8 @@ const calculationResult: CartCalculationResult = {
   taxRate: 19,
   freeShippingThreshold: null,
   shippingEnabled: false,
+    shippingAvailable: true,
+    couponApplied: false,
 }
 
 describe('useCartStore', () => {
