@@ -97,6 +97,14 @@ public class CheckoutServiceImpl implements CheckoutService {
 
         CartTotals totals = cartPricingService.price(command.lines(), command.couponCode(), command.region(), command.commune());
 
+        // A7: refuse instead of creating an order the merchant can't dispatch. Every order used to
+        // ship for $0 here — the SPA never sent a region, so no zone matched and the cost fell
+        // through to zero silently. Server-side on purpose: hiding the button in the UI wouldn't
+        // stop a direct API call.
+        if (!totals.shippingAvailable()) {
+            throw new ShippingUnavailableException(command.region(), command.commune());
+        }
+
         Customer customer = customerService.findOrCreateGuest(
                 command.customerEmail(), command.customerFirstName(), command.customerLastName(), command.customerPhone());
         customer = customerService.markInvitedIfGuest(customer);

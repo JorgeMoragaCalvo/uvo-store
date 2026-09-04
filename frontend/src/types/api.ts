@@ -130,6 +130,18 @@ export interface CartCalculationResult {
   taxRate: number
   freeShippingThreshold: number | null
   shippingEnabled: boolean
+  // A7. shippingAvailable=false means the store ships but not to this region/commune — it must be
+  // rendered as "no delivery here", never as free shipping. couponApplied=false with a code
+  // entered means the code was rejected.
+  shippingAvailable: boolean
+  couponApplied: boolean
+}
+
+// One region the store delivers to. An empty `communes` means the whole region is covered, so no
+// commune needs picking — see ShippingCoverageDto on the backend.
+export interface ShippingCoverage {
+  region: string
+  communes: string[]
 }
 
 export interface CartValidatedItem {

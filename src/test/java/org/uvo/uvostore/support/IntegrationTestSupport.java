@@ -154,6 +154,17 @@ public abstract class IntegrationTestSupport {
         return productRepository.save(product);
     }
 
+    /**
+     * Marks a store as not shipping at all. Since A7, a checkout is refused with 409 when the store
+     * ships but no zone covers the address — which is every store that has no zones configured.
+     * Tests that aren't about shipping (order totals, payment gateways, admin order CRUD) use this
+     * so they don't each have to seed a zone, a method and a rate. Tests that ARE about shipping
+     * seed real ones instead — see ShippingCoverageTest.
+     */
+    protected void disableShipping(Store store) {
+        setSetting(store, "shipping_enabled", "false");
+    }
+
     protected void setSetting(Store store, String key, String value) {
         Setting setting = new Setting();
         setting.setStore(store);

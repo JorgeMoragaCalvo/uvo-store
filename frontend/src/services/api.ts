@@ -17,6 +17,7 @@ import type {
   Product,
   ProductSearchParams,
   PublicStoreSettings,
+  ShippingCoverage,
   WebpayCreateResult,
 } from '../types/api'
 
@@ -66,6 +67,11 @@ export const api = {
       commune?: string,
       couponCode?: string,
     ): Promise<CartCalculationResult> => client.post('/cart/calculate', { items, region, commune, couponCode }),
+  },
+  shipping: {
+    // A7: the regions/communes the store actually delivers to. Zone matching is an exact string
+    // compare against free text an admin typed, so the checkout has to offer these verbatim.
+    coverage: (): Promise<ShippingCoverage[]> => client.get('/shipping/coverage'),
   },
   checkout: {
     getConfig: (): Promise<CheckoutConfig> => client.get('/checkout/config'),

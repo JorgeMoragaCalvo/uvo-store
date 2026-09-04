@@ -12,6 +12,11 @@ public record CartCalculationResult(
         boolean pricesIncludeTax,
         BigDecimal taxRate,
         BigDecimal freeShippingThreshold,
-        boolean shippingEnabled
+        boolean shippingEnabled,
+        // A7. shippingAvailable=false means the store ships but doesn't reach this region/commune —
+        // the storefront must render that as "no delivery here", never as free shipping.
+        // couponApplied=false alongside a non-empty code entered means the code was rejected.
+        boolean shippingAvailable,
+        boolean couponApplied
 ) {
 }

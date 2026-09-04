@@ -217,10 +217,37 @@ shipping quotes, S3 file storage (`app.storage.driver=s3`), and Sentry (`SENTRY_
 never been tested against real sandbox credentials** — don't assume they work end-to-end without
 that verification.
 
+**Shipping is priced from region + commune, and the checkout refuses an address it can't reach**
+(A7). `ShippingRateServiceImpl.findZone` matches a zone by **exact string** against the free-text
+`regions`/`communes` arrays an admin typed into `ZoneForm`, so the storefront must offer those exact
+values — that's what `GET /api/v1/shipping/coverage` is for. Until this existed the SPA sent no
+region at all, no zone ever matched, and `.orElse(ZERO)` made **every order ship for free** without a
+word. `CartTotals`/`CartCalculationResult` now carry `shippingAvailable` (false = the store ships
+but not there, which is not the same as free) and `couponApplied`; `CheckoutServiceImpl` throws
+`ShippingUnavailableException` → 409 rather than creating an order nobody can dispatch. Note for
+tests: a store with no zones can't ship, so any test that checks out without caring about delivery
+calls `IntegrationTestSupport.disableShipping(store)`. `default_shipping_cost` is still read only by
+`/checkout/config` and has no effect on pricing.
+
 ### Frontend (`frontend/`)
 Vite + React 19 + TypeScript + Tailwind v4 (`@tailwindcss/vite`, CSS custom properties for the
 runtime-configurable theme colors from `store-settings`) + React Router + Zustand + axios +
 shadcn/ui (admin panel only).
+
+**Routes are code-split by audience** (A6). The whole app used to build into one 1.14 MB chunk, so
+landing on the storefront downloaded the entire admin panel and `recharts` first. `router.tsx` now
+loads everything under `/admin` and `/plataforma` — plus `/checkout`, the only place zod and
+react-hook-form are used — through React Router 7's own `lazy` property (not `React.lazy` +
+`Suspense`; with `createBrowserRouter` the router handles the pending state). The rest of the
+storefront stays eagerly imported: it's the hot path and its pages are small. `vite.config.ts` pulls
+React and the router into a `react-vendor` chunk so a returning visitor reuses it across deploys —
+note this project builds with **Vite 8 / rolldown**, so it's `build.rolldownOptions.output
+.advancedChunks`, not rollup's `manualChunks`. Adding a heavy dependency to a storefront page
+undoes this, so check the chunk sizes after (`npm run build` prints them).
+
+**Checkout validation is zod + react-hook-form** (`pages/checkoutSchemas.ts`), the only place in the
+app using them — every other form validates with native `required` attributes. It replaced two
+truthiness booleans that accepted a single character in every field and any string as an email.
 
 ```
 src/services/api.ts          axios client grouped by domain, baseURL computed at runtime (see "Multi-tenancy")

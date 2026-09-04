@@ -91,6 +91,8 @@ class CartCheckoutTest extends IntegrationTestSupport {
     void checkoutCreatesOrderWithCorrectTotalsAndStatus() throws Exception {
         Store store = createStore("checkout-ok");
         setSetting(store, "tax_rate", "19");
+        // Totals and status are what matters here; shipping has its own test.
+        disableShipping(store);
         Category category = createCategory(store, "Cat");
         Product product = createProduct(store, category, "Producto", BigDecimal.valueOf(1000));
 

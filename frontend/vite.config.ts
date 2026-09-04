@@ -16,6 +16,22 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react(), tailwindcss()],
+    build: {
+      // A6: the routes themselves are split in router.tsx; this only pulls React and the router out
+      // of the entry chunk. They change on a dependency bump, not on every deploy, so keeping them
+      // apart lets a returning visitor reuse them from cache while the app code churns.
+      // Deliberately one group only — aggressive manual grouping buys little and risks
+      // module-initialisation order problems.
+      rolldownOptions: {
+        output: {
+          advancedChunks: {
+            groups: [
+              { name: 'react-vendor', test: /node_modules[\\/](react|react-dom|react-router|react-router-dom)[\\/]/ },
+            ],
+          },
+        },
+      },
+    },
     resolve: {
       alias: {
         '@': path.resolve(import.meta.dirname, './src'),

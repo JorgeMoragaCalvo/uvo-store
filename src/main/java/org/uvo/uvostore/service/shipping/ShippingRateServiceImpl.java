@@ -114,6 +114,13 @@ public class ShippingRateServiceImpl implements ShippingRateService {
     }
 
     private ShippingZone findZone(String region, String commune) {
+        // No region, no zone — and said up front rather than left to contains(). An immutable list
+        // (List.of, which is what a zone seeded in code holds) throws NullPointerException on
+        // contains(null) instead of answering false, so the same missing-region request could end
+        // as a 500 or as a silent no-match depending on how the list happened to be materialised.
+        if (region == null || region.isBlank()) {
+            return null;
+        }
         for (ShippingZone zone : zoneRepository.findByStoreIdAndIsActiveTrueOrderBySortOrderAsc(TenantContext.requireStoreId())) {
             if (zone.getRegions() != null && zone.getRegions().contains(region)){
                 if (zone.getCommunes() != null && commune != null) {
