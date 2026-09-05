@@ -1,6 +1,7 @@
 package org.uvo.uvostore.controller.admin.catalog;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
@@ -31,34 +32,40 @@ public class AdminCategoryController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAuthority('categories.view')")
     public List<CategoryDto> index() {
         return categoryQueryService.listAll();
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('categories.view')")
     public CategoryDto show(@PathVariable Long id) {
         return categoryQueryService.getById(id);
     }
 
     @PostMapping(consumes = "multipart/form-data")
+    @PreAuthorize("hasAuthority('categories.manage')")
     public CategoryDto create(@ModelAttribute CategoryRequest request) {
         var category = categoryService.createCategory(toCommand(request));
         return categoryQueryService.getById(category.getId());
     }
 
     @PutMapping(value = "/{id}", consumes = "multipart/form-data")
+    @PreAuthorize("hasAuthority('categories.manage')")
     public CategoryDto update(@PathVariable Long id, @ModelAttribute CategoryRequest request) {
         var category = categoryService.updateCategory(id, toCommand(request));
         return categoryQueryService.getById(category.getId());
     }
 
     @DeleteMapping("/{id}/image")
+    @PreAuthorize("hasAuthority('categories.manage')")
     public CategoryDto removeImage(@PathVariable Long id) {
         categoryService.removeImage(id);
         return categoryQueryService.getById(id);
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('categories.manage')")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         categoryService.deleteCategory(id);
         return ResponseEntity.noContent().build();

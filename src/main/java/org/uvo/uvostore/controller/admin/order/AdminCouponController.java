@@ -5,6 +5,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -31,6 +32,7 @@ public class AdminCouponController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAuthority('coupons.view')")
     public Page<CouponDto> index(
             @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "all") String status,
@@ -40,27 +42,32 @@ public class AdminCouponController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('coupons.view')")
     public CouponDto show(@PathVariable Long id) {
         return adminCouponService.getById(id);
     }
 
     @PostMapping
+    @PreAuthorize("hasAuthority('coupons.manage')")
     public CouponDto create(@Valid @RequestBody CouponRequest request) {
         return adminCouponService.create(toCommand(request));
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('coupons.manage')")
     public CouponDto update(@PathVariable Long id, @Valid @RequestBody CouponRequest request) {
         return adminCouponService.update(id, toCommand(request));
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('coupons.manage')")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         adminCouponService.delete(id);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{id}/toggle-status")
+    @PreAuthorize("hasAuthority('coupons.manage')")
     public CouponDto toggleStatus(@PathVariable Long id) {
         return adminCouponService.toggleStatus(id);
     }

@@ -4,6 +4,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -34,6 +35,7 @@ public class AdminCustomerController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAuthority('customers.view')")
     public Page<AdminCustomerSummaryDto> index(
             @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "createdAt") String sortField,
@@ -45,33 +47,39 @@ public class AdminCustomerController {
     }
 
     @GetMapping("/stats")
+    @PreAuthorize("hasAuthority('customers.view')")
     public AdminCustomerStatsDto stats() {
         return adminCustomerService.getStats();
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('customers.view')")
     public AdminCustomerDetailDto show(@PathVariable Long id) {
         return adminCustomerService.getById(id);
     }
 
     @GetMapping("/{id}/orders")
+    @PreAuthorize("hasAuthority('customers.view')")
     public Page<AdminOrderSummaryDto> orders(@PathVariable Long id, @RequestParam(defaultValue = "1") int page) {
         return adminCustomerService.getOrders(id, PageRequest.of(Math.max(page - 1, 0), 10, Sort.by(Sort.Direction.DESC, "createdAt")));
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('customers.manage')")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         adminCustomerService.deleteCustomer(id);
         return ResponseEntity.noContent().build();
     }
 
     @DeleteMapping("/{customerId}/addresses/{addressId}")
+    @PreAuthorize("hasAuthority('customers.manage')")
     public ResponseEntity<Void> deleteAddress(@PathVariable Long customerId, @PathVariable Long addressId) {
         customerAddressService.deleteAddress(customerId, addressId);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{customerId}/addresses/{addressId}/default")
+    @PreAuthorize("hasAuthority('customers.manage')")
     public ShippingAddressDto setDefaultAddress(@PathVariable Long customerId, @PathVariable Long addressId) {
         return customerAddressService.setDefaultAddress(customerId, addressId);
     }

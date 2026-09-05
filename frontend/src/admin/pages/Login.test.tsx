@@ -27,7 +27,7 @@ describe('admin Login page', () => {
       id: 1,
       name: 'Admin Demo',
       email: 'admin@demo.local',
-      type: 'ADMIN',
+      type: 'ADMIN', permissions: [],
     })
 
     const user = userEvent.setup()

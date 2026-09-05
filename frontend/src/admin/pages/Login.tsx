@@ -30,7 +30,12 @@ export default function Login() {
     setLoading(true)
     try {
       const response = await adminApi.auth.login(email, password)
-      login(response.token, { id: response.id, name: response.name, email: response.email })
+      login(response.token, {
+        id: response.id,
+        name: response.name,
+        email: response.email,
+        permissions: response.permissions ?? [],
+      })
       navigate('/admin', { replace: true })
     } catch (err) {
       const message = (err as { message?: string })?.message

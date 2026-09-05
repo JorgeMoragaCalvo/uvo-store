@@ -6,6 +6,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
@@ -39,6 +40,7 @@ public class AdminUserController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAuthority('users.view')")
     public Page<UserDto> index(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) Long roleId,
@@ -52,23 +54,27 @@ public class AdminUserController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('users.view')")
     public UserDto show(@PathVariable Long id) {
         return userQueryService.getById(id);
     }
 
     @PostMapping(consumes = "multipart/form-data")
+    @PreAuthorize("hasAuthority('users.manage')")
     public UserDto create(@ModelAttribute UserRequest request) {
         User user = userService.createUser(toCommand(request));
         return userQueryService.getById(user.getId());
     }
 
     @PutMapping(value = "/{id}", consumes = "multipart/form-data")
+    @PreAuthorize("hasAuthority('users.manage')")
     public UserDto update(@PathVariable Long id, @ModelAttribute UserRequest request) {
         User user = userService.updateUser(id, toCommand(request));
         return userQueryService.getById(user.getId());
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('users.manage')")
     public ResponseEntity<Void> delete(@PathVariable Long id, Authentication authentication) {
         guardAgainstSelf(id, authentication, "No puedes eliminarte a ti mismo");
         userService.deleteUser(id);
@@ -76,6 +82,7 @@ public class AdminUserController {
     }
 
     @PostMapping("/{id}/toggle-status")
+    @PreAuthorize("hasAuthority('users.manage')")
     public UserDto toggleStatus(@PathVariable Long id, Authentication authentication) {
         guardAgainstSelf(id, authentication, "No puedes desactivarte a ti mismo");
         User user = userService.toggleActive(id);

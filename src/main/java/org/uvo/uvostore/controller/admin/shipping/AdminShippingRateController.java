@@ -2,6 +2,7 @@ package org.uvo.uvostore.controller.admin.shipping;
 
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -30,32 +31,38 @@ public class AdminShippingRateController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAuthority('shipping.view')")
     public List<ShippingRateDto> index(@RequestParam(required = false) Long methodId, @RequestParam(required = false) Long zoneId) {
         return adminShippingRateService.list(methodId, zoneId);
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('shipping.view')")
     public ShippingRateDto show(@PathVariable Long id) {
         return adminShippingRateService.getById(id);
     }
 
     @PostMapping
+    @PreAuthorize("hasAuthority('shipping.manage')")
     public ShippingRateDto create(@Valid @RequestBody ShippingRateRequest request) {
         return adminShippingRateService.create(toCommand(request));
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('shipping.manage')")
     public ShippingRateDto update(@PathVariable Long id, @Valid @RequestBody ShippingRateRequest request) {
         return adminShippingRateService.update(id, toCommand(request));
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('shipping.manage')")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         adminShippingRateService.delete(id);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{id}/toggle-status")
+    @PreAuthorize("hasAuthority('shipping.manage')")
     public ShippingRateDto toggleStatus(@PathVariable Long id) {
         return adminShippingRateService.toggleStatus(id);
     }

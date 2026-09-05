@@ -3,6 +3,7 @@ package org.uvo.uvostore.controller.admin.order;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -33,6 +34,7 @@ public class AdminOrderController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAuthority('orders.view')")
     public Page<AdminOrderSummaryDto> index(
             @RequestParam(defaultValue = "all") String tab,
             @RequestParam(required = false) String search,
@@ -48,46 +50,55 @@ public class AdminOrderController {
     }
 
     @GetMapping("/stats")
+    @PreAuthorize("hasAuthority('orders.view')")
     public AdminOrderStatsDto stats() {
         return adminOrderQueryService.getStats();
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('orders.view')")
     public AdminOrderDetailDto show(@PathVariable Long id) {
         return adminOrderQueryService.getById(id);
     }
 
     @PostMapping("/{id}/mark-processing")
+    @PreAuthorize("hasAuthority('orders.manage')")
     public AdminOrderDetailDto markProcessing(@PathVariable Long id) {
         return adminOrderService.markProcessing(id);
     }
 
     @PostMapping("/{id}/mark-shipped")
+    @PreAuthorize("hasAuthority('orders.manage')")
     public AdminOrderDetailDto markShipped(@PathVariable Long id) {
         return adminOrderService.markShipped(id);
     }
 
     @PostMapping("/{id}/mark-delivered")
+    @PreAuthorize("hasAuthority('orders.manage')")
     public AdminOrderDetailDto markDelivered(@PathVariable Long id) {
         return adminOrderService.markDelivered(id);
     }
 
     @PostMapping("/{id}/cancel")
+    @PreAuthorize("hasAuthority('orders.manage')")
     public AdminOrderDetailDto cancel(@PathVariable Long id) {
         return adminOrderService.cancelOrder(id);
     }
 
     @PutMapping("/{id}/status")
+    @PreAuthorize("hasAuthority('orders.manage')")
     public AdminOrderDetailDto updateStatus(@PathVariable Long id, @RequestBody StatusRequest request) {
         return adminOrderService.updateStatus(id, request.status());
     }
 
     @PutMapping("/{id}/payment-status")
+    @PreAuthorize("hasAuthority('orders.manage')")
     public AdminOrderDetailDto updatePaymentStatus(@PathVariable Long id, @RequestBody StatusRequest request) {
         return adminOrderService.updatePaymentStatus(id, request.status());
     }
 
     @PostMapping("/{id}/tracking")
+    @PreAuthorize("hasAuthority('orders.manage')")
     public AdminOrderDetailDto saveTracking(@PathVariable Long id, @RequestBody TrackingRequest request) {
         return adminOrderService.saveTracking(id, request.trackingNumber());
     }

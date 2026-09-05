@@ -5,6 +5,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -30,12 +31,14 @@ public class AdminProductsReportController {
     }
 
     @GetMapping("/summary")
+    @PreAuthorize("hasAuthority('reports.view')")
     public ProductsSummaryDto summary(@RequestParam LocalDate startDate, @RequestParam LocalDate endDate,
                                        @RequestParam(required = false) Long categoryId, @RequestParam(required = false) String search) {
         return productsReportService.getSummary(ReportDateRange.start(startDate), ReportDateRange.end(endDate), categoryId, search);
     }
 
     @GetMapping
+    @PreAuthorize("hasAuthority('reports.view')")
     public Page<ProductReportRowDto> data(
             @RequestParam LocalDate startDate, @RequestParam LocalDate endDate,
             @RequestParam(required = false) Long categoryId, @RequestParam(required = false) String search,
@@ -48,21 +51,25 @@ public class AdminProductsReportController {
     }
 
     @GetMapping("/top-by-revenue")
+    @PreAuthorize("hasAuthority('reports.view')")
     public List<ProductReportRowDto> topByRevenue(@RequestParam LocalDate startDate, @RequestParam LocalDate endDate) {
         return productsReportService.getTopByRevenue(ReportDateRange.start(startDate), ReportDateRange.end(endDate));
     }
 
     @GetMapping("/top-by-quantity")
+    @PreAuthorize("hasAuthority('reports.view')")
     public List<ProductReportRowDto> topByQuantity(@RequestParam LocalDate startDate, @RequestParam LocalDate endDate) {
         return productsReportService.getTopByQuantity(ReportDateRange.start(startDate), ReportDateRange.end(endDate));
     }
 
     @GetMapping("/by-category")
+    @PreAuthorize("hasAuthority('reports.view')")
     public List<CategoryRevenueDto> byCategory(@RequestParam LocalDate startDate, @RequestParam LocalDate endDate) {
         return productsReportService.getSalesByCategory(ReportDateRange.start(startDate), ReportDateRange.end(endDate));
     }
 
     @GetMapping("/export")
+    @PreAuthorize("hasAuthority('reports.view')")
     public ResponseEntity<byte[]> export(@RequestParam LocalDate startDate, @RequestParam LocalDate endDate,
                                           @RequestParam(required = false) Long categoryId, @RequestParam(required = false) String search) {
         byte[] csv = productsReportService.exportCsv(ReportDateRange.start(startDate), ReportDateRange.end(endDate), categoryId, search);

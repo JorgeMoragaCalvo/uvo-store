@@ -4,6 +4,9 @@ export interface AdminLoginResponse {
   name: string
   email: string
   type: string
+  // A1: the panel used to show every section to anyone holding a token, because it had no idea what
+  // the signed-in user was allowed to do. These are the `domain.action` names of their role.
+  permissions: string[]
 }
 
 export interface CategoryRef {

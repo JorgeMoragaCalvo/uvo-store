@@ -3,6 +3,7 @@ package org.uvo.uvostore.controller.admin.report;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -29,28 +30,33 @@ public class AdminSalesReportController {
     }
 
     @GetMapping("/summary")
+    @PreAuthorize("hasAuthority('reports.view')")
     public SalesSummaryDto summary(@RequestParam LocalDate startDate, @RequestParam LocalDate endDate,
                                     @RequestParam(defaultValue = "all") String paymentStatus) {
         return salesReportService.getSummary(ReportDateRange.start(startDate), ReportDateRange.end(endDate), paymentStatus);
     }
 
     @GetMapping("/by-day")
+    @PreAuthorize("hasAuthority('reports.view')")
     public List<SalesByDayDto> byDay(@RequestParam LocalDate startDate, @RequestParam LocalDate endDate,
                                       @RequestParam(defaultValue = "all") String paymentStatus) {
         return salesReportService.getSalesByDay(ReportDateRange.start(startDate), ReportDateRange.end(endDate), paymentStatus);
     }
 
     @GetMapping("/top-products")
+    @PreAuthorize("hasAuthority('reports.view')")
     public List<TopProductDto> topProducts(@RequestParam LocalDate startDate, @RequestParam LocalDate endDate) {
         return salesReportService.getTopProducts(ReportDateRange.start(startDate), ReportDateRange.end(endDate));
     }
 
     @GetMapping("/by-payment-method")
+    @PreAuthorize("hasAuthority('reports.view')")
     public List<PaymentMethodRevenueDto> byPaymentMethod(@RequestParam LocalDate startDate, @RequestParam LocalDate endDate) {
         return salesReportService.getSalesByPaymentMethod(ReportDateRange.start(startDate), ReportDateRange.end(endDate));
     }
 
     @GetMapping("/export")
+    @PreAuthorize("hasAuthority('reports.view')")
     public ResponseEntity<byte[]> export(@RequestParam LocalDate startDate, @RequestParam LocalDate endDate,
                                           @RequestParam(defaultValue = "all") String paymentStatus) {
         byte[] csv = salesReportService.exportCsv(ReportDateRange.start(startDate), ReportDateRange.end(endDate), paymentStatus);

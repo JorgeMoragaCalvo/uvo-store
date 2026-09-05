@@ -1,5 +1,6 @@
 package org.uvo.uvostore.controller.settings;
 
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -21,11 +22,13 @@ public class StoreSettingsController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAuthority('settings.view')")
     public StoreSettingsDto show() {
         return storeSettingsService.getCurrent();
     }
 
     @PutMapping(consumes = "multipart/form-data")
+    @PreAuthorize("hasAuthority('settings.manage')")
     public StoreSettingsDto update(@ModelAttribute StoreSettingsUpdateRequest request) {
         StoreSettingsDto command = new StoreSettingsDto(
                 null, request.storeName(), request.storeDescription(), null, null,
