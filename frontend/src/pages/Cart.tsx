@@ -1,11 +1,10 @@
 import { Link } from 'react-router-dom'
 import { useCartStore } from '../stores/useCartStore'
+import OrderSummary from '../components/cart/OrderSummary'
 import CartLineItem from '../components/cart/CartLineItem'
-import { formatCurrency } from '../utils/currency'
 
 export default function Cart() {
   const items = useCartStore((state) => state.items)
-  const totals = useCartStore((state) => state.totals)
 
   if (items.length === 0) {
     return (
@@ -32,33 +31,7 @@ export default function Cart() {
 
       <div className="h-fit rounded-lg border border-gray-100 p-4">
         <h2 className="mb-3 font-semibold text-dark">Resumen del Pedido</h2>
-        <div className="flex flex-col gap-2 text-sm text-secondary">
-          <div className="flex justify-between">
-            <span>Subtotal</span>
-            <span>{formatCurrency(totals.subtotal)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Envío</span>
-            <span>{totals.shippingCost > 0 ? formatCurrency(totals.shippingCost) : 'Gratis'}</span>
-          </div>
-          {totals.taxAmount > 0 && (
-            <div className="flex justify-between">
-              <span>Impuesto</span>
-              <span>{formatCurrency(totals.taxAmount)}</span>
-            </div>
-          )}
-          {totals.discountAmount > 0 && (
-            <div className="flex justify-between text-green-600">
-              <span>Descuento</span>
-              <span>-{formatCurrency(totals.discountAmount)}</span>
-            </div>
-          )}
-        </div>
-
-        <div className="mt-3 flex justify-between border-t border-gray-100 pt-3 font-semibold text-dark">
-          <span>Total</span>
-          <span>{formatCurrency(totals.total)}</span>
-        </div>
+        <OrderSummary />
 
         <div className="mt-4 flex flex-col gap-2">
           <Link to="/checkout" className="rounded bg-primary px-4 py-2.5 text-center text-sm font-medium text-white">
