@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { NavLink, Outlet, useMatches, useNavigate } from 'react-router-dom'
 import {
   Banknote,
   BarChart3,
@@ -18,35 +18,41 @@ import {
   UserCog,
   Users,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { Toaster } from '@/components/ui/sonner'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
-import { useAdminAuthStore } from '@/admin/stores/useAdminAuthStore'
+import { hasPermission, useAdminAuthStore } from '@/admin/stores/useAdminAuthStore'
 import { cn } from '@/lib/utils'
 
-const NAV_ITEMS = [
+// A1: `permission` is what reveals each entry. Dashboard has none — it's where every admin lands,
+// whatever their role. Hiding a link is cosmetic; the endpoints behind it are enforced server-side.
+const NAV_ITEMS: { to: string; label: string; icon: LucideIcon; end?: boolean; permission?: string }[] = [
   { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/admin/products', label: 'Productos', icon: Package },
-  { to: '/admin/categories', label: 'Categorías', icon: Tags },
-  { to: '/admin/orders', label: 'Órdenes', icon: Receipt },
-  { to: '/admin/customers', label: 'Clientes', icon: Users },
-  { to: '/admin/coupons', label: 'Cupones', icon: Ticket },
-  { to: '/admin/users', label: 'Usuarios', icon: UserCog },
-  { to: '/admin/roles', label: 'Roles', icon: Shield },
-  { to: '/admin/shipping/zones', label: 'Zonas de envío', icon: Map },
-  { to: '/admin/shipping/methods', label: 'Métodos de envío', icon: Truck },
-  { to: '/admin/shipping/rates', label: 'Tarifas de envío', icon: Banknote },
-  { to: '/admin/reports', label: 'Reportes', icon: BarChart3 },
-  { to: '/admin/payment-gateways', label: 'Pasarelas de pago', icon: CreditCard },
-  { to: '/admin/banners', label: 'Banners', icon: Image },
-  { to: '/admin/settings/store', label: 'Config. de tienda', icon: Settings },
-  { to: '/admin/settings/general', label: 'Config. general', icon: Settings },
+  { to: '/admin/products', permission: 'products.view', label: 'Productos', icon: Package },
+  { to: '/admin/categories', permission: 'categories.view', label: 'Categorías', icon: Tags },
+  { to: '/admin/orders', permission: 'orders.view', label: 'Órdenes', icon: Receipt },
+  { to: '/admin/customers', permission: 'customers.view', label: 'Clientes', icon: Users },
+  { to: '/admin/coupons', permission: 'coupons.view', label: 'Cupones', icon: Ticket },
+  { to: '/admin/users', permission: 'users.view', label: 'Usuarios', icon: UserCog },
+  { to: '/admin/roles', permission: 'roles.view', label: 'Roles', icon: Shield },
+  { to: '/admin/shipping/zones', permission: 'shipping.view', label: 'Zonas de envío', icon: Map },
+  { to: '/admin/shipping/methods', permission: 'shipping.view', label: 'Métodos de envío', icon: Truck },
+  { to: '/admin/shipping/rates', permission: 'shipping.view', label: 'Tarifas de envío', icon: Banknote },
+  { to: '/admin/reports', permission: 'reports.view', label: 'Reportes', icon: BarChart3 },
+  { to: '/admin/payment-gateways', permission: 'payments.view', label: 'Pasarelas de pago', icon: CreditCard },
+  { to: '/admin/banners', permission: 'banners.view', label: 'Banners', icon: Image },
+  { to: '/admin/settings/store', permission: 'settings.view', label: 'Config. de tienda', icon: Settings },
+  { to: '/admin/settings/general', permission: 'settings.view', label: 'Config. general', icon: Settings },
 ]
 
 function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
+  const user = useAdminAuthStore((state) => state.user)
+  const visible = NAV_ITEMS.filter((item) => !item.permission || hasPermission(user, item.permission))
+
   return (
     <nav className="flex flex-col gap-1 px-3">
-      {NAV_ITEMS.map((item) => (
+      {visible.map((item) => (
         <NavLink
           key={item.to}
           to={item.to}
@@ -71,6 +77,13 @@ export default function AdminLayout() {
   const user = useAdminAuthStore((state) => state.user)
   const logout = useAdminAuthStore((state) => state.logout)
   const navigate = useNavigate()
+
+  // Hiding the menu entry isn't enough — the URL can be typed. Each admin route declares what it
+  // needs via `handle` in router.tsx, so one check here covers all 36 of them without a wrapper
+  // component per route (and without fighting the lazy loading from A6).
+  const matches = useMatches() as { handle?: { permission?: string } }[]
+  const required = matches.map((m) => m.handle?.permission).filter(Boolean) as string[]
+  const allowed = required.every((permission) => hasPermission(user, permission))
 
   function handleLogout() {
     logout()
@@ -112,7 +125,16 @@ export default function AdminLayout() {
         </header>
 
         <main className="flex-1 p-4 md:p-6">
-          <Outlet />
+          {allowed ? (
+            <Outlet />
+          ) : (
+            <div className="rounded-lg border border-dashed p-8 text-center">
+              <p className="font-medium">No tienes permiso para ver esta sección</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Pídele a un administrador que revise tu rol.
+              </p>
+            </div>
+          )}
         </main>
       </div>
 

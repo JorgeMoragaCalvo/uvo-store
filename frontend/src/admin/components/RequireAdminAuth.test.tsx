@@ -35,7 +35,7 @@ describe('RequireAdminAuth', () => {
   })
 
   it('renders the protected content when a token is present', () => {
-    useAdminAuthStore.setState({ token: 'jwt-token', user: { id: 1, name: 'Admin Demo', email: 'admin@demo.local' } })
+    useAdminAuthStore.setState({ token: 'jwt-token', user: { id: 1, name: 'Admin Demo', email: 'admin@demo.local', permissions: [] } })
 
     renderGuarded()
 

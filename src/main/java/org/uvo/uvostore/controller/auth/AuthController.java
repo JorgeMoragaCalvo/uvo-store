@@ -74,7 +74,10 @@ public class AuthController {
         List<String> authorities = adminAuthorities(user);
         String token = jwtService.generateToken(user.getId(), user.getEmail(), "ADMIN", store.getId(),
                 authorities, user.getTokenVersion());
-        return ResponseEntity.ok(new AuthResponse(token, user.getId(), user.getName(), user.getEmail(), "ADMIN"));
+        // Same list the token carries, minus the ROLE_ADMIN marker: the panel needs the
+        // permission names to decide which sections to show.
+        List<String> permissions = authorities.stream().filter(a -> !a.startsWith("ROLE_")).toList();
+        return ResponseEntity.ok(new AuthResponse(token, user.getId(), user.getName(), user.getEmail(), "ADMIN", permissions));
     }
 
     @PostMapping("/api/customer/auth/login")
@@ -91,7 +94,7 @@ public class AuthController {
         String token = jwtService.generateToken(customer.getId(), customer.getEmail(), "CUSTOMER", store.getId(),
                 List.of("ROLE_CUSTOMER"), customer.getTokenVersion());
         String fullName = customer.getFirstName() + " " + customer.getLastName();
-        return ResponseEntity.ok(new AuthResponse(token, customer.getId(), fullName, customer.getEmail(), "CUSTOMER"));
+        return ResponseEntity.ok(new AuthResponse(token, customer.getId(), fullName, customer.getEmail(), "CUSTOMER", List.of()));
     }
 
     @PostMapping("/api/customer/auth/register")
@@ -114,7 +117,7 @@ public class AuthController {
         String token = jwtService.generateToken(saved.getId(), saved.getEmail(), "CUSTOMER", store.getId(),
                 List.of("ROLE_CUSTOMER"), saved.getTokenVersion());
         String fullName = saved.getFirstName() + " " + saved.getLastName();
-        return ResponseEntity.ok(new AuthResponse(token, saved.getId(), fullName, saved.getEmail(), "CUSTOMER"));
+        return ResponseEntity.ok(new AuthResponse(token, saved.getId(), fullName, saved.getEmail(), "CUSTOMER", List.of()));
     }
 
 

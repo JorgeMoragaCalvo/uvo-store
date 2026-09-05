@@ -151,6 +151,20 @@ and sales/products/payment-methods reports with date-range filters and CSV expor
 `controller/customer/**` (account + addresses, JWT), `controller/platform/**` (store onboarding,
 `X-Platform-Key`), and `controller/auth` (admin/customer JWT login+register, password reset).
 
+**Every /api/admin endpoint is permission-checked** (A1). `@EnableMethodSecurity` was already on but
+unused; now all **107 endpoints across 19 controllers** carry `@PreAuthorize("hasAuthority('...')")` —
+`GET` needs `dominio.view`, everything else `dominio.manage`. The catalogue is 23 permissions seeded
+globally by `V15` (`Permission` has no `store_id`; `Role` does, `UNIQUE(store_id, name, guard_name)`).
+`AuthController.adminAuthorities()` already put permission names in the JWT, so the annotations
+needed no plumbing. **No role means no permissions**, so V15 also creates an "Administrador" role per
+store and assigns it to every existing admin — without that backfill, enforcing the annotations locks
+everyone out of their own panel. For the same reason `IntegrationTestSupport.createAdmin` now grants
+a full-access role, and `createAdminWithPermissions(store, prefix, "products.view")` builds a
+restricted one. Three of the 19 controllers live in `controller/settings/**`, not
+`controller/admin/**` — easy to miss when adding endpoints. On the frontend, `NAV_ITEMS` entries and
+admin routes declare a `permission` (`handle.permission` in `router.tsx`), checked once in
+`AdminLayout` via `useMatches()`; that's cosmetic only, the server is the enforcement.
+
 **Stock and coupon uses are never written with read-modify-write** (C5). `Product.stock`,
 `ProductVariation.stock` and `Coupon.timesUsed` move only through the conditional `@Modifying`
 queries in their repositories — `decrementStock` carries `AND stock >= :quantity`, `claimUsage`

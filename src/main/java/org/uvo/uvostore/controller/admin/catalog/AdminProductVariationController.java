@@ -1,6 +1,7 @@
 package org.uvo.uvostore.controller.admin.catalog;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -28,18 +29,21 @@ public class AdminProductVariationController {
     }
 
     @PostMapping
+    @PreAuthorize("hasAuthority('products.manage')")
     public ProductDto add(@PathVariable Long productId, @RequestBody VariationRequest request) {
         productVariationService.addVariation(productId, toCommand(request));
         return productQueryService.getById(productId);
     }
 
     @PutMapping("/{variationId}")
+    @PreAuthorize("hasAuthority('products.manage')")
     public ProductDto update(@PathVariable Long productId, @PathVariable Long variationId, @RequestBody VariationRequest request) {
         productVariationService.updateVariation(variationId, toCommand(request));
         return productQueryService.getById(productId);
     }
 
     @DeleteMapping("/{variationId}")
+    @PreAuthorize("hasAuthority('products.manage')")
     public ResponseEntity<Void> delete(@PathVariable Long productId, @PathVariable Long variationId) {
         productVariationService.deleteVariation(variationId);
         return ResponseEntity.noContent().build();

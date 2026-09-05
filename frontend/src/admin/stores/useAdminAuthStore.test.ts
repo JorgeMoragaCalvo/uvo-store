@@ -13,14 +13,14 @@ describe('useAdminAuthStore', () => {
   })
 
   it('stores the token and user on login', () => {
-    useAdminAuthStore.getState().login('jwt-token', { id: 1, name: 'Admin Demo', email: 'admin@demo.local' })
+    useAdminAuthStore.getState().login('jwt-token', { id: 1, name: 'Admin Demo', email: 'admin@demo.local', permissions: ['products.view'] })
 
     expect(useAdminAuthStore.getState().token).toBe('jwt-token')
-    expect(useAdminAuthStore.getState().user).toEqual({ id: 1, name: 'Admin Demo', email: 'admin@demo.local' })
+    expect(useAdminAuthStore.getState().user).toEqual({ id: 1, name: 'Admin Demo', email: 'admin@demo.local', permissions: ['products.view'] })
   })
 
   it('clears the token and user on logout', () => {
-    useAdminAuthStore.getState().login('jwt-token', { id: 1, name: 'Admin Demo', email: 'admin@demo.local' })
+    useAdminAuthStore.getState().login('jwt-token', { id: 1, name: 'Admin Demo', email: 'admin@demo.local', permissions: ['products.view'] })
     useAdminAuthStore.getState().logout()
 
     expect(useAdminAuthStore.getState().token).toBeNull()
@@ -28,7 +28,7 @@ describe('useAdminAuthStore', () => {
   })
 
   it('persists the session under its own localStorage key', () => {
-    useAdminAuthStore.getState().login('jwt-token', { id: 1, name: 'Admin Demo', email: 'admin@demo.local' })
+    useAdminAuthStore.getState().login('jwt-token', { id: 1, name: 'Admin Demo', email: 'admin@demo.local', permissions: ['products.view'] })
 
     const stored = JSON.parse(localStorage.getItem('uvostore_admin_auth') ?? 'null')
     expect(stored?.state?.token).toBe('jwt-token')

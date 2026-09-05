@@ -1,5 +1,6 @@
 package org.uvo.uvostore.controller.settings;
 
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -22,11 +23,13 @@ public class SettingsController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAuthority('settings.view')")
     public GeneralSettingsDto show() {
         return settingsService.getGeneralSettings();
     }
 
     @PutMapping
+    @PreAuthorize("hasAuthority('settings.manage')")
     public GeneralSettingsDto update(@RequestBody GeneralSettingsUpdateRequest request) {
         return settingsService.updateGeneralSettings(request);
     }

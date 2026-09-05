@@ -3,6 +3,7 @@ package org.uvo.uvostore.controller.admin.report;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -28,23 +29,27 @@ public class AdminPaymentMethodsReportController {
     }
 
     @GetMapping("/summary")
+    @PreAuthorize("hasAuthority('reports.view')")
     public PaymentMethodsSummaryDto summary(@RequestParam LocalDate startDate, @RequestParam LocalDate endDate,
                                              @RequestParam(defaultValue = "paid") String paymentStatus) {
         return paymentMethodsReportService.getSummary(ReportDateRange.start(startDate), ReportDateRange.end(endDate), paymentStatus);
     }
 
     @GetMapping
+    @PreAuthorize("hasAuthority('reports.view')")
     public List<PaymentMethodDetailDto> byMethod(@RequestParam LocalDate startDate, @RequestParam LocalDate endDate,
                                                   @RequestParam(defaultValue = "paid") String paymentStatus) {
         return paymentMethodsReportService.getByPaymentMethod(ReportDateRange.start(startDate), ReportDateRange.end(endDate), paymentStatus);
     }
 
     @GetMapping("/status-distribution")
+    @PreAuthorize("hasAuthority('reports.view')")
     public List<PaymentStatusDistributionDto> statusDistribution(@RequestParam LocalDate startDate, @RequestParam LocalDate endDate) {
         return paymentMethodsReportService.getStatusDistribution(ReportDateRange.start(startDate), ReportDateRange.end(endDate));
     }
 
     @GetMapping("/export")
+    @PreAuthorize("hasAuthority('reports.view')")
     public ResponseEntity<byte[]> export(@RequestParam LocalDate startDate, @RequestParam LocalDate endDate,
                                           @RequestParam(defaultValue = "paid") String paymentStatus) {
         byte[] csv = paymentMethodsReportService.exportCsv(ReportDateRange.start(startDate), ReportDateRange.end(endDate), paymentStatus);

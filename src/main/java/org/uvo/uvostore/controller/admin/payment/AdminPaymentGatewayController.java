@@ -1,6 +1,7 @@
 package org.uvo.uvostore.controller.admin.payment;
 
 import jakarta.validation.Valid;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -27,11 +28,13 @@ public class AdminPaymentGatewayController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAuthority('payments.view')")
     public List<PaymentGatewayConfigDto> index() {
         return service.list();
     }
 
     @PutMapping("/{gateway}")
+    @PreAuthorize("hasAuthority('payments.manage')")
     public PaymentGatewayConfigDto update(@PathVariable PaymentGatewayType gateway, @Valid @RequestBody PaymentGatewayConfigCommand command) {
         return service.upsert(gateway, command);
     }

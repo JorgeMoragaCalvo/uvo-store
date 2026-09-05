@@ -2,6 +2,7 @@ package org.uvo.uvostore.controller.admin.shipping;
 
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -30,37 +31,44 @@ public class AdminShippingMethodController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAuthority('shipping.view')")
     public List<ShippingMethodDto> index() {
         return adminShippingMethodService.list();
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('shipping.view')")
     public ShippingMethodDto show(@PathVariable Long id) {
         return adminShippingMethodService.getById(id);
     }
 
     @PostMapping
+    @PreAuthorize("hasAuthority('shipping.manage')")
     public ShippingMethodDto create(@Valid @RequestBody ShippingMethodRequest request) {
         return adminShippingMethodService.create(toCommand(request));
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('shipping.manage')")
     public ShippingMethodDto update(@PathVariable Long id, @Valid @RequestBody ShippingMethodRequest request) {
         return adminShippingMethodService.update(id, toCommand(request));
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('shipping.manage')")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         adminShippingMethodService.delete(id);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{id}/toggle-status")
+    @PreAuthorize("hasAuthority('shipping.manage')")
     public ShippingMethodDto toggleStatus(@PathVariable Long id) {
         return adminShippingMethodService.toggleStatus(id);
     }
 
     @PutMapping("/{id}/credentials")
+    @PreAuthorize("hasAuthority('shipping.manage')")
     public ShippingMethodDto updateCredentials(@PathVariable Long id, @RequestBody Map<String, String> credentials) {
         return adminShippingMethodService.updateCredentials(id, credentials);
     }

@@ -1,6 +1,7 @@
 package org.uvo.uvostore.controller.settings;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
@@ -30,37 +31,44 @@ public class HomeBannerController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAuthority('banners.view')")
     public List<HomeBannerDto> index(@RequestParam(required = false) String search) {
         return homeBannerService.list(search);
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('banners.view')")
     public HomeBannerDto show(@PathVariable Long id) {
         return homeBannerService.get(id);
     }
 
     @PostMapping(consumes = "multipart/form-data")
+    @PreAuthorize("hasAuthority('banners.manage')")
     public HomeBannerDto create(@ModelAttribute HomeBannerRequest request) {
         return homeBannerService.create(toCommand(request));
     }
 
     @PutMapping(value = "/{id}", consumes = "multipart/form-data")
+    @PreAuthorize("hasAuthority('banners.manage')")
     public HomeBannerDto update(@PathVariable Long id, @ModelAttribute HomeBannerRequest request) {
         return homeBannerService.update(id, toCommand(request));
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('banners.manage')")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         homeBannerService.delete(id);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{id}/toggle")
+    @PreAuthorize("hasAuthority('banners.manage')")
     public HomeBannerDto toggle(@PathVariable Long id) {
         return homeBannerService.toggleActive(id);
     }
 
     @PostMapping("/reorder")
+    @PreAuthorize("hasAuthority('banners.manage')")
     public ResponseEntity<Void> reorder(@RequestBody ReorderRequest request) {
         homeBannerService.reorder(request.orderedIds());
         return ResponseEntity.noContent().build();

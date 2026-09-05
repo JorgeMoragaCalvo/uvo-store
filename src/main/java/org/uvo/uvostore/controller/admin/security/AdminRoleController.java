@@ -1,6 +1,7 @@
 package org.uvo.uvostore.controller.admin.security;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -34,33 +35,39 @@ public class AdminRoleController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAuthority('roles.view')")
     public List<RoleDto> index() {
         return roleQueryService.listAll();
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('roles.view')")
     public RoleDto show(@PathVariable Long id) {
         return roleQueryService.getById(id);
     }
 
     @GetMapping("/permissions")
+    @PreAuthorize("hasAuthority('roles.view')")
     public Map<String, List<PermissionDto>> permissions() {
         return roleQueryService.allPermissionsGrouped();
     }
 
     @PostMapping
+    @PreAuthorize("hasAuthority('roles.manage')")
     public RoleDto create(@RequestBody RoleRequest request) {
         Role role = roleService.createRole(new RoleCommand(request.name(), request.permissionIds()));
         return roleQueryService.getById(role.getId());
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('roles.manage')")
     public RoleDto update(@PathVariable Long id, @RequestBody RoleRequest request) {
         Role role = roleService.updateRole(id, new RoleCommand(request.name(), request.permissionIds()));
         return roleQueryService.getById(role.getId());
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('roles.manage')")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         roleService.deleteRole(id);
         return ResponseEntity.noContent().build();

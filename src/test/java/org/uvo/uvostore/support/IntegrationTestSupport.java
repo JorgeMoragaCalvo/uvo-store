@@ -16,11 +16,15 @@ import org.uvo.uvostore.entity.catalog.Product;
 import org.uvo.uvostore.entity.catalog.enums.ProductType;
 import org.uvo.uvostore.entity.customer.Customer;
 import org.uvo.uvostore.entity.customer.enums.AccountStatus;
+import org.uvo.uvostore.entity.security.Permission;
+import org.uvo.uvostore.entity.security.Role;
 import org.uvo.uvostore.entity.security.User;
 import org.uvo.uvostore.entity.settings.Setting;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.CategoryRepository;
 import org.uvo.uvostore.repository.CustomerRepository;
+import org.uvo.uvostore.repository.PermissionRepository;
+import org.uvo.uvostore.repository.RoleRepository;
 import org.uvo.uvostore.repository.ProductRepository;
 import org.uvo.uvostore.repository.SettingRepository;
 import org.uvo.uvostore.repository.StoreRepository;
@@ -32,6 +36,9 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.math.BigDecimal;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -68,6 +75,10 @@ public abstract class IntegrationTestSupport {
     protected PasswordEncoder passwordEncoder;
     @Autowired
     protected SettingRepository settingRepository;
+    @Autowired
+    protected RoleRepository roleRepository;
+    @Autowired
+    protected PermissionRepository permissionRepository;
 
     protected static final String TEST_PASSWORD = "password123";
 
@@ -102,7 +113,35 @@ public abstract class IntegrationTestSupport {
         return storeRepository.save(store);
     }
 
+    /**
+     * A full-access admin. Since A1 every /api/admin endpoint carries a @PreAuthorize and no role
+     * means no permissions, so a roleless user would get 403 everywhere — this assigns a role
+     * holding the whole catalogue, keeping every test that isn't about permissions saying what it
+     * meant to say. Same idea as disableShipping() for A7.
+     */
     protected User createAdmin(Store store, String emailPrefix) {
+        return createAdmin(store, emailPrefix, permissionRepository.findAll());
+    }
+
+    /**
+     * An admin restricted to the named permissions, for testing the checks themselves.
+     * e.g. createAdmin(store, "readonly", "products.view")
+     */
+    protected User createAdminWithPermissions(Store store, String emailPrefix, String... permissionNames) {
+        Set<String> wanted = Set.of(permissionNames);
+        return createAdmin(store, emailPrefix,
+                permissionRepository.findAll().stream().filter(p -> wanted.contains(p.getName())).toList());
+    }
+
+    private User createAdmin(Store store, String emailPrefix, List<Permission> permissions) {
+        Role role = new Role();
+        role.setStore(store);
+        // Unique per store AND per test: roles are UNIQUE(store_id, name, guard_name), and a store
+        // may end up with several roles across a test method.
+        role.setName("Rol " + emailPrefix + "-" + nextSeq());
+        role.setPermissions(new HashSet<>(permissions));
+        Role savedRole = roleRepository.save(role);
+
         User user = User.builder()
                 .store(store)
                 .name("Admin " + emailPrefix)
@@ -110,6 +149,7 @@ public abstract class IntegrationTestSupport {
                 .password(passwordEncoder.encode(TEST_PASSWORD))
                 .isActive(true)
                 .isAdmin(true)
+                .roles(new HashSet<>(Set.of(savedRole)))
                 .build();
         return userRepository.save(user);
     }
