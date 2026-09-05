@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useCartStore } from '../stores/useCartStore'
 import { useCheckoutStore } from '../stores/useCheckoutStore'
-import { formatCurrency } from '../utils/currency'
+import OrderSummary from '../components/cart/OrderSummary'
 import api from '../services/api'
 import type { ShippingCoverage } from '../types/api'
 import { addressSchema, contactSchema } from './checkoutSchemas'
@@ -362,38 +362,7 @@ export default function Checkout() {
             : <p className="mb-3 text-xs text-red-700">El código no es válido</p>
         )}
 
-        <div className="flex flex-col gap-2 text-sm text-secondary">
-          <div className="flex justify-between">
-            <span>Subtotal</span>
-            <span>{formatCurrency(totals.subtotal)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Envío</span>
-            <span>
-              {shippingUnavailable
-                ? 'No disponible'
-                : totals.shippingCost > 0
-                  ? formatCurrency(totals.shippingCost)
-                  : 'Gratis'}
-            </span>
-          </div>
-          {totals.discountAmount > 0 && (
-            <div className="flex justify-between text-green-700">
-              <span>Descuento</span>
-              <span>-{formatCurrency(totals.discountAmount)}</span>
-            </div>
-          )}
-          {totals.taxAmount > 0 && (
-            <div className="flex justify-between">
-              <span>Impuesto</span>
-              <span>{formatCurrency(totals.taxAmount)}</span>
-            </div>
-          )}
-        </div>
-        <div className="mt-3 flex justify-between border-t border-gray-100 pt-3 font-semibold text-dark">
-          <span>Total</span>
-          <span>{formatCurrency(totals.total)}</span>
-        </div>
+        <OrderSummary />
       </div>
     </div>
   )
