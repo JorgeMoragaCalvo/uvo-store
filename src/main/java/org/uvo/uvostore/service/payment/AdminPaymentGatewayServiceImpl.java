@@ -42,6 +42,19 @@ public class AdminPaymentGatewayServiceImpl implements AdminPaymentGatewayServic
             merged.putAll(command.credentials());
             config.setCredentials(merged);
         }
+        // M3: MercadoPago's webhook signature can only be verified with a per-merchant secret, so
+        // enabling the gateway without one would mean either an unverifiable webhook or a silent
+        // failure in production. Refused here, at the point of configuration, where the person can
+        // actually do something about it.
+        if (gateway == PaymentGatewayType.MERCADOPAGO && config.isEnabled()) {
+            String webhookSecret = config.getCredentials().get("webhookSecret");
+            if (webhookSecret == null || webhookSecret.isBlank()) {
+                throw new IllegalArgumentException(
+                        "Para activar MercadoPago debes configurar el secreto de webhook "
+                                + "(Tus integraciones > Webhooks en el panel de MercadoPago).");
+            }
+        }
+
         return toDto(repository.save(config));
     }
 

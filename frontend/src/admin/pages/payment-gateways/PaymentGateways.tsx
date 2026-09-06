@@ -36,6 +36,9 @@ const GATEWAYS: GatewayDefinition[] = [
     fields: [
       { key: 'accessToken', label: 'Access Token', type: 'password' },
       { key: 'publicKey', label: 'Public Key' },
+      // M3: required to verify the webhook signature. The backend refuses to enable MercadoPago
+      // without it — see AdminPaymentGatewayServiceImpl.
+      { key: 'webhookSecret', label: 'Secreto de webhook', type: 'password' },
     ],
   },
 ]

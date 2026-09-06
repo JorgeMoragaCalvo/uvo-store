@@ -13,6 +13,7 @@ import com.mercadopago.resources.preference.Preference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.uvo.uvostore.entity.order.Order;
@@ -47,6 +48,7 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
     private static final Logger log = LoggerFactory.getLogger(MercadoPagoServiceImpl.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
+    private final MercadoPagoWebhookSignature webhookSignature;
     private final OrderRepository orderRepository;
     private final PaymentGatewayConfigRepository configRepository;
     private final OrderStatusService orderStatusService;
@@ -56,10 +58,12 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
             OrderRepository orderRepository,
             PaymentGatewayConfigRepository configRepository,
             OrderStatusService orderStatusService,
+            MercadoPagoWebhookSignature webhookSignature,
             @Value("${app.frontend-url}") String frontendUrl) {
         this.orderRepository = orderRepository;
         this.configRepository = configRepository;
         this.orderStatusService = orderStatusService;
+        this.webhookSignature = webhookSignature;
         this.frontendUrl = frontendUrl;
     }
 
@@ -124,13 +128,24 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
 
     @Override
     @Transactional
-    public void handleWebhook(String payload) {
+    public void handleWebhook(String payload, String signatureHeader, String requestId) {
         Long paymentId = extractPaymentId(payload);
         if (paymentId == null) {
             return; // not a payment notification (e.g. merchant_order) — nothing to do
         }
 
         Long storeId = TenantContext.requireStoreId();
+        // M3: verified BEFORE the outbound PaymentClient.get() below — rejecting afterwards would
+        // still let anyone burn the merchant's API quota, which is the whole point of the finding.
+        //
+        // A store with no secret configured answers 401 too, not "MercadoPago isn't enabled here":
+        // an unauthenticated caller has no business learning how a store is configured, and the
+        // answer is the same either way — this notification isn't going to be processed.
+        String webhookSecret = configuredWebhookSecret(storeId);
+        if (!webhookSignature.isValid(signatureHeader, requestId, String.valueOf(paymentId), webhookSecret)) {
+            throw new BadCredentialsException("Firma de webhook de MercadoPago inválida");
+        }
+
         String accessToken = requireAccessToken(storeId);
 
         Payment payment;
@@ -153,7 +168,9 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
         }
 
         switch (payment.getStatus()) {
-            case "approved" -> orderStatusService.markPaid(order.getId(), String.valueOf(payment.getId()));
+            // M4: transactionAmount is what the buyer was actually charged.
+            case "approved" -> orderStatusService.markPaid(order.getId(), String.valueOf(payment.getId()),
+                    payment.getTransactionAmount());
             case "rejected", "cancelled" -> orderStatusService.markPaymentFailed(order.getId());
             default -> {
                 // "pending"/"in_process"/etc. — no state change, wait for the next notification.
@@ -168,6 +185,16 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
                 .unitPrice(amount.setScale(0, RoundingMode.HALF_UP))
                 .currencyId("CLP")
                 .build();
+    }
+
+    // Null when the gateway isn't enabled or has no secret — the caller turns that into the same
+    // 401 an invalid signature gets. AdminPaymentGatewayServiceImpl is what guarantees an enabled
+    // MercadoPago always has one.
+    private String configuredWebhookSecret(Long storeId) {
+        return configRepository.findByStoreIdAndGateway(storeId, PaymentGatewayType.MERCADOPAGO)
+                .filter(PaymentGatewayConfig::isEnabled)
+                .map(config -> config.getCredentials().get("webhookSecret"))
+                .orElse(null);
     }
 
     private String requireAccessToken(Long storeId) {
