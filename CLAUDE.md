@@ -126,6 +126,27 @@ and sales/products/payment-methods reports with date-range filters and CSV expor
 `controller/customer/**` (account + addresses, JWT), `controller/platform/**` (store onboarding,
 `X-Platform-Key`), and `controller/auth` (admin/customer JWT login+register, password reset).
 
+**A payment is only accepted if the amount matches** (M4). `OrderStatusService.markPaid` takes the
+amount the gateway says arrived and compares it against `order.getTotal()` before anything is marked
+paid — none of Stripe, Webpay or MercadoPago did that; they each read the payment's *status* while
+the amount sat unused in the SDK response. A mismatch (including an unknown amount) leaves the order
+**PENDING** with a note in `order_status_history` and a Sentry message, the same pair
+`OrderInventoryService` uses. The check lives inside `markPaid`, not in the five callers, so no
+gateway can skip it. Comparison is exact, no tolerance: CLP has no cents.
+
+> Latent, not fixed: `PaymentServiceImpl` sends `setUnitAmount(order.getTotal())` in whole units,
+> which is only right for zero-decimal currencies like CLP. With `stripe.default-currency=usd` Stripe
+> would read that as cents and charge 100x too little. The amount check uses the same convention, so
+> it stays self-consistent — but the currency is configurable.
+
+**MercadoPago's webhook is signature-verified** (M3). `x-signature` (`ts=…,v1=…`) is checked against
+the HMAC-SHA256 of `id:<data.id>;request-id:<x-request-id>;ts:<ts>;` with the store's `webhookSecret`
+credential, constant-time, **before** the outbound `PaymentClient.get()` — rejecting afterwards would
+still let anyone burn the merchant's API quota, which is the finding. Enabling MercadoPago without
+that secret is refused at configuration time (`AdminPaymentGatewayServiceImpl`), so verification is
+never silently off; a store with no secret answers 401 like any bad signature rather than revealing
+it isn't configured. The endpoint is also rate-limited (`app.rate-limit.webhook`).
+
 **Every /api/admin endpoint is permission-checked** (A1). `@EnableMethodSecurity` was already on but
 unused; now all **107 endpoints across 19 controllers** carry `@PreAuthorize("hasAuthority('...')")` —
 `GET` needs `dominio.view`, everything else `dominio.manage`. The catalogue is 23 permissions seeded

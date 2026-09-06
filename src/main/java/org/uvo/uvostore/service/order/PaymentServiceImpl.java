@@ -132,7 +132,9 @@ public class PaymentServiceImpl implements PaymentService {
                 .orElseThrow(() -> new NoSuchElementException("Orden no encontrada"));
 
         if ("paid".equals(session.getPaymentStatus()) && order.getPaymentStatus() == PaymentStatus.PENDING) {
-            order = orderStatusService.markPaid(order.getId(), session.getPaymentIntent());
+            // M4: amount_total comes back in the same unit createCheckoutSession sent (whole pesos
+            // for CLP — see the setUnitAmount call above), so this compares like with like.
+            order = orderStatusService.markPaid(order.getId(), session.getPaymentIntent(), stripeAmount(session.getAmountTotal()));
         }
 
         return new PaymentVerificationResult(session.getPaymentStatus(), order.getId(), order.getOrderNumber(), order.getPaymentStatus().name());
@@ -156,14 +158,16 @@ public class PaymentServiceImpl implements PaymentService {
             case "checkout.session.completed" -> deserialize(event, Session.class).ifPresent(session ->
                     orderRepository.findByStripeCheckoutSessionId(session.getId())
                             .filter(order -> order.getPaymentStatus() == PaymentStatus.PENDING)
-                            .ifPresent(order -> orderStatusService.markPaid(order.getId(), session.getPaymentIntent())));
+                            .ifPresent(order -> orderStatusService.markPaid(order.getId(), session.getPaymentIntent(),
+                                    stripeAmount(session.getAmountTotal()))));
             case "checkout.session.expired" -> deserialize(event, Session.class).ifPresent(session ->
                     orderRepository.findByStripeCheckoutSessionId(session.getId())
                             .ifPresent(order -> orderStatusService.markCancelled(order.getId())));
             case "payment_intent.succeeded" -> deserialize(event, PaymentIntent.class).ifPresent(intent ->
                     orderRepository.findByStripePaymentIntentId(intent.getId())
                             .filter(order -> order.getPaymentStatus() == PaymentStatus.PENDING)
-                            .ifPresent(order -> orderStatusService.markPaid(order.getId(), intent.getId())));
+                            .ifPresent(order -> orderStatusService.markPaid(order.getId(), intent.getId(),
+                                    stripeAmount(intent.getAmount()))));
             case "payment_intent.payment_failed" -> deserialize(event, PaymentIntent.class).ifPresent(intent ->
                     orderRepository.findByStripePaymentIntentId(intent.getId())
                             .ifPresent(order -> orderStatusService.markPaymentFailed(order.getId())));
@@ -203,5 +207,13 @@ public class PaymentServiceImpl implements PaymentService {
                 .map(s -> s.getValue()).filter(v -> v != null && !v.isBlank())
                 .map(org.uvo.uvostore.service.settings.SecretCrypto::decrypt)
                 .orElse(fallback);
+    }
+
+    // Stripe reports amounts in the currency's smallest unit. CLP has none, and
+    // createCheckoutSession sends order.getTotal() as-is, so for this store's currency the value
+    // maps straight back. A null (Stripe reported none) is passed through so markPaid can treat
+    // "unknown" as a mismatch instead of silently accepting it.
+    private java.math.BigDecimal stripeAmount(Long amountInSmallestUnit) {
+        return amountInSmallestUnit == null ? null : java.math.BigDecimal.valueOf(amountInSmallestUnit);
     }
 }

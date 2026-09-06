@@ -101,7 +101,10 @@ class PaymentGatewayTest extends IntegrationTestSupport {
         String token = loginAdmin(store, admin);
 
         String secret = "accessToken-plaintext-should-never-appear-in-db-12345";
-        String body = "{\"enabled\":true,\"credentials\":{\"accessToken\":\"" + secret + "\"}}";
+        // webhookSecret is required to enable MercadoPago since M3 — this test is about encryption
+        // at rest, not about the webhook, so it just supplies one.
+        String body = "{\"enabled\":true,\"credentials\":{\"accessToken\":\"" + secret
+                + "\",\"webhookSecret\":\"whsec-de-prueba\"}}";
 
         mockMvc.perform(put("/api/admin/payment-gateways/MERCADOPAGO")
                         .header("Host", hostHeader(store))

@@ -39,7 +39,10 @@ public class MercadoPagoController {
     public Map<String, Boolean> webhook(HttpServletRequest request) {
         try {
             String payload = new String(request.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            mercadoPagoService.handleWebhook(payload);
+            // M3: the signature headers were being read off the wire and thrown away. The service
+            // verifies them before it queries MercadoPago's API.
+            mercadoPagoService.handleWebhook(payload,
+                    request.getHeader("x-signature"), request.getHeader("x-request-id"));
             return Map.of("received", true);
         } catch (IOException e) {
             throw new UncheckedIOException(e);

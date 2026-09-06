@@ -107,7 +107,9 @@ public class WebpayServiceImpl implements WebpayService {
 
         if (approved) {
             if (order.getPaymentStatus() == PaymentStatus.PENDING) {
-                order = orderStatusService.markPaid(order.getId(), token);
+                // M4: the commit response carries what Transbank actually captured.
+                order = orderStatusService.markPaid(order.getId(), token,
+                        java.math.BigDecimal.valueOf(detail.getAmount()));
             }
         } else if (order.getPaymentStatus() == PaymentStatus.PENDING) {
             order = orderStatusService.markPaymentFailed(order.getId());

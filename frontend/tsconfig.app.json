@@ -20,6 +20,10 @@
     "jsx": "react-jsx",
 
     /* Linting */
+    // M6: strict was off across the whole frontend. Discipline already kept the code clean
+    // (no `any`, no @ts-ignore) — verified: turning it on produces zero errors. Now it's
+    // enforced instead of merely habitual.
+    "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,

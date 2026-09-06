@@ -208,6 +208,7 @@
                         <app.rate-limit.register>100000</app.rate-limit.register>
                         <app.rate-limit.forgot-password>100000</app.rate-limit.forgot-password>
                         <app.rate-limit.track>100000</app.rate-limit.track>
+                        <app.rate-limit.webhook>100000</app.rate-limit.webhook>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>

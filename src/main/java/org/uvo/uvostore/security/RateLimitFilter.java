@@ -55,6 +55,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
             @Value("${app.rate-limit.register:5}") int registerLimit,
             @Value("${app.rate-limit.forgot-password:3}") int forgotPasswordLimit,
             @Value("${app.rate-limit.track:20}") int trackLimit,
+            @Value("${app.rate-limit.webhook:60}") int webhookLimit,
             @Value("${app.rate-limit.window-seconds:60}") int windowSeconds) {
         this.enabled = enabled;
         Duration window = Duration.ofSeconds(windowSeconds);
@@ -65,7 +66,10 @@ public class RateLimitFilter extends OncePerRequestFilter {
                 // Tighter and over a longer window: each hit sends a real email to an address the
                 // caller chooses, so this is the mail-bombing lever.
                 new Rule("POST", "/api/admin/auth/forgot-password", forgotPasswordLimit, window.multipliedBy(5)),
-                new Rule("GET", "/api/v1/orders/track", trackLimit, window));
+                new Rule("GET", "/api/v1/orders/track", trackLimit, window),
+                // M3: public, unauthenticated, and each accepted hit costs the merchant an outbound
+                // MercadoPago API call. The signature check rejects forgeries; this caps the volume.
+                new Rule("POST", "/api/v1/mercadopago/webhook", webhookLimit, window));
     }
 
     @Override
