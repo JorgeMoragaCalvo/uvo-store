@@ -205,11 +205,37 @@ fetch join over a collection with pagination makes Hibernate page in memory. `@O
 is the other trap — it can't be proxied, so it costs one SELECT per row no matter what `fetch` says.
 `ProductListingQueryCountTest` fails if any of this is undone.
 
-**Database**: PostgreSQL via Flyway, schema in `src/main/resources/db/migration/` (currently up to V16, well past the original catalog/settings migrations — multi-tenancy, store domains, password reset, token versions, the permission catalog and the listing indexes are all later migrations). `spring.jpa.hibernate.ddl-auto=validate`, so any entity change must be paired with a new Flyway migration (never edit an already-applied one — add `V17__...sql` etc.).
+**Database**: PostgreSQL via Flyway, schema in `src/main/resources/db/migration/` (currently up to V17, well past the original catalog/settings migrations — multi-tenancy, store domains, password reset, token versions, the permission catalog, the listing indexes and the enum CHECK constraints are all later migrations). `spring.jpa.hibernate.ddl-auto=validate`, so any entity change must be paired with a new Flyway migration (never edit an already-applied one — add `V18__...sql` etc.).
 
-**Uploads** (M10): `uploads/` is gitignored — the images are store data, not code. In production
-that path needs a persistent volume, or `app.storage.driver=s3`; on a plain container redeploy
-anything uploaded is gone.
+**Enum columns** (B6): every column that stores an enum name carries a `CHECK` listing its values
+(V17). Adding a constant to an enum therefore needs a migration too — otherwise the new value is
+rejected by the database at runtime, not at compile time. `stores.status` is the exception and is
+deliberately unconstrained: it looks like an enum but is a free-form `String` (`Store.java:53`).
+
+**Time zones** (B5/B7): timestamps are `TIMESTAMPTZ` and Hibernate writes them with
+`hibernate.jdbc.time_zone=UTC`, so a value doesn't change meaning when the server's zone does. Any
+new date column follows suit — `TIMESTAMP` without a zone is the bug V17 removed.
+
+**Uploads** (M10): `uploads/` is gitignored — the images are store data, not code. That also means
+**git is no longer a copy of them and nothing else is either**: the directory is untracked *and*
+ignored, which is exactly the state a `git clean -fdx` or an IDE cleanup wipes without asking. It
+already happened once (2026-09-07), and the files were only recoverable because they still sat in
+the commit before `7294c0d`. That safety net expires as history ages. In production the path needs a
+persistent volume or `app.storage.driver=s3`; in development, back it up or accept losing it.
+
+Tests must never write there: `app.upload-dir` is pointed at `target/test-uploads` in the surefire
+config, so `mvnw verify` can't touch real store images and its leftovers die with `mvnw clean`. Any
+test that resolves upload paths reads that property rather than hardcoding `uploads` — see
+`AdminProductImageTest`, which used to hardcode it and cleaned up inside the real directory.
+
+**Filters** (B8): the six security filters are `@Component`, which would auto-register them in the
+servlet chain on top of where `SecurityConfig` puts them. `FilterRegistrationConfig` disables that
+auto-registration, so `SecurityConfig` is the single place the order is decided. A new filter needs
+its `setEnabled(false)` registration there too.
+
+**Coverage**: `./mvnw verify` writes a JaCoCo report to `target/site/jacoco/index.html`. There is no
+enforced threshold yet — the baseline is 63.7% of lines (2026-09-07), with `service.report` the
+thinnest area at 9.2%.
 
 ### Public storefront API (`/api/v1/**`, no auth)
 Mirrors what the React `frontend/` consumes: `products` (search/filter incl. `featured`,

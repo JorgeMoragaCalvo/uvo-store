@@ -274,7 +274,7 @@ export default function ProductForm() {
               <div className="flex flex-wrap gap-3">
                 {existingImages.map((image) => (
                   <div key={image.id} className="flex flex-col items-center gap-1">
-                    <img src={image.url} alt={image.alt ?? ''} className="size-20 rounded object-cover" />
+                    <img src={image.url} alt={image.alt ?? ''} loading="lazy" className="size-20 rounded object-cover" />
                     {image.isFeatured && (
                       <span className="text-xs text-muted-foreground">Destacada</span>
                     )}

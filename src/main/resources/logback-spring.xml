@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  B7: no había configuración de logging, así que todo salía con el patrón por defecto de Spring Boot
+  — legible en una terminal, poco útil en un agregador. Dos diferencias que importan:
+
+  - La fecha en ISO-8601 con zona explícita. El default imprime hora local sin offset, y con los
+    servidores en UTC y quien lee en Chile eso obliga a adivinar la zona de cada línea. Va en el
+    mismo idioma que el resto del sistema desde V17/B5: UTC, dicho en voz alta.
+  - El nivel de las librerías. Hibernate, Flyway y compañía escriben en INFO cosas que solo importan
+    al arrancar; bajarlas a WARN deja el log de producción con lo de la aplicación.
+
+  El perfil `default` (desarrollo local) mantiene el patrón corto y con color de Spring Boot: ahí el
+  log lo lee una persona en una terminal, no un agregador.
+-->
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <springProfile name="default">
+        <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="!default">
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder>
+                <charset>UTF-8</charset>
+                <pattern>%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX, UTC} %-5level [%thread] %logger{40} - %msg%n</pattern>
+            </encoder>
+        </appender>
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <!-- Ruido de arranque de terceros: en INFO cuentan qué versión son y qué dialecto eligieron. -->
+    <logger name="org.hibernate" level="WARN"/>
+    <logger name="org.flywaydb" level="WARN"/>
+    <logger name="com.zaxxer.hikari" level="WARN"/>
+    <logger name="org.apache.catalina" level="WARN"/>
+    <logger name="io.sentry" level="WARN"/>
+
+    <!-- La aplicación sí en INFO: es donde se ven los rechazos de webhook, los límites de tasa y las
+         discrepancias de monto (M4), que es justo lo que se va a buscar en un incidente. -->
+    <logger name="org.uvo.uvostore" level="INFO"/>
+</configuration>

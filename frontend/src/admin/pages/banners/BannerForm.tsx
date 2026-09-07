@@ -270,7 +270,7 @@ export default function BannerForm() {
           <CardContent className="flex flex-col gap-4">
             {currentImage && (
               <div className="flex items-center gap-3">
-                <img src={currentImage} alt="" className="h-16 w-28 rounded object-cover" />
+                <img src={currentImage} alt="" loading="lazy" className="h-16 w-28 rounded object-cover" />
                 <span className="text-sm text-muted-foreground">Imagen actual (desktop)</span>
               </div>
             )}
@@ -280,7 +280,7 @@ export default function BannerForm() {
             </div>
             {currentMobileImage && (
               <div className="flex items-center gap-3">
-                <img src={currentMobileImage} alt="" className="h-16 w-28 rounded object-cover" />
+                <img src={currentMobileImage} alt="" loading="lazy" className="h-16 w-28 rounded object-cover" />
                 <span className="text-sm text-muted-foreground">Imagen actual (mobile)</span>
               </div>
             )}

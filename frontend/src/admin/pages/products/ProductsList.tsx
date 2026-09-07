@@ -149,7 +149,7 @@ export default function ProductsList() {
                   <TableCell>
                     <div className="flex items-center gap-3">
                       {product.featuredImage ? (
-                        <img src={product.featuredImage} alt={product.name} className="size-10 rounded object-cover" />
+                        <img src={product.featuredImage} alt={product.name} loading="lazy" className="size-10 rounded object-cover" />
                       ) : (
                         <div className="size-10 rounded bg-muted" />
                       )}

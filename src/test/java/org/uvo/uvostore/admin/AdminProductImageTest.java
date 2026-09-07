@@ -37,7 +37,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 class AdminProductImageTest extends IntegrationTestSupport {
 
-    private static final Path UPLOAD_DIR = Paths.get("uploads");
+    // Tiene que ser la MISMA ruta que app.upload-dir, que surefire apunta a target/test-uploads.
+    // Estaba fija en "uploads", el directorio real de desarrollo: los archivos de prueba se
+    // escribían entre las imágenes de la tienda y esta limpieza borraba ahí mismo. Leerla de la
+    // configuración en vez de repetirla es lo que impide que las dos vuelvan a separarse.
+    @org.springframework.beans.factory.annotation.Value("${app.upload-dir}")
+    private String uploadDir;
 
     private final List<Path> writtenFiles = new ArrayList<>();
 
@@ -198,7 +203,7 @@ class AdminProductImageTest extends IntegrationTestSupport {
     /** The DTO's url ("http://host/uploads/products/xxx.png") → the file on disk. */
     private Path fileFor(JsonNode image) {
         String url = image.get("url").asText();
-        return UPLOAD_DIR.resolve(url.substring(url.indexOf("/uploads/") + "/uploads/".length()));
+        return Paths.get(uploadDir).resolve(url.substring(url.indexOf("/uploads/") + "/uploads/".length()));
     }
 
     private long countFeatured(JsonNode product) {

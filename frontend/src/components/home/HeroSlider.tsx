@@ -22,7 +22,7 @@ export default function HeroSlider({ banners, autoplaySpeed }: { banners: HomeBa
 
   return (
     <div className="relative aspect-[16/7] w-full overflow-hidden bg-gray-100">
-      <img src={banner.image} alt={banner.title ?? ''} className="absolute inset-0 h-full w-full object-cover" />
+      <img src={banner.image} alt={banner.title ?? ''} loading="eager" className="absolute inset-0 h-full w-full object-cover" />
       <div
         className="absolute inset-0"
         style={{ backgroundColor: banner.overlayColor ?? '#000000', opacity: (banner.overlayOpacity ?? 0) / 100 }}

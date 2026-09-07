@@ -119,7 +119,7 @@ export default function BannersList() {
                   </TableCell>
                   <TableCell>
                     {banner.image ? (
-                      <img src={banner.image} alt={banner.title ?? ''} className="h-10 w-16 rounded object-cover" />
+                      <img src={banner.image} alt={banner.title ?? ''} loading="lazy" className="h-10 w-16 rounded object-cover" />
                     ) : (
                       <div className="h-10 w-16 rounded bg-muted" />
                     )}

@@ -198,6 +198,14 @@
                         <jwt.secret>test-only-jwt-secret-not-a-real-one-at-least-32-bytes</jwt.secret>
                         <app.encryption-key>dGVzdC1vbmx5LWtleS1ub3QtYS1yZWFsLW9uZS0zMmI=</app.encryption-key>
                         <app.platform-api-key>test-only-platform-key-not-a-real-one</app.platform-api-key>
+                        <!-- Los tests que suben archivos escriben bytes de verdad: la transacción
+                             revierte las filas, pero lo del disco sobrevive. Sin esta línea el
+                             destino era `uploads/`, el MISMO directorio que usa la aplicación en
+                             desarrollo, así que `mvnw verify` tenía permiso de escritura sobre las
+                             imágenes reales de la tienda y dejaba residuos entre ellas (PNG de 1x1
+                             de IntegrationTestSupport.pngBytes()). Apuntando a target/, `mvnw clean`
+                             se lleva la basura y la suite no puede tocar datos reales. -->
+                        <app.upload-dir>${project.build.directory}/test-uploads</app.upload-dir>
                         <!-- A4: IntegrationTestSupport.loginAdmin hits the real login endpoint and
                              nearly every test uses it, so the production limit of 5/min would make
                              the suite fail intermittently once more than five tests ran inside the
@@ -245,6 +253,33 @@
                                 </path>
                             </annotationProcessorPaths>
                         </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- B10: no había forma de saber qué parte del backend tocan los tests, así que la
+                 cobertura se discutía de memoria. prepare-agent inyecta el agente en el argLine que
+                 surefire pasa a la JVM (surefire no define ninguno propio, así que no hay choque) y
+                 el informe queda en target/site/jacoco/index.html al correr `mvnw verify`.
+
+                 Deliberadamente SIN la meta `check`: un umbral que rompa el build hay que elegirlo
+                 con el número delante, no antes de haberlo medido nunca. -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.13</version>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
                     </execution>
                 </executions>
             </plugin>

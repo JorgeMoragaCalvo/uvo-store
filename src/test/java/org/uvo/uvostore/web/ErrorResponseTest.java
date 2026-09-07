@@ -62,6 +62,18 @@ class ErrorResponseTest extends IntegrationTestSupport {
                 .andExpect(jsonPath("$.message").value("La solicitud no es válida. Revisa los datos enviados."));
     }
 
+    @Test
+    @DisplayName("Una imagen que no existe es 404, no un 500 con aviso a Sentry")
+    void aMissingStaticResourceIsNotFound() throws Exception {
+        Store store = createStore("err-404");
+
+        // Cada imagen rota de una galería disparaba antes un evento a Sentry y un 500. Un archivo
+        // que no está no es una caída del servidor.
+        mockMvc.perform(get("/uploads/products/no-existe-esta-imagen.png")
+                        .header("Host", hostHeader(store)))
+                .andExpect(status().isNotFound());
+    }
+
     // --- M1: la regla de negocio sigue hablando ----------------------------------------------------
 
     @Test

@@ -136,12 +136,12 @@ function StoreSettingsForm({ initial }: { initial: StoreSettingsDto }) {
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-2">
-                {form.storeLogo && <img src={form.storeLogo} alt="Logo actual" className="h-10 w-auto object-contain" />}
+                {form.storeLogo && <img src={form.storeLogo} alt="Logo actual" loading="lazy" className="h-10 w-auto object-contain" />}
                 <Label htmlFor="logo">{form.storeLogo ? 'Reemplazar logo' : 'Logo'}</Label>
                 <Input id="logo" type="file" accept="image/*" onChange={(e) => setLogo(e.target.files?.[0] ?? null)} />
               </div>
               <div className="flex flex-col gap-2">
-                {form.storeFavicon && <img src={form.storeFavicon} alt="Favicon actual" className="size-8 object-contain" />}
+                {form.storeFavicon && <img src={form.storeFavicon} alt="Favicon actual" loading="lazy" className="size-8 object-contain" />}
                 <Label htmlFor="favicon">{form.storeFavicon ? 'Reemplazar favicon' : 'Favicon'}</Label>
                 <Input id="favicon" type="file" accept="image/*" onChange={(e) => setFavicon(e.target.files?.[0] ?? null)} />
               </div>

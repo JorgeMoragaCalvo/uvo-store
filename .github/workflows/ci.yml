@@ -1,8 +1,12 @@
 name: CI
 
+# B3: main faltaba aquí, así que un push directo a main no ejecutaba ni un test — y el commit
+# "nordika store test" entró exactamente así. Curiosamente Qodana sí corría en main
+# (qodana_code_quality.yml), de modo que main recibía análisis estático pero no la suite.
 on:
   push:
     branches:
+      - main
       - "feature/**"
   pull_request:
 

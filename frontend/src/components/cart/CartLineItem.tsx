@@ -21,7 +21,7 @@ export default function CartLineItem({ line }: { line: CartLine }) {
   return (
     <div className="flex gap-3 border-b border-gray-100 py-3">
       <div className="h-16 w-16 shrink-0 overflow-hidden rounded bg-gray-100">
-        {image && <img src={image} alt={line.product.name} className="h-full w-full object-cover" />}
+        {image && <img src={image} alt={line.product.name} loading="lazy" className="h-full w-full object-cover" />}
       </div>
 
       <div className="flex flex-1 flex-col gap-1">

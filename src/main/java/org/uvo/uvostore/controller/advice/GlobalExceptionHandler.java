@@ -12,6 +12,7 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.uvo.uvostore.service.BusinessException;
@@ -31,6 +32,17 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleNotFound(NoSuchElementException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(ApiError.of(HttpStatus.NOT_FOUND.value(), "Not Found", ex.getMessage()));
+    }
+
+    // Un archivo estático que no existe —una imagen de /uploads/** borrada o con la ruta mal— caía
+    // en el handler genérico: respondía 500 y, peor, mandaba un evento a Sentry. Una galería rota
+    // se convertía así en una tormenta de alertas por algo que no es un fallo del servidor. Mismo
+    // criterio que M1: lo que no existe no se cuenta como caída.
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ApiError> handleMissingStaticResource(NoResourceFoundException ex) {
+        log.debug("Recurso estático no encontrado: {}", ex.getResourcePath());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ApiError.of(HttpStatus.NOT_FOUND.value(), "Not Found", "El recurso solicitado no existe."));
     }
 
     @ExceptionHandler(BadCredentialsException.class)

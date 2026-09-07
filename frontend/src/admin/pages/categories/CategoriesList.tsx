@@ -83,7 +83,7 @@ export default function CategoriesList() {
                   <TableCell>
                     <div className="flex items-center gap-3">
                       {category.image ? (
-                        <img src={category.image} alt={category.name} className="size-10 rounded object-cover" />
+                        <img src={category.image} alt={category.name} loading="lazy" className="size-10 rounded object-cover" />
                       ) : (
                         <div className="size-10 rounded bg-muted" />
                       )}
