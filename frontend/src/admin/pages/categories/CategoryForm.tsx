@@ -180,7 +180,7 @@ export default function CategoryForm() {
           <CardContent className="flex flex-col gap-4">
             {currentImage && (
               <div className="flex items-center gap-3">
-                <img src={currentImage} alt="" className="size-20 rounded object-cover" />
+                <img src={currentImage} alt="" loading="lazy" className="size-20 rounded object-cover" />
                 <Button type="button" variant="outline" size="sm" onClick={handleRemoveImage}>
                   Quitar imagen
                 </Button>

@@ -34,7 +34,7 @@ export default function Header() {
       <div className="mx-auto flex max-w-6xl items-center gap-6 px-4 py-3">
         <Link to="/" className="flex items-center gap-2 shrink-0">
           {settings?.storeLogo ? (
-            <img src={settings.storeLogo} alt={settings.storeName} className="h-9 w-auto" />
+            <img src={settings.storeLogo} alt={settings.storeName} loading="eager" className="h-9 w-auto" />
           ) : (
             <span className="text-xl font-bold text-dark">{settings?.storeName ?? 'UvoStore'}</span>
           )}
@@ -64,7 +64,7 @@ export default function Header() {
             👤
           </span>
 
-          <button type="button" onClick={toggleCart} className="relative text-dark" title="Carrito">
+          <button type="button" onClick={toggleCart} className="relative text-dark" title="Carrito" aria-label="Abrir carrito">
             🛒
             <span className="absolute -right-2 -top-2 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] text-white">
               {itemCount}

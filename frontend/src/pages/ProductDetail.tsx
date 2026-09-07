@@ -127,7 +127,7 @@ export default function ProductDetail() {
       <div className="grid gap-8 md:grid-cols-2">
         <div>
           <div className="aspect-square overflow-hidden rounded-lg bg-gray-100">
-            {activeImage && <img src={activeImage} alt={product.name} className="h-full w-full object-cover" />}
+            {activeImage && <img src={activeImage} alt={product.name} loading="eager" className="h-full w-full object-cover" />}
           </div>
           {gallery.length > 1 && (
             <div className="mt-3 flex gap-2">
@@ -138,7 +138,7 @@ export default function ProductDetail() {
                   onClick={() => setActiveImage(url)}
                   className={`h-16 w-16 overflow-hidden rounded border ${activeImage === url ? 'border-primary' : 'border-gray-400'}`}
                 >
-                  <img src={url} alt="" className="h-full w-full object-cover" />
+                  <img src={url} alt="" loading="lazy" className="h-full w-full object-cover" />
                 </button>
               ))}
             </div>

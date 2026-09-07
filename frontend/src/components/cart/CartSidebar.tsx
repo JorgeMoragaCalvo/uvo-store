@@ -18,7 +18,7 @@ export default function CartSidebar() {
       <aside className="fixed right-0 top-0 z-50 flex h-full w-full max-w-sm flex-col bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-gray-100 p-4">
           <h2 className="text-lg font-semibold text-dark">Tu carrito</h2>
-          <button type="button" onClick={close} className="text-secondary hover:text-dark">
+          <button type="button" onClick={close} aria-label="Cerrar carrito" className="text-secondary hover:text-dark">
             ✕
           </button>
         </div>

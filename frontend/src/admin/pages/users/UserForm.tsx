@@ -176,7 +176,7 @@ export default function UserForm() {
             <CardTitle>Avatar</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
-            {currentAvatar && <img src={currentAvatar} alt="" className="size-20 rounded-full object-cover" />}
+            {currentAvatar && <img src={currentAvatar} alt="" loading="lazy" className="size-20 rounded-full object-cover" />}
             <div className="flex flex-col gap-2">
               <Label htmlFor="avatar">{currentAvatar ? 'Reemplazar avatar' : 'Avatar'}</Label>
               <Input id="avatar" type="file" accept="image/*" onChange={(event) => setAvatar(event.target.files?.[0] ?? null)} />

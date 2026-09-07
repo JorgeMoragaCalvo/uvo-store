@@ -37,7 +37,7 @@ export default function Home() {
                 className="flex flex-col items-center gap-2 rounded-lg border border-gray-100 p-4 text-center hover:border-primary"
               >
                 <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full bg-gray-100">
-                  {category.image && <img src={category.image} alt={category.name} className="h-full w-full object-cover" />}
+                  {category.image && <img src={category.image} alt={category.name} loading="lazy" className="h-full w-full object-cover" />}
                 </div>
                 <span className="text-sm font-medium text-dark">{category.name}</span>
               </Link>
