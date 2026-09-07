@@ -1,5 +1,11 @@
 // Mirrors the Spring Boot DTOs (Jackson serializes records field-by-field, same camelCase names) —
-// see C:\Users\jorgemc\IdeaProjects\uvo-store\src\main\java\org\uvo\uvostore\service\**\*Dto.java
+// see src/main/java/org/uvo/uvostore/service/**/*Dto.java
+//
+// M5: Product, ProductImage and ProductVariation were each declared twice — here and in
+// admin/types/admin.ts as ProductDto/ProductImageDto/ProductVariationDto — with identical fields
+// (23/23, 5/5, 14/14) but four disagreements about what can be null, and neither file had all
+// four right. They are the same DTO, so they are one type now: this file is the definition and
+// admin.ts re-exports it under the names the panel already imports.
 
 export interface CategoryRef {
   id: number
@@ -10,7 +16,9 @@ export interface CategoryRef {
 export interface ProductImage {
   id: number
   url: string
-  thumbnail: string | null
+  // M5: not nullable. ProductImageDto builds it as publicUrl(imagePath) and product_images.image_path
+  // is NOT NULL, so there is no path where this comes back null.
+  thumbnail: string
   alt: string | null
   isFeatured: boolean
 }
@@ -39,8 +47,11 @@ export interface Product {
   shortDescription: string | null
   description: string | null
   productType: 'simple' | 'variable' // backend serializes Product.productType.name().toLowerCase()
-  sku: string
-  price: number
+  // M5: both are nullable in Java (String sku, BigDecimal price) and genuinely null for a variable
+  // product, which carries its sku and price on each variation instead. This file claimed they were
+  // always present; the admin copy of the same DTO had it right.
+  sku: string | null
+  price: number | null
   formattedPrice: string
   stock: number
   inStock: boolean

@@ -29,56 +29,14 @@ export interface CategoryDto {
   productsCount: number | null
 }
 
-export interface ProductImageDto {
-  id: number
-  url: string
-  thumbnail: string
-  alt: string | null
-  isFeatured: boolean
-}
-
-export interface ProductVariationDto {
-  id: number
-  productId: number
-  sku: string
-  price: number
-  compareAtPrice: number | null
-  formattedPrice: string
-  stock: number
-  inStock: boolean
-  weight: number | null
-  image: string | null
-  active: boolean
-  attributes: Record<string, string>
-  attributeIds: Record<string, number>
-  createdAt: string
-}
-
-export interface ProductDto {
-  id: number
-  name: string
-  slug: string
-  shortDescription: string | null
-  description: string | null
-  productType: 'simple' | 'variable'
-  sku: string | null
-  price: number | null
-  formattedPrice: string
-  stock: number
-  inStock: boolean
-  manageStock: boolean
-  featuredImage: string | null
-  images: ProductImageDto[]
-  active: boolean
-  featured: boolean
-  metaTitle: string | null
-  metaDescription: string | null
-  category: CategoryRef | null
-  variations: ProductVariationDto[]
-  variationsCount: number
-  createdAt: string
-  updatedAt: string
-}
+// M5: these three used to be declared here in full, duplicating Product/ProductImage/
+// ProductVariation in @/types/api — same fields, contradictory nullability. One definition now,
+// re-exported under the names the admin panel already imports, so no call site changes.
+export type {
+  Product as ProductDto,
+  ProductImage as ProductImageDto,
+  ProductVariation as ProductVariationDto,
+} from '@/types/api'
 
 export interface AdminProductStats {
   total: number

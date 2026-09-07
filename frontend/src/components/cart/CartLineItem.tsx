@@ -7,7 +7,11 @@ export default function CartLineItem({ line }: { line: CartLine }) {
   const removeItem = useCartStore((state) => state.removeItem)
 
   const image = line.variation?.image ?? line.product.featuredImage
-  const unitPrice = line.variation?.price ?? line.product.price
+  // M5: product.price is null for a variable product — it carries its price on each variation — so
+  // this only resolves to null for a line that has neither, which the cart never creates. The
+  // fallback keeps the row rendering instead of printing NaN if one ever slips through; the totals
+  // shown below the list come from the backend, not from here.
+  const unitPrice = line.variation?.price ?? line.product.price ?? 0
   const attributesLabel = line.variation
     ? Object.entries(line.variation.attributes)
         .map(([key, value]) => `${key}: ${value}`)

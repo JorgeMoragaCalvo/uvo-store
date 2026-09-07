@@ -1,5 +1,6 @@
 package org.uvo.uvostore.controller.auth;
 
+import org.uvo.uvostore.service.BusinessException;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
@@ -101,7 +102,7 @@ public class AuthController {
     public ResponseEntity<AuthResponse> customerRegister(@Valid @RequestBody CustomerRegisterRequest request) {
         Store store = TenantContext.requireCurrent();
         if (customerRepository.existsByStoreIdAndEmail(store.getId(), request.email())) {
-            throw new IllegalStateException("El correo ya está registrado");
+            throw new BusinessException("El correo ya está registrado");
         }
 
         Customer customer = new Customer();

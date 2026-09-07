@@ -1,5 +1,6 @@
 package org.uvo.uvostore.entity.catalog;
 
+import org.hibernate.annotations.BatchSize;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -166,11 +167,22 @@ public class Product {
     @JoinColumn(name = "store_id")
     private Store store;
 
+    // M7: the admin listing loaded 20 products and then fired one SELECT per product for its
+    // images, one more for its variations, and one per variation for the attribute assignments —
+    // 1 + N + N + N×V queries for a single page. @BatchSize makes Hibernate collect the pending
+    // proxies and fetch them in IN (...) batches, so a page costs a constant handful of queries no
+    // matter how many rows it has.
+    //
+    // Not JOIN FETCH: the listing is findAll(spec, pageable), and a fetch join across a collection
+    // with pagination forces Hibernate to page in memory (HHH90003004) — it would read every
+    // product in the store to hand back 20. @BatchSize leaves the query and the paging untouched.
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
+    @BatchSize(size = 50)
     @Builder.Default
     private List<ProductImage> productImages = new ArrayList<>();
 
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
+    @BatchSize(size = 50)
     @Builder.Default
     private List<ProductVariation> variations = new ArrayList<>();
 
@@ -178,8 +190,15 @@ public class Product {
     @Builder.Default
     private List<OrderItem> orderItems = new ArrayList<>();
 
-    @OneToOne(mappedBy = "product")
-    private ProductSyncMapping syncMapping;
+    // M7: aquí vivía `@OneToOne(mappedBy = "product") private ProductSyncMapping syncMapping;`, y
+    // costaba una consulta por producto en cada listado. Un uno-a-uno inverso no se puede
+    // representar con un proxy —Hibernate no sabe si hay fila al otro lado sin ir a mirar—, así que
+    // se carga siempre, ignorando FetchType.LAZY y sin que @BatchSize lo alcance. Con la paginación
+    // del panel eso era el 1+N que quedaba después de los @BatchSize de las colecciones.
+    //
+    // El campo no lo leía nadie (cero usos en src/main y src/test). La relación sigue existiendo por
+    // su lado dueño, ProductSyncMapping.product, que es por donde ProductSyncService la usa de
+    // verdad; quien necesite el mapeo de un producto lo pide por ProductSyncMappingRepository.
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)

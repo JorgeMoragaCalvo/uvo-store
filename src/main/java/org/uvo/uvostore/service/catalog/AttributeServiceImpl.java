@@ -1,5 +1,6 @@
 package org.uvo.uvostore.service.catalog;
 
+import org.uvo.uvostore.service.BusinessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.uvo.uvostore.entity.catalog.Attribute;
@@ -53,7 +54,7 @@ public class AttributeServiceImpl implements AttributeService {
     public void deleteAttribute(Long id) {
         Attribute attribute = findAttributeOrThrow(id);
         if (!attribute.getValues().isEmpty()) {
-            throw new IllegalStateException("Primero elimina todos los valores del atributo");
+            throw new BusinessException("Primero elimina todos los valores del atributo");
         }
         attributeRepository.delete(attribute);
     }

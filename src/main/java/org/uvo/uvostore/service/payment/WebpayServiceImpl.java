@@ -1,5 +1,6 @@
 package org.uvo.uvostore.service.payment;
 
+import org.uvo.uvostore.service.BusinessException;
 import cl.transbank.model.MallTransactionCreateDetails;
 import cl.transbank.webpay.webpayplus.WebpayPlus;
 import cl.transbank.webpay.webpayplus.responses.WebpayPlusMallTransactionCommitResponse;
@@ -59,7 +60,7 @@ public class WebpayServiceImpl implements WebpayService {
                 .orElseThrow(() -> new NoSuchElementException("Order " + orderId + " not found"));
 
         if (order.getPaymentStatus() != PaymentStatus.PENDING) {
-            throw new IllegalStateException("Esta orden ya fue procesada");
+            throw new BusinessException("Esta orden ya fue procesada");
         }
 
         String childCommerceCode = requireChildCommerceCode(storeId);
@@ -121,10 +122,10 @@ public class WebpayServiceImpl implements WebpayService {
     private String requireChildCommerceCode(Long storeId) {
         PaymentGatewayConfig config = configRepository.findByStoreIdAndGateway(storeId, PaymentGatewayType.WEBPAY)
                 .filter(PaymentGatewayConfig::isEnabled)
-                .orElseThrow(() -> new IllegalStateException("Webpay no está habilitado para esta tienda"));
+                .orElseThrow(() -> new BusinessException("Webpay no está habilitado para esta tienda"));
         String childCommerceCode = config.getCredentials().get("childCommerceCode");
         if (childCommerceCode == null || childCommerceCode.isBlank()) {
-            throw new IllegalStateException("Falta configurar el código de comercio (childCommerceCode) de Webpay para esta tienda");
+            throw new BusinessException("Falta configurar el código de comercio (childCommerceCode) de Webpay para esta tienda");
         }
         return childCommerceCode;
     }

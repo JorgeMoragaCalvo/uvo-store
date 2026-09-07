@@ -1,5 +1,6 @@
 package org.uvo.uvostore.security;
 
+import org.uvo.uvostore.service.BusinessException;
 import org.uvo.uvostore.entity.tenant.Store;
 
 // Per-request current Store, resolved by TenantResolutionFilter from the request's subdomain.
@@ -30,7 +31,7 @@ public final class TenantContext {
     public static Store requireCurrent() {
         Store store = CURRENT.get();
         if (store == null) {
-            throw new IllegalStateException("No se pudo determinar la tienda para esta solicitud");
+            throw new BusinessException("No se pudo determinar la tienda para esta solicitud");
         }
         return store;
     }

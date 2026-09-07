@@ -1,5 +1,6 @@
 package org.uvo.uvostore.service.customer;
 
+import org.uvo.uvostore.service.BusinessException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -36,7 +37,7 @@ public class CustomerServiceImpl implements CustomerService {
         customerRepository.findByStoreIdAndEmail(TenantContext.requireStoreId(), command.email())
                 .filter(existing -> !existing.getId().equals(customerId))
                 .ifPresent(existing -> {
-                    throw new IllegalStateException("El correo ya está en uso por otra cuenta");
+                    throw new BusinessException("El correo ya está en uso por otra cuenta");
                 });
 
         customer.setFirstName(command.firstName());

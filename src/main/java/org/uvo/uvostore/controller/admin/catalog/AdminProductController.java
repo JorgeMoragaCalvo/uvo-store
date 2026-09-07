@@ -32,6 +32,12 @@ import java.util.List;
 @RequestMapping("/api/admin/products")
 public class AdminProductController {
 
+    // M8: sortField came straight from the query string into Sort.by(...), so any name that isn't a
+    // real property blew up as a 500 (PropertyReferenceException) and every column of the entity was
+    // orderable, including columns nobody sorts by. Same allowlist-with-silent-fallback that
+    // ProductController:25,52 already used on the public side.
+    private static final java.util.Set<String> ALLOWED_SORTS = java.util.Set.of("createdAt", "name", "price", "stock", "sku", "salesCount", "sortOrder");
+
     private final ProductService productService;
     private final ProductQueryService productQueryService;
     private final ProductImageService productImageService;
@@ -61,8 +67,9 @@ public class AdminProductController {
         ProductType productType = type == null || type.isBlank() ? null : ProductType.valueOf(type.toUpperCase());
         AdminProductSearchCriteria criteria = new AdminProductSearchCriteria(
                 search, productType, categoryId, active, featured, stockStatus, priceRange);
+        String safeSort = ALLOWED_SORTS.contains(sortField) ? sortField : "createdAt";
         Sort.Direction direction = "asc".equalsIgnoreCase(sortDirection) ? Sort.Direction.ASC : Sort.Direction.DESC;
-        return productQueryService.searchAdmin(criteria, PageRequest.of(Math.max(page - 1, 0), Math.min(perPage, 100), Sort.by(direction, sortField)));
+        return productQueryService.searchAdmin(criteria, PageRequest.of(Math.max(page - 1, 0), Math.min(perPage, 100), Sort.by(direction, safeSort)));
     }
 
     @GetMapping("/stats")

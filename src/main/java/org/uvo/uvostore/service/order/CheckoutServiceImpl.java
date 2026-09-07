@@ -1,5 +1,6 @@
 package org.uvo.uvostore.service.order;
 
+import org.uvo.uvostore.service.BusinessException;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -148,7 +149,7 @@ public class CheckoutServiceImpl implements CheckoutService {
                 // so the checkout fails and they can retry. The claim is part of this transaction,
                 // so any later failure rolls it back.
                 if (!couponService.claimUsage(couponResult.coupon())) {
-                    throw new IllegalStateException("El cupón alcanzó su límite de usos.");
+                    throw new BusinessException("El cupón alcanzó su límite de usos.");
                 }
                 order.setCoupon(couponResult.coupon());
                 order.setCouponCode(command.couponCode());

@@ -1,5 +1,6 @@
 package org.uvo.uvostore.service.order;
 
+import org.uvo.uvostore.service.BusinessException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -41,7 +42,7 @@ public class AdminCouponServiceImpl implements AdminCouponService {
     public CouponDto create(CouponCommand command) {
         String code = command.code().toUpperCase();
         if (couponRepository.existsByStoreIdAndCode(TenantContext.requireStoreId(), code)) {
-            throw new IllegalStateException("Este código ya está en uso.");
+            throw new BusinessException("Este código ya está en uso.");
         }
         validatePercentage(command);
 
@@ -59,7 +60,7 @@ public class AdminCouponServiceImpl implements AdminCouponService {
         couponRepository.findByStoreIdAndCode(TenantContext.requireStoreId(), code)
                 .filter(existing -> !existing.getId().equals(id))
                 .ifPresent(existing -> {
-                    throw new IllegalStateException("Este código ya está en uso.");
+                    throw new BusinessException("Este código ya está en uso.");
                 });
         validatePercentage(command);
 
@@ -72,7 +73,7 @@ public class AdminCouponServiceImpl implements AdminCouponService {
     public void delete(Long id) {
         Coupon coupon = findOrThrow(id);
         if (coupon.getTimesUsed() > 0) {
-            throw new IllegalStateException("No se puede eliminar un cupón que ya ha sido usado.");
+            throw new BusinessException("No se puede eliminar un cupón que ya ha sido usado.");
         }
         couponRepository.delete(coupon);
     }

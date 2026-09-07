@@ -1,5 +1,6 @@
 package org.uvo.uvostore.service.customer;
 
+import org.uvo.uvostore.service.BusinessException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -106,7 +107,7 @@ public class AdminCustomerServiceImpl implements AdminCustomerService {
     public void deleteCustomer(Long id) {
         Customer customer = findOrThrow(id);
         if (orderRepository.findByCustomerIdOrderByCreatedAtDesc(id).size() > 0) {
-            throw new IllegalStateException("No se puede eliminar un cliente con órdenes asociadas");
+            throw new BusinessException("No se puede eliminar un cliente con órdenes asociadas");
         }
         customerRepository.delete(customer);
     }
