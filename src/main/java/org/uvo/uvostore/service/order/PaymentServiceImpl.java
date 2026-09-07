@@ -1,5 +1,7 @@
 package org.uvo.uvostore.service.order;
 
+import org.springframework.security.authentication.BadCredentialsException;
+import org.uvo.uvostore.service.BusinessException;
 import com.stripe.exception.SignatureVerificationException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Event;
@@ -62,7 +64,7 @@ public class PaymentServiceImpl implements PaymentService {
                 .orElseThrow(() -> new NoSuchElementException("Order " + orderId + " not found"));
 
         if (order.getPaymentStatus() != PaymentStatus.PENDING) {
-            throw new IllegalStateException("Esta orden ya fue procesada");
+            throw new BusinessException("Esta orden ya fue procesada");
         }
 
         SessionCreateParams params = buildSessionParams(order, successUrl, cancelUrl);
@@ -151,7 +153,7 @@ public class PaymentServiceImpl implements PaymentService {
         try {
             event = Webhook.constructEvent(payload, signatureHeader, webhookSecret);
         } catch (SignatureVerificationException e) {
-            throw new IllegalStateException("Firma de webhook inválida", e);
+            throw new BadCredentialsException("Firma de webhook inválida");
         }
 
         switch (event.getType()) {

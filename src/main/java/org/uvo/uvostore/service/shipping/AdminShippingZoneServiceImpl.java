@@ -1,5 +1,6 @@
 package org.uvo.uvostore.service.shipping;
 
+import org.uvo.uvostore.service.BusinessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.uvo.uvostore.entity.shipping.ShippingZone;
@@ -60,7 +61,7 @@ public class AdminShippingZoneServiceImpl implements AdminShippingZoneService {
     public void delete(Long id) {
         ShippingZone zone = findOrThrow(id);
         if (orderRepository.countByShippingZoneId(id) > 0) {
-            throw new IllegalStateException("No se puede eliminar una zona con órdenes asociadas.");
+            throw new BusinessException("No se puede eliminar una zona con órdenes asociadas.");
         }
         shippingZoneRepository.delete(zone);
     }

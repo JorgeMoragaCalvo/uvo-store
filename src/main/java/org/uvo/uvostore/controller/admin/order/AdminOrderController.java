@@ -25,6 +25,12 @@ import org.uvo.uvostore.service.order.AdminOrderSummaryDto;
 @RequestMapping("/api/admin/orders")
 public class AdminOrderController {
 
+    // M8: sortField came straight from the query string into Sort.by(...), so any name that isn't a
+    // real property blew up as a 500 (PropertyReferenceException) and every column of the entity was
+    // orderable, including the password hash on the user listing. Same allowlist-with-silent-fallback that
+    // ProductController:25,52 already used on the public side.
+    private static final java.util.Set<String> ALLOWED_SORTS = java.util.Set.of("createdAt", "orderNumber", "total", "status", "paymentStatus", "customerEmail");
+
     private final AdminOrderQueryService adminOrderQueryService;
     private final AdminOrderService adminOrderService;
 
@@ -43,10 +49,11 @@ public class AdminOrderController {
             @RequestParam(defaultValue = "desc") String sortDirection,
             @RequestParam(defaultValue = "1") int page
     ) {
+        String safeSort = ALLOWED_SORTS.contains(sortField) ? sortField : "createdAt";
         Sort.Direction direction = "asc".equalsIgnoreCase(sortDirection) ? Sort.Direction.ASC : Sort.Direction.DESC;
         return adminOrderQueryService.search(
                 new AdminOrderSearchCriteria(tab, search, paymentStatus),
-                PageRequest.of(Math.max(page - 1, 0), 20, Sort.by(direction, sortField)));
+                PageRequest.of(Math.max(page - 1, 0), 20, Sort.by(direction, safeSort)));
     }
 
     @GetMapping("/stats")

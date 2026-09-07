@@ -1,5 +1,6 @@
 package org.uvo.uvostore.service.platform;
 
+import org.uvo.uvostore.service.BusinessException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,11 +33,11 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
     public StoreOnboardingResponse createStore(StoreOnboardingCommand command) {
         String slug = command.slug().toLowerCase().trim();
         if (storeRepository.existsBySlug(slug)) {
-            throw new IllegalStateException("Ese nick ya está en uso");
+            throw new BusinessException("Ese nick ya está en uso");
         }
         String domain = normalizeDomain(command.domain());
         if (domain != null && storeRepository.existsByDomain(domain)) {
-            throw new IllegalStateException("Ese dominio ya está en uso");
+            throw new BusinessException("Ese dominio ya está en uso");
         }
 
         Store store = new Store();
@@ -69,7 +70,7 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
 
         String normalized = normalizeDomain(domain);
         if (normalized != null && !normalized.equals(store.getDomain()) && storeRepository.existsByDomain(normalized)) {
-            throw new IllegalStateException("Ese dominio ya está en uso");
+            throw new BusinessException("Ese dominio ya está en uso");
         }
 
         store.setDomain(normalized);

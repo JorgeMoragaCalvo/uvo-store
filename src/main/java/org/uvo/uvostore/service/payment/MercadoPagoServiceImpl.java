@@ -1,5 +1,6 @@
 package org.uvo.uvostore.service.payment;
 
+import org.uvo.uvostore.service.BusinessException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mercadopago.client.payment.PaymentClient;
@@ -77,7 +78,7 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
                 .orElseThrow(() -> new NoSuchElementException("Order " + orderId + " not found"));
 
         if (order.getPaymentStatus() != PaymentStatus.PENDING) {
-            throw new IllegalStateException("Esta orden ya fue procesada");
+            throw new BusinessException("Esta orden ya fue procesada");
         }
 
         String accessToken = requireAccessToken(storeId);
@@ -200,10 +201,10 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
     private String requireAccessToken(Long storeId) {
         PaymentGatewayConfig config = configRepository.findByStoreIdAndGateway(storeId, PaymentGatewayType.MERCADOPAGO)
                 .filter(PaymentGatewayConfig::isEnabled)
-                .orElseThrow(() -> new IllegalStateException("MercadoPago no está habilitado para esta tienda"));
+                .orElseThrow(() -> new BusinessException("MercadoPago no está habilitado para esta tienda"));
         String accessToken = config.getCredentials().get("accessToken");
         if (accessToken == null || accessToken.isBlank()) {
-            throw new IllegalStateException("Falta configurar el accessToken de MercadoPago para esta tienda");
+            throw new BusinessException("Falta configurar el accessToken de MercadoPago para esta tienda");
         }
         return accessToken;
     }

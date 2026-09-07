@@ -1,5 +1,6 @@
 package org.uvo.uvostore.service.shipping;
 
+import org.uvo.uvostore.service.BusinessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.uvo.uvostore.entity.shipping.ShippingMethod;
@@ -65,7 +66,7 @@ public class AdminShippingMethodServiceImpl implements AdminShippingMethodServic
     public void delete(Long id) {
         ShippingMethod method = findOrThrow(id);
         if (orderRepository.countByShippingMethodRefId(id) > 0) {
-            throw new IllegalStateException("No se puede eliminar un método con órdenes asociadas.");
+            throw new BusinessException("No se puede eliminar un método con órdenes asociadas.");
         }
         shippingMethodRepository.delete(method);
     }
@@ -94,7 +95,7 @@ public class AdminShippingMethodServiceImpl implements AdminShippingMethodServic
         shippingMethodRepository.findByStoreIdAndCode(TenantContext.requireStoreId(), code)
                 .filter(existing -> excludingId == null || !existing.getId().equals(excludingId))
                 .ifPresent(existing -> {
-                    throw new IllegalStateException("Este código ya está en uso.");
+                    throw new BusinessException("Este código ya está en uso.");
                 });
     }
 

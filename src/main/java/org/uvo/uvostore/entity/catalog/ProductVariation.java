@@ -1,5 +1,6 @@
 package org.uvo.uvostore.entity.catalog;
 
+import org.hibernate.annotations.BatchSize;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Embedded;
@@ -86,6 +87,9 @@ public class ProductVariation {
             mappedBy = "variation",
             cascade = CascadeType.ALL,
             orphanRemoval = true)
+    // M7: the deepest leg of the N+1 — one query per variation, so a page of 20 variable products
+    // cost N×V queries on its own. See the note on Product.productImages.
+    @BatchSize(size = 100)
     @Builder.Default
     private List<ProductVariationAttribute> attributeAssignments = new ArrayList<>();
 

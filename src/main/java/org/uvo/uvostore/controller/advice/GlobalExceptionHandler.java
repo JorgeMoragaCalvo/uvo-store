@@ -5,11 +5,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.data.core.PropertyReferenceException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.uvo.uvostore.service.BusinessException;
 import org.uvo.uvostore.service.order.OutOfStockException;
 import org.uvo.uvostore.service.order.ShippingUnavailableException;
 
@@ -40,10 +45,36 @@ public class GlobalExceptionHandler {
                 .body(ApiError.of(HttpStatus.FORBIDDEN.value(), "Forbidden", ex.getMessage()));
     }
 
-    @ExceptionHandler({IllegalStateException.class, IllegalArgumentException.class})
+    // M1: IllegalStateException used to be mapped here too, which meant a wrapped Stripe error or a
+    // failed decryption reached the customer as a 400 carrying the raw message — and never reached
+    // Sentry, because only the generic handler captures. The ~19 business cases now throw
+    // BusinessException; whatever still throws IllegalStateException is a bug, and falls through to
+    // the 500 handler where it belongs.
+    //
+    // IllegalArgumentException stays: every use of it in this codebase is genuine input validation
+    // (UploadedImageValidator, the gateway config checks) and none of them wraps a cause.
+    @ExceptionHandler({BusinessException.class, IllegalArgumentException.class})
     public ResponseEntity<ApiError> handleBadRequest(RuntimeException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ApiError.of(HttpStatus.BAD_REQUEST.value(), "Bad Request", ex.getMessage()));
+    }
+
+    // These four are the client's mistake, not the server's, and every one of them was reaching the
+    // generic handler and coming back as a 500: a malformed JSON body, a missing or badly typed
+    // query parameter, and a sort field that doesn't name a real property (the second net under
+    // M8's allowlist). Messages aren't echoed — they quote internals like Jackson paths and entity
+    // names.
+    @ExceptionHandler({
+            HttpMessageNotReadableException.class,
+            MissingServletRequestParameterException.class,
+            MethodArgumentTypeMismatchException.class,
+            PropertyReferenceException.class
+    })
+    public ResponseEntity<ApiError> handleMalformedRequest(Exception ex) {
+        log.warn("Petición mal formada: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiError.of(HttpStatus.BAD_REQUEST.value(), "Bad Request",
+                        "La solicitud no es válida. Revisa los datos enviados."));
     }
 
     // 409, not 400: nothing is wrong with the request — the stock ran out. The SPA needs to tell

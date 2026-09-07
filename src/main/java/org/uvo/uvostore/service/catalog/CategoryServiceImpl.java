@@ -1,5 +1,6 @@
 package org.uvo.uvostore.service.catalog;
 
+import org.uvo.uvostore.service.BusinessException;
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
 import org.uvo.uvostore.entity.catalog.Category;
@@ -68,10 +69,10 @@ public class CategoryServiceImpl implements CategoryService{
                         .orElseThrow(() -> new NoSuchElementException("Category " + id + " not found"));
 
         if (!category.getChildren().isEmpty()) {
-            throw new IllegalStateException("Cannot delete category with subcategories.");
+            throw new BusinessException("Cannot delete category with subcategories.");
         }
         if (!category.getProducts().isEmpty()) {
-            throw new IllegalStateException("Cannot delete category with products.");
+            throw new BusinessException("Cannot delete category with products.");
         }
         if (category.getImage() != null) {
             fileStorageService.delete(category.getImage());

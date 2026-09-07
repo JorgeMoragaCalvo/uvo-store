@@ -1,5 +1,6 @@
 package org.uvo.uvostore.controller.admin.security;
 
+import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -31,6 +32,12 @@ import java.util.Set;
 @RequestMapping("/api/admin/users")
 public class AdminUserController {
 
+    // M8: sortField came straight from the query string into Sort.by(...), so any name that isn't a
+    // real property blew up as a 500 (PropertyReferenceException) and every column of the entity was
+    // orderable, including password and passwordResetToken. Same allowlist-with-silent-fallback that
+    // ProductController:25,52 already used on the public side.
+    private static final java.util.Set<String> ALLOWED_SORTS = java.util.Set.of("createdAt", "name", "email", "lastLoginAt", "isActive");
+
     private final UserService userService;
     private final UserQueryService userQueryService;
 
@@ -49,8 +56,9 @@ public class AdminUserController {
             @RequestParam(defaultValue = "desc") String sortDirection,
             @RequestParam(defaultValue = "1") int page
     ) {
+        String safeSort = ALLOWED_SORTS.contains(sortField) ? sortField : "createdAt";
         Sort.Direction direction = "asc".equalsIgnoreCase(sortDirection) ? Sort.Direction.ASC : Sort.Direction.DESC;
-        return userQueryService.search(search, roleId, active, PageRequest.of(Math.max(page - 1, 0), 15, Sort.by(direction, sortField)));
+        return userQueryService.search(search, roleId, active, PageRequest.of(Math.max(page - 1, 0), 15, Sort.by(direction, safeSort)));
     }
 
     @GetMapping("/{id}")
@@ -61,14 +69,14 @@ public class AdminUserController {
 
     @PostMapping(consumes = "multipart/form-data")
     @PreAuthorize("hasAuthority('users.manage')")
-    public UserDto create(@ModelAttribute UserRequest request) {
+    public UserDto create(@Valid @ModelAttribute UserRequest request) {
         User user = userService.createUser(toCommand(request));
         return userQueryService.getById(user.getId());
     }
 
     @PutMapping(value = "/{id}", consumes = "multipart/form-data")
     @PreAuthorize("hasAuthority('users.manage')")
-    public UserDto update(@PathVariable Long id, @ModelAttribute UserRequest request) {
+    public UserDto update(@PathVariable Long id, @Valid @ModelAttribute UserRequest request) {
         User user = userService.updateUser(id, toCommand(request));
         return userQueryService.getById(user.getId());
     }

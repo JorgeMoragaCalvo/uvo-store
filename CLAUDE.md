@@ -185,7 +185,31 @@ Boot 4 moved/removed and fails to load; see the comment in `pom.xml`). Initializ
 `GlobalExceptionHandler`'s catch-all reports unhandled exceptions to Sentry (and logs them
 locally) without leaking internals to the client.
 
-**Database**: PostgreSQL via Flyway, schema in `src/main/resources/db/migration/` (currently up to V12, well past the original catalog/settings migrations — multi-tenancy, store domains, password reset, etc. are all later migrations). `spring.jpa.hibernate.ddl-auto=validate`, so any entity change must be paired with a new Flyway migration (never edit an already-applied one — add `V13__...sql` etc.).
+**Which exception to throw** (M1): a rule the caller broke, in words meant for them, is
+`BusinessException` → 400 with the message. A request that can't be served but wasn't wrong is
+`OutOfStockException`/`ShippingUnavailableException` → 409. Anything else — a wrapped SDK error, a
+failed decryption — stays `IllegalStateException` and falls to the catch-all: 500, nothing leaked,
+Sentry notified. Don't put `IllegalStateException` back on the 400 handler; that mapping is what
+sent Stripe's raw error text to customers and kept those failures out of Sentry.
+`IllegalArgumentException` does map to 400, and every use of it here is genuine input validation.
+
+**Sorting from the client** (M8): the admin listings take a `sortField` query parameter. It must go
+through the controller's `ALLOWED_SORTS` set with a silent fallback to `createdAt` — passing it
+straight to `Sort.by(...)` makes every column of the entity orderable, the password hash included.
+`ProductController:25,52` is the reference shape.
+
+**Lazy collections** (M7): `Product.productImages`, `Product.variations` and
+`ProductVariation.attributeAssignments` carry `@BatchSize`, which is what keeps a listing page at a
+constant number of queries. Not `JOIN FETCH`: the listings are `findAll(spec, pageable)`, and a
+fetch join over a collection with pagination makes Hibernate page in memory. `@OneToOne(mappedBy)`
+is the other trap — it can't be proxied, so it costs one SELECT per row no matter what `fetch` says.
+`ProductListingQueryCountTest` fails if any of this is undone.
+
+**Database**: PostgreSQL via Flyway, schema in `src/main/resources/db/migration/` (currently up to V16, well past the original catalog/settings migrations — multi-tenancy, store domains, password reset, token versions, the permission catalog and the listing indexes are all later migrations). `spring.jpa.hibernate.ddl-auto=validate`, so any entity change must be paired with a new Flyway migration (never edit an already-applied one — add `V17__...sql` etc.).
+
+**Uploads** (M10): `uploads/` is gitignored — the images are store data, not code. In production
+that path needs a persistent volume, or `app.storage.driver=s3`; on a plain container redeploy
+anything uploaded is gone.
 
 ### Public storefront API (`/api/v1/**`, no auth)
 Mirrors what the React `frontend/` consumes: `products` (search/filter incl. `featured`,
