@@ -16,6 +16,7 @@ import org.uvo.uvostore.entity.order.enums.FulfillmentStatus;
 import org.uvo.uvostore.entity.order.enums.OrderStatus;
 import org.uvo.uvostore.entity.order.enums.PaymentStatus;
 import org.uvo.uvostore.entity.tenant.Store;
+import org.uvo.uvostore.entity.tenant.enums.StoreStatus;
 import org.uvo.uvostore.repository.CategoryRepository;
 import org.uvo.uvostore.repository.CouponRepository;
 import org.uvo.uvostore.repository.OrderRepository;
@@ -164,7 +165,7 @@ class StockConcurrencyTest {
         Store store = storeRepository.save(Store.builder()
                 .name("Concurrency Store")
                 .slug("conc-" + System.nanoTime())
-                .status("active")
+                .status(StoreStatus.ACTIVE)
                 .build());
         createdStores.add(store);
         return store;

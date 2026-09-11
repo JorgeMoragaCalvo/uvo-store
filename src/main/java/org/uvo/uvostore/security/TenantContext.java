@@ -43,4 +43,24 @@ public final class TenantContext {
     public static void clear() {
         CURRENT.remove();
     }
+
+    /**
+     * Ejecuta algo en nombre de una tienda concreta, fuera de una petición HTTP. Lo necesitan los
+     * trabajos programados (G1, G2): no tienen petición y por tanto no pasan por
+     * TenantResolutionFilter, pero sí llaman a código que exige tenant — {@code WebpayServiceImpl} y
+     * {@code MercadoPagoServiceImpl} llaman a {@link #requireStoreId()} para leer las credenciales
+     * de la tienda.
+     *
+     * <p>Existe como helper y no suelto en cada job porque lo que importa es el {@code finally}: un
+     * hilo del pool del planificador que se quede con el tenant de la orden anterior haría que la
+     * siguiente se cobrara contra las credenciales de otra tienda.
+     */
+    public static void runWithin(Store store, Runnable action) {
+        set(store);
+        try {
+            action.run();
+        } finally {
+            clear();
+        }
+    }
 }

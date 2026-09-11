@@ -9,6 +9,8 @@ import com.mercadopago.client.preference.PreferenceClient;
 import com.mercadopago.client.preference.PreferenceItemRequest;
 import com.mercadopago.client.preference.PreferenceRequest;
 import com.mercadopago.core.MPRequestOptions;
+import com.mercadopago.net.MPResultsResourcesPage;
+import com.mercadopago.net.MPSearchRequest;
 import com.mercadopago.resources.payment.Payment;
 import com.mercadopago.resources.preference.Preference;
 import org.slf4j.Logger;
@@ -177,6 +179,50 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
                 // "pending"/"in_process"/etc. — no state change, wait for the next notification.
             }
         }
+    }
+
+    @Override
+    @Transactional
+    public boolean reconcile(Long orderId) {
+        Long storeId = TenantContext.requireStoreId();
+        Order order = orderRepository.findById(orderId)
+                .filter(o -> o.getStore().getId().equals(storeId))
+                .orElseThrow(() -> new NoSuchElementException("Order " + orderId + " not found"));
+
+        if (order.getPaymentStatus() != PaymentStatus.PENDING) {
+            return false;
+        }
+
+        String accessToken = requireAccessToken(storeId);
+        List<Payment> payments;
+        try {
+            // external_reference es el número de orden, que createPreference ya envía: es el único
+            // identificador que tenemos de una orden cuyo webhook nunca llegó, porque el id del pago
+            // lo asigna MercadoPago y llega justamente en esa notificación.
+            MPResultsResourcesPage<Payment> page = new PaymentClient().search(
+                    MPSearchRequest.builder()
+                            .limit(10)
+                            .offset(0)
+                            .filters(java.util.Map.of("external_reference", order.getOrderNumber()))
+                            .build(),
+                    MPRequestOptions.builder().accessToken(accessToken).build());
+            payments = page.getResults() == null ? List.of() : page.getResults();
+        } catch (Exception e) {
+            throw new IllegalStateException("Error al buscar pagos en MercadoPago: " + e.getMessage(), e);
+        }
+
+        Payment approved = payments.stream()
+                .filter(payment -> "approved".equals(payment.getStatus()))
+                .findFirst()
+                .orElse(null);
+        if (approved == null) {
+            return false;
+        }
+
+        // markPaid ya es idempotente y ya verifica el monto (M4): si el webhook llega mientras corre
+        // la conciliación, no se marca ni se cobra dos veces.
+        orderStatusService.markPaid(order.getId(), String.valueOf(approved.getId()), approved.getTransactionAmount());
+        return orderRepository.findById(orderId).orElseThrow().getPaymentStatus() == PaymentStatus.PAID;
     }
 
     private PreferenceItemRequest lineItem(String title, java.math.BigDecimal amount) {

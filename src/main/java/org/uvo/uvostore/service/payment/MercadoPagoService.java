@@ -14,4 +14,14 @@ public interface MercadoPagoService {
      *        before the outbound API call it would otherwise trigger.
      */
     void handleWebhook(String payload, String signatureHeader, String requestId);
+
+    /**
+     * G1. Busca en MercadoPago los pagos de una orden cuyo webhook nunca llegó y, si hay uno
+     * aprobado, la da por pagada. La búsqueda va por {@code external_reference} —el número de orden
+     * que {@code createPreference} ya envía— porque es el único identificador que tenemos antes de
+     * que llegue la notificación: el id del pago lo asigna MercadoPago.
+     *
+     * @return true si la orden quedó pagada en esta llamada.
+     */
+    boolean reconcile(Long orderId);
 }

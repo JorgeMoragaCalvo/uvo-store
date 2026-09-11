@@ -2,6 +2,8 @@ package org.uvo.uvostore.entity.tenant;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -15,6 +17,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.uvo.uvostore.entity.tenant.enums.StoreStatus;
 
 // The tenant root — every other tenant-scoped table carries a store_id FK to this table
 // (Fase 0 of the multi-tenant retrofit, see docs/plan). slug doubles as the subdomain used by
@@ -48,9 +51,17 @@ public class Store {
     @Column(name = "owner_user_id")
     private Long ownerUserId;
 
+    // G5: era un String libre ("active"), sin restricción en la base y sin ningún lector. Ahora es
+    // el interruptor que TenantResolutionFilter consulta en cada petición, respaldado por el CHECK
+    // de V18.
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     @Builder.Default
-    private String status = "active";
+    private StoreStatus status = StoreStatus.ACTIVE;
+
+    public boolean isSuspended() {
+        return status == StoreStatus.SUSPENDED;
+    }
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)

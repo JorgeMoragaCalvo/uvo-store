@@ -5,6 +5,7 @@ import cl.transbank.model.MallTransactionCreateDetails;
 import cl.transbank.webpay.webpayplus.WebpayPlus;
 import cl.transbank.webpay.webpayplus.responses.WebpayPlusMallTransactionCommitResponse;
 import cl.transbank.webpay.webpayplus.responses.WebpayPlusMallTransactionCreateResponse;
+import cl.transbank.webpay.webpayplus.responses.WebpayPlusMallTransactionStatusResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -119,6 +120,46 @@ public class WebpayServiceImpl implements WebpayService {
         return new WebpayCommitResult(order.getId(), order.getOrderNumber(), detail.getStatus(), order.getPaymentStatus().name());
     }
 
+    @Override
+    @Transactional
+    public boolean reconcile(Long orderId) {
+        Long storeId = TenantContext.requireStoreId();
+        Order order = orderRepository.findById(orderId)
+                .filter(o -> o.getStore().getId().equals(storeId))
+                .orElseThrow(() -> new NoSuchElementException("Order " + orderId + " not found"));
+
+        if (order.getPaymentStatus() != PaymentStatus.PENDING) {
+            return false;
+        }
+        // El token que createTransaction guardó. Sin él no hay nada que consultar.
+        String token = order.getPaymentId();
+        if (token == null || token.isBlank()) {
+            return false;
+        }
+
+        WebpayPlusMallTransactionStatusResponse response;
+        try {
+            // status(), NUNCA commit(). Confirmar aquí una transacción que el cliente abandonó le
+            // cobraría: la conciliación existe para averiguar qué pasó, no para hacer que pase.
+            response = transaction().status(token);
+        } catch (Exception e) {
+            throw new IllegalStateException("Error al consultar estado de transacción Webpay: " + e.getMessage(), e);
+        }
+
+        if (response.getDetails() == null || response.getDetails().isEmpty()) {
+            return false;
+        }
+        var detail = response.getDetails().get(0);
+        if (detail.getResponseCode() != 0 || !"AUTHORIZED".equals(detail.getStatus())) {
+            return false;
+        }
+
+        // markPaid ya es idempotente y ya verifica el monto (M4): si el webhook de vuelta llega
+        // mientras corre la conciliación, no se cobra ni se marca dos veces.
+        orderStatusService.markPaid(order.getId(), token, java.math.BigDecimal.valueOf(detail.getAmount()));
+        return orderRepository.findById(orderId).orElseThrow().getPaymentStatus() == PaymentStatus.PAID;
+    }
+
     private String requireChildCommerceCode(Long storeId) {
         PaymentGatewayConfig config = configRepository.findByStoreIdAndGateway(storeId, PaymentGatewayType.WEBPAY)
                 .filter(PaymentGatewayConfig::isEnabled)
@@ -130,7 +171,11 @@ public class WebpayServiceImpl implements WebpayService {
         return childCommerceCode;
     }
 
-    private WebpayPlus.MallTransaction transaction() {
+    // protected, y no private, para poder sustituirla en test: es el único punto por el que esta
+    // clase habla con Transbank, y lo que hay que poder comprobar sin credenciales reales es
+    // justamente qué método de la pasarela se llama — reconcile() debe usar status() y nunca
+    // commit(). Ver WebpayReconcileTest.
+    protected WebpayPlus.MallTransaction transaction() {
         return production
                 ? WebpayPlus.MallTransaction.buildForProduction(parentCommerceCode, apiKey)
                 : WebpayPlus.MallTransaction.buildForIntegration(parentCommerceCode, apiKey);

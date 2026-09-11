@@ -10,6 +10,7 @@ import org.uvo.uvostore.entity.order.OrderItem;
 import org.uvo.uvostore.entity.payment.EncryptionKeyHolder;
 import org.uvo.uvostore.entity.settings.Setting;
 import org.uvo.uvostore.entity.tenant.Store;
+import org.uvo.uvostore.entity.tenant.enums.StoreStatus;
 import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.repository.SettingRepository;
 import org.uvo.uvostore.security.TenantContext;
@@ -44,7 +45,7 @@ class PaymentServiceImplTest {
                 orderRepository, settingRepository, orderStatusService,
                 "sk_test_fallback", "whsec_fallback", "clp", "http://localhost:5173");
 
-        Store store = Store.builder().id(1L).name("Tienda de prueba").slug("test").status("active").build();
+        Store store = Store.builder().id(1L).name("Tienda de prueba").slug("test").status(StoreStatus.ACTIVE).build();
         TenantContext.set(store);
         when(settingRepository.findByStoreIdAndSettingKey(1L, "currency")).thenReturn(java.util.Optional.empty());
         when(settingRepository.findByStoreIdAndSettingKey(1L, "stripe_secret_key")).thenReturn(java.util.Optional.empty());

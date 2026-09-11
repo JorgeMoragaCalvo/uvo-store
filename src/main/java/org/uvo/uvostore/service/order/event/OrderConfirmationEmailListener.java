@@ -1,5 +1,6 @@
 package org.uvo.uvostore.service.order.event;
 
+import io.sentry.Sentry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -38,7 +39,10 @@ public class OrderConfirmationEmailListener {
                     .orElseThrow(() -> new NoSuchElementException("Order " + event.orderId() + " not found"));
             emailService.send(order.getCustomerEmail(), "Confirmación de tu pedido " + order.getOrderNumber(), body(order));
         } catch (Exception e) {
+            // G2, mismo criterio que en los otros dos listeners: no se relanza (la transacción ya se
+            // confirmó), pero deja de morir en una línea de log que nadie mira.
             log.error("Error enviando confirmación de compra order_id={} error={}", event.orderId(), e.getMessage());
+            Sentry.captureException(e);
         }
     }
 

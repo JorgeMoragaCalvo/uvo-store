@@ -21,6 +21,7 @@ import org.uvo.uvostore.entity.security.Role;
 import org.uvo.uvostore.entity.security.User;
 import org.uvo.uvostore.entity.settings.Setting;
 import org.uvo.uvostore.entity.tenant.Store;
+import org.uvo.uvostore.entity.tenant.enums.StoreStatus;
 import org.uvo.uvostore.repository.CategoryRepository;
 import org.uvo.uvostore.repository.CustomerRepository;
 import org.uvo.uvostore.repository.PermissionRepository;
@@ -105,10 +106,19 @@ public abstract class IntegrationTestSupport {
     }
 
     protected Store createStore(String slugPrefix) {
+        return createStore(slugPrefix, StoreStatus.ACTIVE);
+    }
+
+    /**
+     * G5: una tienda suspendida no vende — TenantResolutionFilter responde 403 a todo lo que no sea
+     * /api/platform/**. Se crea directamente en ese estado porque no hay (todavía) endpoint para
+     * suspenderla: hoy es una operación de base de datos del equipo de operaciones.
+     */
+    protected Store createStore(String slugPrefix, StoreStatus status) {
         Store store = Store.builder()
                 .name(slugPrefix + " Test Store")
                 .slug(slugPrefix + "-" + nextSeq())
-                .status("active")
+                .status(status)
                 .build();
         return storeRepository.save(store);
     }

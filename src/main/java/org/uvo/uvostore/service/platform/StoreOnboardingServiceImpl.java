@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.uvo.uvostore.entity.security.User;
 import org.uvo.uvostore.entity.tenant.Store;
+import org.uvo.uvostore.entity.tenant.enums.StoreStatus;
 import org.uvo.uvostore.repository.StoreRepository;
 import org.uvo.uvostore.repository.UserRepository;
 
@@ -44,7 +45,7 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
         store.setName(command.storeName());
         store.setSlug(slug);
         store.setDomain(domain);
-        store.setStatus("active");
+        store.setStatus(StoreStatus.ACTIVE);
         Store savedStore = storeRepository.save(store);
 
         User admin = new User();

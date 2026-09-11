@@ -22,6 +22,14 @@ public class OrderStatusServiceImpl implements OrderStatusService {
 
     private static final Logger log = LoggerFactory.getLogger(OrderStatusServiceImpl.class);
 
+    /**
+     * G1. El comienzo de la nota que deja un descuadre de monto, extraído a constante porque ahora
+     * tiene un segundo lector: {@code PaymentReconciliationService} lo usa para NO reintentar esas
+     * órdenes — no esperan a la pasarela, esperan a una persona. Si el texto cambia aquí sin
+     * cambiarlo allá, la conciliación las reintentaría en cada corrida y alertaría para siempre.
+     */
+    public static final String AMOUNT_MISMATCH_PREFIX = "Monto pagado no coincide";
+
     private final OrderRepository orderRepository;
     private final ApplicationEventPublisher applicationEventPublisher;
     private final OrderInventoryService orderInventoryService;
@@ -107,7 +115,7 @@ public class OrderStatusServiceImpl implements OrderStatusService {
     }
 
     private void reportAmountMismatch(Order order, BigDecimal amountPaid) {
-        String detail = "Monto pagado no coincide: se recibieron " + (amountPaid == null ? "un importe desconocido" : amountPaid)
+        String detail = AMOUNT_MISMATCH_PREFIX + ": se recibieron " + (amountPaid == null ? "un importe desconocido" : amountPaid)
                 + " y la orden es de " + order.getTotal() + ". La orden queda pendiente para revisión manual.";
         // Visible where the operator already looks — the order's own history — and in Sentry, the
         // same pair OrderInventoryService uses for a failed stock decrement.
