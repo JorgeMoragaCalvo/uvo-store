@@ -1,8 +1,10 @@
 package org.uvo.uvostore.repository;
 
-import org.aspectj.weaver.ast.Or;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import org.uvo.uvostore.entity.order.Order;
 import org.uvo.uvostore.entity.order.enums.OrderStatus;
@@ -27,6 +29,46 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
     List<Order> findTop10ByOrderByCreatedAtDesc(); // Order::recent()
     List<Order> findByStatusAndCreatedAtAfter(OrderStatus status, Instant since);
     long countByPosSyncedFalse();
+
+    // G2: órdenes que intentaron notificarse al POS y no lo consiguieron. El `syncAttempts >= 1` no
+    // es decorativo — deja fuera a las órdenes que nunca tuvieron nada que notificar (ninguna línea
+    // con ProductSyncMapping), que también tienen posSynced=false y reintentarlas no haría nada.
+    // El `join fetch o.store` no es una optimización: quien consume esto es un job, fuera de toda
+    // petición y por tanto sin sesión abierta, y lo primero que hace con cada orden es leer su
+    // tienda para fijar el tenant. Sin el fetch, eso es un LazyInitializationException.
+    @Query("""
+            select o from Order o
+            join fetch o.store
+            where o.posSynced = false
+              and o.syncAttempts >= 1
+              and o.syncAttempts < :maxAttempts
+              and o.createdAt < :notAfter
+            order by o.createdAt asc
+            """)
+    List<Order> findPendingPosNotification(@Param("maxAttempts") int maxAttempts,
+                                           @Param("notAfter") Instant notAfter,
+                                           Pageable pageable);
+
+    // G1: órdenes con el pago sin resolver que ya tienen identificador en la pasarela, es decir, las
+    // que se pueden ir a preguntar. Se saltan a propósito las que tienen nota de descuadre de monto:
+    // ésas no están esperando respuesta de la pasarela —ya llegó, y por otro importe—, están
+    // esperando a una persona. Sin este filtro, cada corrida las volvería a mirar y a alertar para
+    // siempre. Ver OrderStatusServiceImpl.AMOUNT_MISMATCH_PREFIX.
+    @Query("""
+            select o from Order o
+            join fetch o.store
+            where o.paymentStatus = org.uvo.uvostore.entity.order.enums.PaymentStatus.PENDING
+              and o.createdAt < :notAfter
+              and (o.paymentId is not null or o.stripeCheckoutSessionId is not null)
+              and not exists (
+                    select 1 from OrderStatusHistory h
+                    where h.order = o and h.notes like :mismatchPrefix
+              )
+            order by o.createdAt asc
+            """)
+    List<Order> findPendingPaymentsToReconcile(@Param("notAfter") Instant notAfter,
+                                               @Param("mismatchPrefix") String mismatchPrefix,
+                                               Pageable pageable);
 
     // Admin\Shipping\{Zones,Methods}\Index delete guards — refuse to delete a zone/method that
     // still has orders referencing it.

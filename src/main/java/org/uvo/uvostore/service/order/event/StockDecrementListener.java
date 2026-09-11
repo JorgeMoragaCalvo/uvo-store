@@ -1,5 +1,6 @@
 package org.uvo.uvostore.service.order.event;
 
+import io.sentry.Sentry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -37,11 +38,20 @@ public class StockDecrementListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onPaymentConfirmed(PaymentConfirmedEvent event) {
-        Order order = orderRepository.findById(event.orderId())
-                .orElseThrow(() -> new NoSuchElementException("Order " + event.orderId() + " not found"));
+        try {
+            Order order = orderRepository.findById(event.orderId())
+                    .orElseThrow(() -> new NoSuchElementException("Order " + event.orderId() + " not found"));
 
-        log.info("Iniciando descuento de stock por pago confirmado order_id={} order_number={}", order.getId(), order.getOrderNumber());
-        orderInventoryService.applyOrderStock(order);
-        log.info("Descuento de stock completado order_id={}", order.getId());
+            log.info("Iniciando descuento de stock por pago confirmado order_id={} order_number={}", order.getId(), order.getOrderNumber());
+            orderInventoryService.applyOrderStock(order);
+            log.info("Descuento de stock completado order_id={}", order.getId());
+        } catch (Exception e) {
+            // G2. Relanzar desde un listener AFTER_COMMIT no consigue nada —la transacción ya se
+            // confirmó y el cliente ya pagó—, así que lo único útil es que se sepa. Antes esto salía
+            // por el log del framework y no llegaba a Sentry: una venta cobrada cuyo stock no se
+            // descontó no dejaba ninguna alerta.
+            log.error("Error descontando stock tras el pago order_id={} error={}", event.orderId(), e.getMessage(), e);
+            Sentry.captureException(e);
+        }
     }
 }
