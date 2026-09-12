@@ -13,4 +13,14 @@ public interface WebpayService {
      * @return true si la orden quedó pagada en esta llamada.
      */
     boolean reconcile(Long orderId);
+
+    /**
+     * G4. Devuelve dinero de una transacción de Webpay. Solo habla con Transbank: cuánto se puede
+     * devolver y qué pasa con la orden lo decide {@code RefundService}.
+     *
+     * @return el tipo que devuelve Transbank: {@code REVERSED} si anuló la transacción (solo cabe el
+     *         mismo día, antes del cierre) o {@code NULLIFIED} si fue un reembolso. Se guarda porque
+     *         son operaciones distintas, con plazos distintos, y desde fuera se piden igual.
+     */
+    String refund(Long orderId, java.math.BigDecimal amount);
 }

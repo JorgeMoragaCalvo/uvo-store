@@ -1,8 +1,10 @@
 package org.uvo.uvostore.repository;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -22,6 +24,17 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
     Optional<Order> findByStripePaymentIntentId(String paymentIntentId);
     Optional<Order> findByPosOrderId(String posOrderId);
     Optional<Order> findByPaymentId(String paymentId); // Webpay token / MercadoPago reference
+
+    /**
+     * G4. La orden bloqueada hasta el fin de la transacción. La usa el reembolso y solo el reembolso:
+     * lo devuelto se valida sumando {@code order_refunds} contra el total, y dos reembolsos parciales
+     * simultáneos que leyeran la misma suma podrían autorizar entre los dos más dinero del cobrado.
+     * Es el mismo razonamiento de C5 con el stock, resuelto aquí con un cerrojo porque lo que hay que
+     * proteger es una suma sobre otra tabla, no un UPDATE atómico sobre una columna.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select o from Order o where o.id = :id")
+    Optional<Order> findByIdForUpdate(@Param("id") Long id);
 
     List<Order> findByStatus(OrderStatus status); // Order::byStatus()
     List<Order> findByPaymentStatus(PaymentStatus paymentStatus); // Order::byPaymentStatus()

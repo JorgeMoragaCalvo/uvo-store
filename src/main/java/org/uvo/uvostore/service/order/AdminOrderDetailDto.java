@@ -33,6 +33,10 @@ public record AdminOrderDetailDto(
         List<AdminOrderItemDto> items,
         Instant createdAt,
         Instant shippedAt,
-        Instant deliveredAt
+        Instant deliveredAt,
+        // G4. Lo ya devuelto y de qué se compone. El panel lo necesita para proponer el saldo como
+        // monto por defecto y para no ofrecer reembolsar lo que ya se devolvió.
+        BigDecimal refundedAmount,
+        List<OrderRefundDto> refunds
 ) {
 }

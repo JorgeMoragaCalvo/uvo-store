@@ -4,6 +4,7 @@ import org.uvo.uvostore.service.BusinessException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mercadopago.client.payment.PaymentClient;
+import com.mercadopago.client.payment.PaymentRefundClient;
 import com.mercadopago.client.preference.PreferenceBackUrlsRequest;
 import com.mercadopago.client.preference.PreferenceClient;
 import com.mercadopago.client.preference.PreferenceItemRequest;
@@ -12,6 +13,7 @@ import com.mercadopago.core.MPRequestOptions;
 import com.mercadopago.net.MPResultsResourcesPage;
 import com.mercadopago.net.MPSearchRequest;
 import com.mercadopago.resources.payment.Payment;
+import com.mercadopago.resources.payment.PaymentRefund;
 import com.mercadopago.resources.preference.Preference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -223,6 +225,34 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
         // la conciliación, no se marca ni se cobra dos veces.
         orderStatusService.markPaid(order.getId(), String.valueOf(approved.getId()), approved.getTransactionAmount());
         return orderRepository.findById(orderId).orElseThrow().getPaymentStatus() == PaymentStatus.PAID;
+    }
+
+    @Override
+    @Transactional
+    public String refund(Long orderId, java.math.BigDecimal amount) {
+        Long storeId = TenantContext.requireStoreId();
+        Order order = orderRepository.findById(orderId)
+                .filter(o -> o.getStore().getId().equals(storeId))
+                .orElseThrow(() -> new NoSuchElementException("Order " + orderId + " not found"));
+
+        // markPaid guardó aquí el id del pago de MercadoPago; sin él no hay nada que devolver.
+        String paymentId = order.getPaymentId();
+        if (paymentId == null || paymentId.isBlank()) {
+            throw new BusinessException("La orden no tiene un pago de MercadoPago que devolver");
+        }
+
+        PaymentRefund refund;
+        try {
+            refund = new PaymentRefundClient().refund(Long.parseLong(paymentId),
+                    amount.setScale(0, RoundingMode.HALF_UP),
+                    MPRequestOptions.builder().accessToken(requireAccessToken(storeId)).build());
+        } catch (NumberFormatException e) {
+            throw new BusinessException("El identificador de pago de la orden no es de MercadoPago: " + paymentId);
+        } catch (Exception e) {
+            throw new IllegalStateException("Error al reembolsar en MercadoPago: " + e.getMessage(), e);
+        }
+
+        return String.valueOf(refund.getId());
     }
 
     private PreferenceItemRequest lineItem(String title, java.math.BigDecimal amount) {

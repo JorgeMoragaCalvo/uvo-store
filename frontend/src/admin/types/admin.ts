@@ -409,6 +409,21 @@ export interface AdminOrderDetail {
   createdAt: string
   shippedAt: string | null
   deliveredAt: string | null
+  // G4: lo ya devuelto. El saldo (total - refundedAmount) es lo que queda por reembolsar.
+  refundedAmount: number
+  refunds: AdminOrderRefund[]
+}
+
+export interface AdminOrderRefund {
+  id: number
+  amount: number
+  // FULL y PARTIAL los hizo este sistema contra la pasarela; EXTERNAL es un reembolso hecho fuera y
+  // registrado a mano, y por eso no trae referencia de pasarela.
+  type: 'FULL' | 'PARTIAL' | 'EXTERNAL'
+  gatewayReference: string | null
+  reason: string | null
+  userName: string | null
+  createdAt: string
 }
 
 export interface AdminOrderStats {

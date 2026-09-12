@@ -18,6 +18,8 @@ import org.uvo.uvostore.service.order.AdminOrderSearchCriteria;
 import org.uvo.uvostore.service.order.AdminOrderService;
 import org.uvo.uvostore.service.order.AdminOrderStatsDto;
 import org.uvo.uvostore.service.order.AdminOrderSummaryDto;
+import org.uvo.uvostore.service.payment.RefundCommand;
+import org.uvo.uvostore.service.payment.RefundService;
 
 @io.swagger.v3.oas.annotations.tags.Tag(name = "Órdenes (admin)", description = "Gestión de órdenes de la tienda, JWT bearer con rol ADMIN")
 @io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "bearerAuth")
@@ -33,10 +35,13 @@ public class AdminOrderController {
 
     private final AdminOrderQueryService adminOrderQueryService;
     private final AdminOrderService adminOrderService;
+    private final RefundService refundService;
 
-    public AdminOrderController(AdminOrderQueryService adminOrderQueryService, AdminOrderService adminOrderService) {
+    public AdminOrderController(AdminOrderQueryService adminOrderQueryService, AdminOrderService adminOrderService,
+                                RefundService refundService) {
         this.adminOrderQueryService = adminOrderQueryService;
         this.adminOrderService = adminOrderService;
+        this.refundService = refundService;
     }
 
     @GetMapping
@@ -108,5 +113,32 @@ public class AdminOrderController {
     @PreAuthorize("hasAuthority('orders.manage')")
     public AdminOrderDetailDto saveTracking(@PathVariable Long id, @RequestBody TrackingRequest request) {
         return adminOrderService.saveTracking(id, request.trackingNumber());
+    }
+
+    // G4. Permiso propio y no 'orders.manage': ése lo tiene cualquiera que despache pedidos, y esto
+    // mueve dinero de vuelta. V19 se lo concede a quien ya tenga orders.manage, así que nadie pierde
+    // acceso el día del despliegue — pero a partir de ahí se puede quitar por separado.
+    @PostMapping("/{id}/refund")
+    @PreAuthorize("hasAuthority('orders.refund')")
+    public AdminOrderDetailDto refund(@PathVariable Long id, @RequestBody @jakarta.validation.Valid RefundRequest request,
+                                      org.springframework.security.core.Authentication authentication) {
+        refundService.refund(new RefundCommand(id, request.amount(), request.reason(), currentUserId(authentication)));
+        return adminOrderQueryService.getById(id);
+    }
+
+    /**
+     * Registra un reembolso que ya se hizo en el panel de la pasarela. No mueve dinero: solo evita
+     * que la base siga diciendo que la orden está cobrada cuando ya no lo está.
+     */
+    @PostMapping("/{id}/refund/external")
+    @PreAuthorize("hasAuthority('orders.refund')")
+    public AdminOrderDetailDto recordExternalRefund(@PathVariable Long id, @RequestBody @jakarta.validation.Valid RefundRequest request,
+                                                    org.springframework.security.core.Authentication authentication) {
+        refundService.recordExternal(new RefundCommand(id, request.amount(), request.reason(), currentUserId(authentication)));
+        return adminOrderQueryService.getById(id);
+    }
+
+    private Long currentUserId(org.springframework.security.core.Authentication authentication) {
+        return ((org.uvo.uvostore.security.AuthPrincipal) authentication.getPrincipal()).id();
     }
 }

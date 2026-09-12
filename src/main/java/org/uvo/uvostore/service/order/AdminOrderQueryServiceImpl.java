@@ -10,6 +10,7 @@ import org.uvo.uvostore.entity.order.Order;
 import org.uvo.uvostore.entity.order.OrderItem;
 import org.uvo.uvostore.entity.order.enums.OrderStatus;
 import org.uvo.uvostore.entity.order.enums.PaymentStatus;
+import org.uvo.uvostore.repository.OrderRefundRepository;
 import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.security.TenantContext;
 
@@ -21,9 +22,11 @@ import java.util.NoSuchElementException;
 public class AdminOrderQueryServiceImpl implements AdminOrderQueryService {
 
     private final OrderRepository orderRepository;
+    private final OrderRefundRepository refundRepository;
 
-    public AdminOrderQueryServiceImpl(OrderRepository orderRepository) {
+    public AdminOrderQueryServiceImpl(OrderRepository orderRepository, OrderRefundRepository refundRepository) {
         this.orderRepository = orderRepository;
+        this.refundRepository = refundRepository;
     }
 
     @Override
@@ -106,6 +109,9 @@ public class AdminOrderQueryServiceImpl implements AdminOrderQueryService {
         List<AdminOrderItemDto> items = order.getItems().stream()
                 .map(this::toItemDto)
                 .toList();
+        List<OrderRefundDto> refunds = refundRepository.findByOrderIdOrderByCreatedAtDesc(order.getId()).stream()
+                .map(this::toRefundDto)
+                .toList();
 
         return new AdminOrderDetailDto(
                 order.getId(), order.getOrderNumber(),
@@ -117,7 +123,19 @@ public class AdminOrderQueryServiceImpl implements AdminOrderQueryService {
                 toAddressDto(order.getShippingAddress()), toAddressDto(order.getBillingAddress()),
                 order.getShippingRegion(), order.getShippingCommune(), order.getShippingPostalCode(),
                 order.getCustomerNotes(), order.getNotes(), items,
-                order.getCreatedAt(), order.getShippedAt(), order.getDeliveredAt()
+                order.getCreatedAt(), order.getShippedAt(), order.getDeliveredAt(),
+                refundRepository.totalRefunded(order.getId()), refunds
+        );
+    }
+
+    private OrderRefundDto toRefundDto(org.uvo.uvostore.entity.order.OrderRefund refund) {
+        return new OrderRefundDto(
+                refund.getId(), refund.getAmount(), refund.getType().name(), refund.getGatewayReference(),
+                refund.getReason(),
+                // Nulo si lo hizo un usuario que ya no existe: el reembolso sobrevive a la baja de
+                // quien lo pidió (ON DELETE SET NULL).
+                refund.getUser() == null ? null : refund.getUser().getName(),
+                refund.getCreatedAt()
         );
     }
 

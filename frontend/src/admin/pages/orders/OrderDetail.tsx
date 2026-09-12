@@ -10,14 +10,24 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import adminApi from '@/admin/services/adminApi'
+import { hasPermission, useAdminAuthStore } from '@/admin/stores/useAdminAuthStore'
 import { useAdminOrdersStore } from '@/admin/stores/useAdminOrdersStore'
 import type { AdminOrderDetail } from '@/admin/types/admin'
 
-const ORDER_STATUSES = ['PENDING', 'PAID', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED', 'REFUNDED']
-const PAYMENT_STATUSES = ['PENDING', 'PAID', 'FAILED', 'REFUNDED']
+// G4: REFUNDED no está en ninguna de las dos listas a propósito. Marcarlo a mano dejaba la base
+// diciendo "devuelto" con el dinero cobrado; ahora se llega ahí por la tarjeta de reembolsos, que
+// primero mueve el dinero. El backend rechaza el atajo aunque alguien llame a la API directamente.
+const ORDER_STATUSES = ['PENDING', 'PAID', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED']
+const PAYMENT_STATUSES = ['PENDING', 'PAID', 'FAILED']
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(value)
+}
+
+// El estado actual siempre tiene que estar entre las opciones o el selector se ve vacío. Pasa con
+// las órdenes ya reembolsadas, cuyo estado dejó de ser elegible pero sigue siendo el que tienen.
+function withCurrent(options: string[], current: string) {
+  return options.includes(current) ? options : [...options, current]
 }
 
 export default function OrderDetail() {
@@ -202,6 +212,9 @@ function OrderDetailContent({ order, onBack }: { order: AdminOrderDetail; onBack
                 <Label>Estado de la orden</Label>
                 <Select
                   value={order.status}
+                  // Una orden devuelta no vuelve de ahí por este selector: REFUNDED ya no es una
+                  // opción, y dejarlo editable solo daría errores del backend.
+                  disabled={busy || order.status === 'REFUNDED'}
                   onValueChange={(value) =>
                     runAction(() => adminApi.orders.updateStatus(order.id, value), 'Estado actualizado')
                   }
@@ -210,7 +223,7 @@ function OrderDetailContent({ order, onBack }: { order: AdminOrderDetail; onBack
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {ORDER_STATUSES.map((status) => (
+                    {withCurrent(ORDER_STATUSES, order.status).map((status) => (
                       <SelectItem key={status} value={status}>
                         {status}
                       </SelectItem>
@@ -222,6 +235,7 @@ function OrderDetailContent({ order, onBack }: { order: AdminOrderDetail; onBack
                 <Label>Estado de pago</Label>
                 <Select
                   value={order.paymentStatus}
+                  disabled={busy || order.paymentStatus === 'REFUNDED'}
                   onValueChange={(value) =>
                     runAction(() => adminApi.orders.updatePaymentStatus(order.id, value), 'Estado de pago actualizado')
                   }
@@ -230,7 +244,7 @@ function OrderDetailContent({ order, onBack }: { order: AdminOrderDetail; onBack
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {PAYMENT_STATUSES.map((status) => (
+                    {withCurrent(PAYMENT_STATUSES, order.paymentStatus).map((status) => (
                       <SelectItem key={status} value={status}>
                         {status}
                       </SelectItem>
@@ -240,6 +254,8 @@ function OrderDetailContent({ order, onBack }: { order: AdminOrderDetail; onBack
               </div>
             </CardContent>
           </Card>
+
+          <RefundCard order={order} busy={busy} runAction={runAction} />
 
           <Card>
             <CardHeader>
@@ -262,5 +278,121 @@ function OrderDetailContent({ order, onBack }: { order: AdminOrderDetail; onBack
         </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * G4. Antes de esto, "reembolsar" era poner la orden en REFUNDED desde el selector de estado: la
+ * base decía devuelto y la pasarela seguía diciendo cobrado. Aquí se pide el dinero de verdad.
+ */
+function RefundCard({
+  order,
+  busy,
+  runAction,
+}: {
+  order: AdminOrderDetail
+  busy: boolean
+  runAction: (action: () => Promise<AdminOrderDetail>, successMessage: string) => Promise<void>
+}) {
+  const user = useAdminAuthStore((state) => state.user)
+  const remaining = order.total - order.refundedAmount
+  // Vacío = todo el saldo, que es lo que el backend entiende por un monto ausente.
+  const [amount, setAmount] = useState('')
+  const [reason, setReason] = useState('')
+
+  if (!hasPermission(user, 'orders.refund')) {
+    return null
+  }
+
+  const parsedAmount = amount.trim() === '' ? undefined : Number(amount)
+  const amountInvalid =
+    parsedAmount !== undefined && (Number.isNaN(parsedAmount) || parsedAmount <= 0 || parsedAmount > remaining)
+  const canRefund = order.paymentStatus === 'PAID' && remaining > 0
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Reembolsos</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <div className="flex flex-col gap-1 text-sm">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Devuelto</span>
+            <span>{formatCurrency(order.refundedAmount)}</span>
+          </div>
+          <div className="flex justify-between font-medium">
+            <span>Por devolver</span>
+            <span>{formatCurrency(remaining)}</span>
+          </div>
+        </div>
+
+        {order.refunds.length > 0 && (
+          <ul className="flex flex-col gap-2 border-t pt-3 text-sm">
+            {order.refunds.map((refund) => (
+              <li key={refund.id} className="flex flex-col gap-0.5">
+                <div className="flex items-center justify-between">
+                  <span>{formatCurrency(refund.amount)}</span>
+                  <Badge variant={refund.type === 'EXTERNAL' ? 'outline' : 'secondary'}>{refund.type}</Badge>
+                </div>
+                {refund.reason && <span className="text-muted-foreground">{refund.reason}</span>}
+                {refund.gatewayReference && (
+                  <span className="text-xs text-muted-foreground">Ref. {refund.gatewayReference}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {canRefund ? (
+          <div className="flex flex-col gap-2 border-t pt-3">
+            <Label htmlFor="refund-amount">Monto (vacío = todo el saldo)</Label>
+            <Input
+              id="refund-amount"
+              inputMode="numeric"
+              placeholder={String(remaining)}
+              value={amount}
+              onChange={(event) => setAmount(event.target.value)}
+            />
+            <Label htmlFor="refund-reason">Motivo</Label>
+            <Input
+              id="refund-reason"
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder="Producto defectuoso, arrepentimiento…"
+            />
+            <Button
+              variant="destructive"
+              disabled={busy || amountInvalid}
+              onClick={() =>
+                runAction(() => adminApi.orders.refund(order.id, parsedAmount, reason), 'Reembolso realizado')
+              }
+            >
+              Reembolsar
+            </Button>
+            <Button
+              variant="outline"
+              // El motivo es obligatorio aquí: es lo único que explica un movimiento que este
+              // sistema no hizo y no puede verificar.
+              disabled={busy || amountInvalid || reason.trim() === ''}
+              onClick={() =>
+                runAction(
+                  () => adminApi.orders.recordExternalRefund(order.id, parsedAmount, reason),
+                  'Reembolso externo registrado',
+                )
+              }
+            >
+              Registrar reembolso hecho en la pasarela
+            </Button>
+            {amountInvalid && (
+              <p className="text-sm text-destructive">El monto debe ser mayor que cero y no pasar del saldo.</p>
+            )}
+          </div>
+        ) : (
+          <p className="border-t pt-3 text-sm text-muted-foreground">
+            {remaining <= 0 ? 'Esta orden ya se devolvió por completo.' : 'Solo se puede reembolsar una orden pagada.'}
+          </p>
+        )}
+      </CardContent>
+    </Card>
   )
 }
