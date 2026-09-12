@@ -24,4 +24,12 @@ public interface MercadoPagoService {
      * @return true si la orden quedó pagada en esta llamada.
      */
     boolean reconcile(Long orderId);
+
+    /**
+     * G4. Devuelve dinero de un pago de MercadoPago. Solo habla con la pasarela: cuánto se puede
+     * devolver y qué pasa con la orden lo decide {@code RefundService}.
+     *
+     * @return el id del refund en MercadoPago, para poder rastrearlo desde el historial de la orden.
+     */
+    String refund(Long orderId, java.math.BigDecimal amount);
 }

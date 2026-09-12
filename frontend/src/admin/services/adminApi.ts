@@ -271,6 +271,12 @@ export const adminApi = {
       client.put(`/orders/${id}/payment-status`, { status }),
     saveTracking: (id: number, trackingNumber: string): Promise<AdminOrderDetail> =>
       client.post(`/orders/${id}/tracking`, { trackingNumber }),
+    // G4. amount undefined = todo el saldo pendiente, que es el reembolso total.
+    refund: (id: number, amount: number | undefined, reason: string): Promise<AdminOrderDetail> =>
+      client.post(`/orders/${id}/refund`, { amount, reason }),
+    // El dinero ya se devolvió desde el panel de la pasarela; esto solo lo registra.
+    recordExternalRefund: (id: number, amount: number | undefined, reason: string): Promise<AdminOrderDetail> =>
+      client.post(`/orders/${id}/refund/external`, { amount, reason }),
   },
   paymentGateways: {
     list: (): Promise<PaymentGatewayConfigDto[]> => client.get('/payment-gateways'),

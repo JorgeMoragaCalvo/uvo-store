@@ -5,6 +5,7 @@ import cl.transbank.model.MallTransactionCreateDetails;
 import cl.transbank.webpay.webpayplus.WebpayPlus;
 import cl.transbank.webpay.webpayplus.responses.WebpayPlusMallTransactionCommitResponse;
 import cl.transbank.webpay.webpayplus.responses.WebpayPlusMallTransactionCreateResponse;
+import cl.transbank.webpay.webpayplus.responses.WebpayPlusMallTransactionRefundResponse;
 import cl.transbank.webpay.webpayplus.responses.WebpayPlusMallTransactionStatusResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -158,6 +159,37 @@ public class WebpayServiceImpl implements WebpayService {
         // mientras corre la conciliación, no se cobra ni se marca dos veces.
         orderStatusService.markPaid(order.getId(), token, java.math.BigDecimal.valueOf(detail.getAmount()));
         return orderRepository.findById(orderId).orElseThrow().getPaymentStatus() == PaymentStatus.PAID;
+    }
+
+    @Override
+    @Transactional
+    public String refund(Long orderId, java.math.BigDecimal amount) {
+        Long storeId = TenantContext.requireStoreId();
+        Order order = orderRepository.findById(orderId)
+                .filter(o -> o.getStore().getId().equals(storeId))
+                .orElseThrow(() -> new NoSuchElementException("Order " + orderId + " not found"));
+
+        String token = order.getPaymentId();
+        if (token == null || token.isBlank()) {
+            throw new BusinessException("La orden no tiene una transacción de Webpay que devolver");
+        }
+        String childCommerceCode = requireChildCommerceCode(storeId);
+
+        WebpayPlusMallTransactionRefundResponse response;
+        try {
+            // CUIDADO con el orden de los parámetros: aquí es (token, buyOrder, childCommerceCode),
+            // que NO es el de create(). Los dos últimos son String y el compilador no distingue uno
+            // de otro, así que invertirlos falla contra Transbank y no aquí. Ver WebpayRefundTest.
+            response = transaction().refund(token, order.getOrderNumber(), childCommerceCode,
+                    amount.setScale(0, java.math.RoundingMode.HALF_UP).doubleValue());
+        } catch (Exception e) {
+            throw new IllegalStateException("Error al reembolsar en Webpay: " + e.getMessage(), e);
+        }
+
+        if (response.getResponseCode() != 0) {
+            throw new BusinessException("Transbank rechazó el reembolso (código " + response.getResponseCode() + ")");
+        }
+        return response.getType();
     }
 
     private String requireChildCommerceCode(Long storeId) {

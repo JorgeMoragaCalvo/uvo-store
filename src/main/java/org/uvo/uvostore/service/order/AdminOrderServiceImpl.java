@@ -9,6 +9,7 @@ import org.uvo.uvostore.entity.order.enums.OrderStatus;
 import org.uvo.uvostore.entity.order.enums.PaymentStatus;
 import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.security.TenantContext;
+import org.uvo.uvostore.service.BusinessException;
 
 import java.time.Instant;
 import java.util.NoSuchElementException;
@@ -76,9 +77,10 @@ public class AdminOrderServiceImpl implements AdminOrderService {
     public AdminOrderDetailDto updateStatus(Long orderId, String status) {
         Order order = findOrThrow(orderId);
         OrderStatus newStatus = OrderStatus.valueOf(status.toUpperCase());
+        guardAgainstManualRefund(newStatus == OrderStatus.REFUNDED);
         order.setStatus(newStatus);
         appendHistory(order, "Estado actualizado manualmente");
-        if (newStatus == OrderStatus.CANCELLED || newStatus == OrderStatus.REFUNDED) {
+        if (newStatus == OrderStatus.CANCELLED) {
             releaseInventory(order);
         }
         orderRepository.save(order);
@@ -89,9 +91,23 @@ public class AdminOrderServiceImpl implements AdminOrderService {
     @Transactional
     public AdminOrderDetailDto updatePaymentStatus(Long orderId, String paymentStatus) {
         Order order = findOrThrow(orderId);
-        order.setPaymentStatus(PaymentStatus.valueOf(paymentStatus.toUpperCase()));
+        PaymentStatus newStatus = PaymentStatus.valueOf(paymentStatus.toUpperCase());
+        guardAgainstManualRefund(newStatus == PaymentStatus.REFUNDED);
+        order.setPaymentStatus(newStatus);
         orderRepository.save(order);
         return adminOrderQueryService.getById(orderId);
+    }
+
+    // G4: marcar una orden como devuelta dejó de ser un cambio de estado. Antes, estos dos endpoints
+    // la ponían en REFUNDED sin llamar a ninguna pasarela — la base decía "devuelto" y el dinero
+    // seguía cobrado. Ahora el único camino es RefundService, que primero mueve el dinero; y para lo
+    // que ya se devolvió por fuera está el registro de reembolso externo, que exige motivo.
+    private void guardAgainstManualRefund(boolean isRefund) {
+        if (isRefund) {
+            throw new BusinessException("Una orden no se marca como reembolsada a mano: usa el reembolso "
+                    + "(POST /api/admin/orders/{id}/refund) o, si ya devolviste el dinero desde la pasarela, "
+                    + "regístralo con POST /api/admin/orders/{id}/refund/external");
+        }
     }
 
     @Override

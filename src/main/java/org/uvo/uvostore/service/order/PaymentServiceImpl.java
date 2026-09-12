@@ -144,6 +144,36 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Override
     @Transactional
+    public String refund(Long orderId, java.math.BigDecimal amount) {
+        Long storeId = TenantContext.requireStoreId();
+        Order order = orderRepository.findById(orderId)
+                .filter(o -> o.getStore().getId().equals(storeId))
+                .orElseThrow(() -> new NoSuchElementException("Order " + orderId + " not found"));
+
+        String paymentIntentId = order.getStripePaymentIntentId();
+        if (paymentIntentId == null || paymentIntentId.isBlank()) {
+            throw new BusinessException("La orden no tiene un pago de Stripe que devolver");
+        }
+
+        com.stripe.model.Refund refund;
+        try {
+            refund = com.stripe.model.Refund.create(
+                    com.stripe.param.RefundCreateParams.builder()
+                            .setPaymentIntent(paymentIntentId)
+                            // Mismo unidad que setUnitAmount al cobrar: pesos enteros, porque CLP no
+                            // tiene unidad menor. Enviar centavos aquí devolvería 100 veces de más.
+                            .setAmount(amount.setScale(0, java.math.RoundingMode.HALF_UP).longValueExact())
+                            .build(),
+                    requestOptions());
+        } catch (StripeException e) {
+            throw new IllegalStateException("Error al reembolsar en Stripe: " + e.getMessage(), e);
+        }
+
+        return refund.getId();
+    }
+
+    @Override
+    @Transactional
     public void handleWebhook(String payload, String signatureHeader) {
         // Webhook.constructEvent only verifies the HMAC signature locally — it never calls the
         // Stripe API, so it needs no API key.

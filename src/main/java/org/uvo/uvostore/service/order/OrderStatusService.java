@@ -22,4 +22,17 @@ public interface OrderStatusService {
     // Ports handleCheckoutExpired()/handlePaymentCanceled() — both set the same
     // payment_status=failed/order_status=cancelled pair in the source app.
     Order markCancelled(Long orderId);
+
+    /**
+     * G4. Cierra una orden devuelta del todo: {@code REFUNDED} en pago y estado, y el inventario y el
+     * cupón de vuelta, igual que una cancelación. Idempotente como {@link #markPaid}: llamarlo dos
+     * veces no devuelve el stock dos veces.
+     *
+     * <p>Lo llama {@code RefundService} <b>después</b> de que la pasarela confirme el reembolso, no
+     * antes: marcar primero y pedir el dinero después dejaría la orden diciendo "devuelto" cuando la
+     * pasarela falle. Un reembolso parcial no pasa por aquí — esa orden sigue {@code PAID}.
+     *
+     * @param detail qué se devolvió y por qué, para el historial de la orden.
+     */
+    Order markRefunded(Long orderId, String detail);
 }

@@ -102,6 +102,27 @@ public class OrderStatusServiceImpl implements OrderStatusService {
         return orderRepository.save(order);
     }
 
+    @Override
+    @Transactional
+    public Order markRefunded(Long orderId, String detail) {
+        Order order = findOrThrow(orderId);
+        // Idempotente por el mismo motivo que markPaid: un segundo paso por aquí devolvería el stock
+        // y el cupón otra vez, regalando unidades que nadie compró.
+        if (order.getPaymentStatus() == PaymentStatus.REFUNDED) {
+            return order;
+        }
+
+        order.setPaymentStatus(PaymentStatus.REFUNDED);
+        order.setStatus(OrderStatus.REFUNDED);
+        appendHistory(order, OrderStatus.REFUNDED, detail);
+        // La compra entera se deshace, así que el inventario y el cupón vuelven — exactamente lo que
+        // hace markCancelled. Los dos están guardados internamente y no hacen nada si no hay qué
+        // devolver.
+        orderInventoryService.restoreOrderStock(order);
+        orderInventoryService.releaseCouponUsage(order);
+        return orderRepository.save(order);
+    }
+
     // Exact comparison, normalised to 2 decimals. No tolerance on purpose: CLP has no cents and
     // PaymentServiceImpl sends whole pesos, so any difference is a real discrepancy, not rounding.
     // A null amount means the caller couldn't determine one — treated as a mismatch rather than
