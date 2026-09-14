@@ -35,6 +35,7 @@ public class WebpayServiceImpl implements WebpayService {
     private final String apiKey;
     private final boolean production;
     private final String frontendUrl;
+    private final int gatewayReadTimeoutMs;
 
     public WebpayServiceImpl(
             OrderRepository orderRepository,
@@ -43,7 +44,9 @@ public class WebpayServiceImpl implements WebpayService {
             @Value("${webpay.parent-commerce-code}") String parentCommerceCode,
             @Value("${webpay.api-key}") String apiKey,
             @Value("${webpay.environment}") String environment,
-            @Value("${app.frontend-url}") String frontendUrl) {
+            @Value("${app.frontend-url}") String frontendUrl,
+            @Value("${app.gateway.read-timeout-ms:20000}") int gatewayReadTimeoutMs) {
+        this.gatewayReadTimeoutMs = gatewayReadTimeoutMs;
         this.orderRepository = orderRepository;
         this.configRepository = configRepository;
         this.orderStatusService = orderStatusService;
@@ -208,8 +211,17 @@ public class WebpayServiceImpl implements WebpayService {
     // justamente qué método de la pasarela se llama — reconcile() debe usar status() y nunca
     // commit(). Ver WebpayReconcileTest.
     protected WebpayPlus.MallTransaction transaction() {
-        return production
+        WebpayPlus.MallTransaction transaction = production
                 ? WebpayPlus.MallTransaction.buildForProduction(parentCommerceCode, apiKey)
                 : WebpayPlus.MallTransaction.buildForIntegration(parentCommerceCode, apiKey);
+        // R1. Transbank decide el flujo de checkout entero: si su API se queda esperando, se queda
+        // esperando el hilo que la llamó. Y este mismo objeto lo usa la conciliación programada, que
+        // corre en el pool del planificador y bloquearía al otro job.
+        //
+        // El SDK expone un único `timeout` que WebpayApiResource aplica a la vez como connect y como
+        // read (líneas 140-141), así que aquí no hay dos valores que poner: va el de lectura, que es
+        // el mayor de los dos y el que de verdad acota lo que podemos quedarnos esperando.
+        transaction.getOptions().setTimeout(gatewayReadTimeoutMs);
+        return transaction;
     }
 }

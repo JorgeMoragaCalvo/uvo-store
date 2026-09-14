@@ -44,7 +44,7 @@ class WebpayReconcileTest {
 
     private final WebpayServiceImpl service = new WebpayServiceImpl(
             orderRepository, configRepository, orderStatusService,
-            "597055555535", "api-key", "integration", "http://localhost:5173") {
+            "597055555535", "api-key", "integration", "http://localhost:5173", 20000) {
         @Override
         protected WebpayPlus.MallTransaction transaction() {
             return transbank;
