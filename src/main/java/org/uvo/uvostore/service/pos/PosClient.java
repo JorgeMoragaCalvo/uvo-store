@@ -1,10 +1,10 @@
 package org.uvo.uvostore.service.pos;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.uvo.uvostore.entity.pos.PosConnection;
 
-import java.time.Duration;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -15,9 +15,14 @@ public class PosClient {
 
     private static final Pattern TRAILING_API_VERSION = Pattern.compile("/api/v\\d+$");
 
-    private final RestClient restClient = RestClient.builder()
-            .requestFactory(clientRequestFactory())
-            .build();
+    private final RestClient restClient;
+
+    public PosClient(@Value("${app.pos.connect-timeout-ms:5000}") int connectTimeoutMs,
+                     @Value("${app.pos.read-timeout-ms:20000}") int readTimeoutMs) {
+        this.restClient = RestClient.builder()
+                .requestFactory(clientRequestFactory(connectTimeoutMs, readTimeoutMs))
+                .build();
+    }
 
     // G3: el cuerpo ya no se arma aquí. Todo lo que depende del contrato con la plataforma SII
     // —nombres de campo, importes, convención de idempotencia— vive en PosOrderPayloadMapper, que
@@ -54,10 +59,15 @@ public class PosClient {
         return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
     }
 
-    private static org.springframework.http.client.ClientHttpRequestFactory clientRequestFactory() {
+    // R1: los 120s de lectura que había aquí eran defendibles para un proceso de fondo, pero esto se
+    // llama desde el listener del checkout —antes en el propio hilo de la petición— y una por cada
+    // empresa a la que haya que notificar. Ahora sale por el posExecutor y con un tope configurable
+    // mucho más bajo: si la plataforma SII resulta ser legítimamente más lenta, se sube la propiedad.
+    private static org.springframework.http.client.ClientHttpRequestFactory clientRequestFactory(
+            int connectTimeoutMs, int readTimeoutMs) {
         var factory = new org.springframework.http.client.SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout((int) Duration.ofSeconds(10).toMillis());
-        factory.setReadTimeout((int) Duration.ofSeconds(120).toMillis());
+        factory.setConnectTimeout(connectTimeoutMs);
+        factory.setReadTimeout(readTimeoutMs);
         return factory;
     }
 }

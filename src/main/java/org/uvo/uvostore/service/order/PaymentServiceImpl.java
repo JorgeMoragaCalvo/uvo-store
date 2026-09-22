@@ -38,6 +38,8 @@ public class PaymentServiceImpl implements PaymentService {
     private final String fallbackWebhookSecret;
     private final String defaultCurrency;
     private final String frontendUrl;
+    private final int gatewayConnectTimeoutMs;
+    private final int gatewayReadTimeoutMs;
 
     public PaymentServiceImpl(
             OrderRepository orderRepository,
@@ -46,7 +48,11 @@ public class PaymentServiceImpl implements PaymentService {
             @Value("${stripe.secret-key}") String fallbackSecretKey,
             @Value("${stripe.webhook-secret}") String fallbackWebhookSecret,
             @Value("${stripe.default-currency}") String defaultCurrency,
-            @Value("${app.frontend-url}") String frontendUrl) {
+            @Value("${app.frontend-url}") String frontendUrl,
+            @Value("${app.gateway.connect-timeout-ms:5000}") int gatewayConnectTimeoutMs,
+            @Value("${app.gateway.read-timeout-ms:20000}") int gatewayReadTimeoutMs) {
+        this.gatewayConnectTimeoutMs = gatewayConnectTimeoutMs;
+        this.gatewayReadTimeoutMs = gatewayReadTimeoutMs;
         this.orderRepository = orderRepository;
         this.settingRepository = settingRepository;
         this.orderStatusService = orderStatusService;
@@ -223,7 +229,14 @@ public class PaymentServiceImpl implements PaymentService {
     // Package-visible for the same reason as buildSessionParams — lets tests assert the decrypted
     // API key without a real Stripe call.
     RequestOptions requestOptions() {
-        return RequestOptions.builder().setApiKey(encryptedSettingValue("stripe_secret_key", fallbackSecretKey)).build();
+        return RequestOptions.builder()
+                .setApiKey(encryptedSettingValue("stripe_secret_key", fallbackSecretKey))
+                // R1: los defaults del SDK son 30s de conexión y 80s de lectura, y esto se llama desde
+                // el hilo de la petición (checkout, reembolso) y desde el planificador (conciliación).
+                // 80s bloqueado es demasiado para algo que decide otro.
+                .setConnectTimeout(gatewayConnectTimeoutMs)
+                .setReadTimeout(gatewayReadTimeoutMs)
+                .build();
     }
 
     private String settingValue(String key, String fallback) {

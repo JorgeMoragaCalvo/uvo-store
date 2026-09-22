@@ -58,18 +58,38 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
     private final PaymentGatewayConfigRepository configRepository;
     private final OrderStatusService orderStatusService;
     private final String frontendUrl;
+    private final int gatewayConnectTimeoutMs;
+    private final int gatewayReadTimeoutMs;
 
     public MercadoPagoServiceImpl(
             OrderRepository orderRepository,
             PaymentGatewayConfigRepository configRepository,
             OrderStatusService orderStatusService,
             MercadoPagoWebhookSignature webhookSignature,
-            @Value("${app.frontend-url}") String frontendUrl) {
+            @Value("${app.frontend-url}") String frontendUrl,
+            @Value("${app.gateway.connect-timeout-ms:5000}") int gatewayConnectTimeoutMs,
+            @Value("${app.gateway.read-timeout-ms:20000}") int gatewayReadTimeoutMs) {
         this.orderRepository = orderRepository;
         this.configRepository = configRepository;
         this.orderStatusService = orderStatusService;
         this.webhookSignature = webhookSignature;
         this.frontendUrl = frontendUrl;
+        this.gatewayConnectTimeoutMs = gatewayConnectTimeoutMs;
+        this.gatewayReadTimeoutMs = gatewayReadTimeoutMs;
+    }
+
+    /**
+     * R1. Un solo sitio donde se arman las opciones de cada llamada, para que los timeouts no se
+     * queden fuera de una de ellas: sin esto hay cuatro {@code MPRequestOptions.builder()} repartidos
+     * y basta olvidar uno para que esa llamada siga heredando el default del SDK y pueda bloquear el
+     * hilo que la hizo — el de la petición en el checkout, o el del planificador en la conciliación.
+     */
+    private MPRequestOptions requestOptions(String accessToken) {
+        return MPRequestOptions.builder()
+                .accessToken(accessToken)
+                .connectionTimeout(gatewayConnectTimeoutMs)
+                .socketTimeout(gatewayReadTimeoutMs)
+                .build();
     }
 
     @Override
@@ -117,7 +137,7 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
 
         Preference preference;
         try {
-            preference = new PreferenceClient().create(request, MPRequestOptions.builder().accessToken(accessToken).build());
+            preference = new PreferenceClient().create(request, requestOptions(accessToken));
         } catch (com.mercadopago.exceptions.MPApiException e) {
             String detail = e.getApiResponse() != null ? e.getApiResponse().getContent() : e.getMessage();
             throw new IllegalStateException("Error al crear preferencia MercadoPago: " + detail, e);
@@ -155,7 +175,7 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
 
         Payment payment;
         try {
-            payment = new PaymentClient().get(paymentId, MPRequestOptions.builder().accessToken(accessToken).build());
+            payment = new PaymentClient().get(paymentId, requestOptions(accessToken));
         } catch (Exception e) {
             log.warn("Error consultando pago MercadoPago id={}: {}", paymentId, e.getMessage());
             return;
@@ -207,7 +227,7 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
                             .offset(0)
                             .filters(java.util.Map.of("external_reference", order.getOrderNumber()))
                             .build(),
-                    MPRequestOptions.builder().accessToken(accessToken).build());
+                    requestOptions(accessToken));
             payments = page.getResults() == null ? List.of() : page.getResults();
         } catch (Exception e) {
             throw new IllegalStateException("Error al buscar pagos en MercadoPago: " + e.getMessage(), e);
@@ -245,7 +265,7 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
         try {
             refund = new PaymentRefundClient().refund(Long.parseLong(paymentId),
                     amount.setScale(0, RoundingMode.HALF_UP),
-                    MPRequestOptions.builder().accessToken(requireAccessToken(storeId)).build());
+                    requestOptions(requireAccessToken(storeId)));
         } catch (NumberFormatException e) {
             throw new BusinessException("El identificador de pago de la orden no es de MercadoPago: " + paymentId);
         } catch (Exception e) {

@@ -43,7 +43,7 @@ class PaymentServiceImplTest {
 
         paymentService = new PaymentServiceImpl(
                 orderRepository, settingRepository, orderStatusService,
-                "sk_test_fallback", "whsec_fallback", "clp", "http://localhost:5173");
+                "sk_test_fallback", "whsec_fallback", "clp", "http://localhost:5173", 5000, 20000);
 
         Store store = Store.builder().id(1L).name("Tienda de prueba").slug("test").status(StoreStatus.ACTIVE).build();
         TenantContext.set(store);

@@ -56,11 +56,20 @@ public final class TenantContext {
      * siguiente se cobrara contra las credenciales de otra tienda.
      */
     public static void runWithin(Store store, Runnable action) {
+        // R1: restaura lo que hubiera en vez de limpiar a secas. Si esto se llama desde un hilo que ya
+        // traía tenant —una petición—, limpiar al salir se lo quitaría a lo que venga después dentro
+        // de esa misma petición, y ese fallo sería a distancia y muy difícil de ver. Desde un hilo de
+        // pool no hay nada que restaurar y el efecto es idéntico al de antes.
+        Store previous = CURRENT.get();
         set(store);
         try {
             action.run();
         } finally {
-            clear();
+            if (previous == null) {
+                clear();
+            } else {
+                set(previous);
+            }
         }
     }
 }

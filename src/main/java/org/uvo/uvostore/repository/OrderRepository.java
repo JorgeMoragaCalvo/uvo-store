@@ -11,6 +11,7 @@ import org.springframework.stereotype.Repository;
 import org.uvo.uvostore.entity.order.Order;
 import org.uvo.uvostore.entity.order.enums.OrderStatus;
 import org.uvo.uvostore.entity.order.enums.PaymentStatus;
+import org.uvo.uvostore.entity.tenant.Store;
 
 import java.time.Instant;
 import java.util.List;
@@ -35,6 +36,16 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select o from Order o where o.id = :id")
     Optional<Order> findByIdForUpdate(@Param("id") Long id);
+
+    /**
+     * R1. Solo la tienda de una orden, para el trabajo que corre en un hilo de pool. {@code Order.store}
+     * es LAZY, así que leerlo desde {@code findById} fuera de transacción revienta; y abrir una
+     * transacción alrededor mantendría una conexión de Hikari tomada durante toda la llamada de red que
+     * viene después, que es justo la forma de agotar el pool que esto quiere evitar. Una consulta y se
+     * cierra.
+     */
+    @Query("select o.store from Order o where o.id = :id")
+    Optional<Store> findStoreByOrderId(@Param("id") Long id);
 
     List<Order> findByStatus(OrderStatus status); // Order::byStatus()
     List<Order> findByPaymentStatus(PaymentStatus paymentStatus); // Order::byPaymentStatus()

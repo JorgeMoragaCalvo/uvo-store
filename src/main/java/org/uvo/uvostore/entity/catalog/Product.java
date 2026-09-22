@@ -13,7 +13,6 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
-import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -35,7 +34,6 @@ import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 import org.uvo.uvostore.entity.catalog.enums.ProductType;
 import org.uvo.uvostore.entity.order.OrderItem;
-import org.uvo.uvostore.entity.pos.ProductSyncMapping;
 import org.uvo.uvostore.entity.tenant.Store;
 
 @Entity
