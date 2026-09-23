@@ -5,7 +5,7 @@ import java.nio.charset.StandardCharsets;
 // Startup validation for the three configuration secrets of the platform (jwt.secret,
 // app.encryption-key, app.platform-api-key). Until C4 all three shipped with working defaults
 // committed in application.properties, so forgetting an env var in a deployment left the app
-// running happily on publicly-known secrets — forgeable JWTs, decryptable gateway credentials and
+// running happily on publicly known secrets — forgeable JWTs, decryptable gateway credentials and
 // an open /api/platform/**. The defaults are gone; these helpers turn "missing" and "still the
 // committed value" into a startup failure whose message names the env var and how to replace it.
 //

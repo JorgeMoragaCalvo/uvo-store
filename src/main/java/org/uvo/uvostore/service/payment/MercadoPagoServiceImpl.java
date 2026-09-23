@@ -22,7 +22,6 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.uvo.uvostore.entity.order.Order;
-import org.uvo.uvostore.entity.order.OrderItem;
 import org.uvo.uvostore.entity.order.enums.PaymentStatus;
 import org.uvo.uvostore.entity.payment.PaymentGatewayConfig;
 import org.uvo.uvostore.entity.payment.enums.PaymentGatewayType;
@@ -32,7 +31,6 @@ import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.order.OrderStatusService;
 
 import java.math.RoundingMode;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.NoSuchElementException;
 
@@ -107,33 +105,7 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
 
         String accessToken = requireAccessToken(storeId);
 
-        List<PreferenceItemRequest> items = new ArrayList<>();
-        for (OrderItem item : order.getItems()) {
-            items.add(PreferenceItemRequest.builder()
-                    .title(item.getProductName())
-                    .quantity(item.getQuantity())
-                    .unitPrice(item.getPrice().setScale(0, RoundingMode.HALF_UP))
-                    .currencyId("CLP")
-                    .build());
-        }
-        if (order.getShippingCost() != null && order.getShippingCost().signum() > 0) {
-            items.add(lineItem("Envío", order.getShippingCost()));
-        }
-        if (order.getTaxAmount() != null && order.getTaxAmount().signum() > 0) {
-            items.add(lineItem("IVA", order.getTaxAmount()));
-        }
-
-        PreferenceRequest request = PreferenceRequest.builder()
-                .items(items)
-                .externalReference(order.getOrderNumber())
-                .notificationUrl(notificationUrl)
-                .backUrls(PreferenceBackUrlsRequest.builder()
-                        .success(successUrl != null ? successUrl : frontendUrl + "/order-success?order=" + order.getOrderNumber())
-                        .failure(failureUrl != null ? failureUrl : frontendUrl + "/checkout?error=mercadopago")
-                        .pending(pendingUrl != null ? pendingUrl : frontendUrl + "/checkout?pending=1")
-                        .build())
-                .autoReturn("approved")
-                .build();
+        PreferenceRequest request = buildPreferenceRequest(order, successUrl, failureUrl, pendingUrl, notificationUrl);
 
         Preference preference;
         try {
@@ -149,6 +121,47 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
         orderRepository.save(order);
 
         return new MercadoPagoPreferenceResult(preference.getId(), preference.getInitPoint());
+    }
+
+    // Package-visible por el mismo motivo que PaymentServiceImpl.buildSessionParams: poder comprobar
+    // el importe que se va a cobrar sin llamar a la API de MercadoPago. Ver MercadoPagoPreferenceTest.
+    //
+    // F02. UNA sola línea por order.getTotal(), no el desglose de ítems + envío + IVA que había aquí.
+    // Ese desglose cobraba otra cosa: nunca restaba discountAmount, y con prices_include_tax=true (lo
+    // que tiene la tienda demo) sumaba una línea "IVA" sobre precios que ya lo incluían, así que el
+    // impuesto se cobraba dos veces. Con el escenario del test de Stripe —subtotal 48.970 con IVA
+    // incluido y un cupón del 10 %, total 44.854,87— esto armaba 56.789: 11.934 pesos de más.
+    //
+    // Y lo que hace ese descuadre difícil de ver es que no falla como un error de cobro: el dinero se
+    // mueve, markPaid compara exacto contra el total (OrderStatusServiceImpl.amountMatches) y la orden
+    // se queda en PENDING, sin stock descontado y excluida de la conciliación para siempre
+    // (OrderRepository.findPendingPaymentsToReconcile salta las notas de descuadre). Es decir: el
+    // cliente paga de más y su pedido no avanza.
+    //
+    // Era exactamente el mismo fallo que ya se corrigió en Stripe (PaymentServiceImpl:93-97);
+    // MercadoPago era la única de las tres pasarelas que seguía reconstruyendo el importe — Webpay
+    // cobra order.getTotal() desde siempre (WebpayServiceImpl:75).
+    PreferenceRequest buildPreferenceRequest(Order order, String successUrl, String failureUrl,
+                                             String pendingUrl, String notificationUrl) {
+        PreferenceItemRequest totalItem = PreferenceItemRequest.builder()
+                .title("Pedido " + order.getOrderNumber())
+                .description(order.getItems().size() + " producto(s)")
+                .quantity(1)
+                .unitPrice(order.getTotal().setScale(0, RoundingMode.HALF_UP))
+                .currencyId("CLP")
+                .build();
+
+        return PreferenceRequest.builder()
+                .items(List.of(totalItem))
+                .externalReference(order.getOrderNumber())
+                .notificationUrl(notificationUrl)
+                .backUrls(PreferenceBackUrlsRequest.builder()
+                        .success(successUrl != null ? successUrl : frontendUrl + "/order-success?order=" + order.getOrderNumber())
+                        .failure(failureUrl != null ? failureUrl : frontendUrl + "/checkout?error=mercadopago")
+                        .pending(pendingUrl != null ? pendingUrl : frontendUrl + "/checkout?pending=1")
+                        .build())
+                .autoReturn("approved")
+                .build();
     }
 
     @Override
@@ -273,15 +286,6 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
         }
 
         return String.valueOf(refund.getId());
-    }
-
-    private PreferenceItemRequest lineItem(String title, java.math.BigDecimal amount) {
-        return PreferenceItemRequest.builder()
-                .title(title)
-                .quantity(1)
-                .unitPrice(amount.setScale(0, RoundingMode.HALF_UP))
-                .currencyId("CLP")
-                .build();
     }
 
     // Null when the gateway isn't enabled or has no secret — the caller turns that into the same

@@ -16,17 +16,17 @@ import java.util.Set;
 // A2: replaces `allowedOriginPatterns(["*"]) + allowCredentials(true)` over /**, which told the
 // browser that ANY origin may make credentialed cross-origin calls to the whole API. The direct
 // impact was limited (the JWT travels in the Authorization header, not a cookie, so there's no
-// ambient authority for another origin to ride on), but it removed CORS as a defence layer
+// ambient authority for another origin to ride on), but it removed CORS as a defense layer
 // entirely.
 //
 // Now an origin is allowed only if its hostname resolves to a real store — the same custom-domain
 // then subdomain-slug lookup TenantResolutionFilter does, shared via StoreHostResolver. A
 // preflight is answered before the security filter chain runs, so TenantContext isn't available
-// here and the Origin header has to be resolved directly.
+// here, and the Origin header has to be resolved directly.
 //
 // Returning null (no configuration) makes Spring omit the Access-Control-Allow-* headers, and the
 // browser blocks the call. Same-origin requests carry no Origin header and never reach any of
-// this.
+// these.
 @Component
 public class TenantCorsConfigurationSource implements CorsConfigurationSource {
 
