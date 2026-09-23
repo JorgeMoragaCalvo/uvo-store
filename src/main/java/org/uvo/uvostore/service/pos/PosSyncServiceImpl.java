@@ -11,13 +11,11 @@ import org.uvo.uvostore.entity.pos.enums.SyncDirection;
 import org.uvo.uvostore.entity.pos.enums.SyncStatus;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.CategoryRepository;
-import org.uvo.uvostore.repository.PosConnectionRepository;
 import org.uvo.uvostore.repository.ProductRepository;
 import org.uvo.uvostore.repository.ProductSyncMappingRepository;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.NoSuchElementException;
 
 @Service
 public class PosSyncServiceImpl implements PosSyncService {
@@ -25,24 +23,25 @@ public class PosSyncServiceImpl implements PosSyncService {
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
     private final ProductSyncMappingRepository mappingRepository;
-    private final PosConnectionRepository posConnectionRepository;
 
     public PosSyncServiceImpl(ProductRepository productRepository, CategoryRepository categoryRepository,
-                               ProductSyncMappingRepository mappingRepository, PosConnectionRepository posConnectionRepository) {
+                               ProductSyncMappingRepository mappingRepository) {
         this.productRepository = productRepository;
         this.categoryRepository = categoryRepository;
         this.mappingRepository = mappingRepository;
-        this.posConnectionRepository = posConnectionRepository;
     }
 
     @Override
     @Transactional
-    public SyncProductResult syncProduct(SyncProductCommand command) {
-        // The request is already authenticated by PosApiKeyAuthFilter against this exact
-        // companyId, so this connection is guaranteed to exist and be active — resolve its
-        // store here (not via TenantContext/subdomain, since POS calls don't come through one).
-        PosConnection connection = posConnectionRepository.findByCompanyId(command.companyId())
-                .orElseThrow(() -> new NoSuchElementException("PosConnection " + command.companyId() + " not found"));
+    public SyncProductResult syncProduct(PosConnection connection, SyncProductCommand command) {
+        // F01. La conexión llega ya autenticada por PosApiKeyAuthFilter y es la ÚNICA fuente de la
+        // tienda (no TenantContext/subdominio: las llamadas del POS no vienen por uno).
+        //
+        // Antes esto la buscaba por el companyId del CUERPO, con un comentario que afirmaba que el
+        // filtro lo había autenticado. No era cierto: el filtro autentica el de la CABECERA. Como
+        // cada comercio se configura sus propias credenciales POS, bastaba firmar con las propias y
+        // poner el companyId de otra tienda en el JSON para crear productos activos en su catálogo.
+        Long companyId = connection.getCompanyId();
         Store store = connection.getStore();
 
         Category category = null;
@@ -50,7 +49,7 @@ public class PosSyncServiceImpl implements PosSyncService {
             category = getOrCreateCategory(store, command.categoryName());
         }
 
-        var existingMapping = mappingRepository.findByExternalIdAndCompanyId(command.externalId(), command.companyId());
+        var existingMapping = mappingRepository.findByExternalIdAndCompanyId(command.externalId(), companyId);
 
         if (existingMapping.isPresent()) {
             ProductSyncMapping mapping = existingMapping.get();
@@ -95,7 +94,7 @@ public class PosSyncServiceImpl implements PosSyncService {
         mapping.setProduct(saved);
         mapping.setExternalId(command.externalId());
         mapping.setExternalSku(command.sku());
-        mapping.setCompanyId(command.companyId());
+        mapping.setCompanyId(companyId);
         mapping.setWarehouseId(command.warehouseId());
         mapping.setSyncStatus(SyncStatus.ACTIVE);
         mapping.setSyncDirection(SyncDirection.FROM_POS);

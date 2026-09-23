@@ -196,6 +196,34 @@ class PosWebhookAuthTest extends IntegrationTestSupport {
                 .andExpect(jsonPath("$.success").value(true));
     }
 
+    @Test
+    @DisplayName("Un companyId en el cuerpo distinto del autenticado se rechaza")
+    void aBodyCompanyIdThatDiffersFromTheAuthenticatedOneIsRejected() throws Exception {
+        PosConnection connection = createConnection(true);
+
+        // F01. La firma es correcta y la cabecera también: lo único mal es el companyId del cuerpo.
+        // Se rechaza en vez de ignorarlo en silencio — si UvoPOS empezara a mandar otro id, un 403 se
+        // ve y un valor descartado no. El escenario completo (dos tiendas) vive en
+        // multitenancy/PosCrossTenantWriteTest.
+        String payload = stockPayload(connection.getCompanyId() + 1);
+        String timestamp = String.valueOf(System.currentTimeMillis() / 1000);
+
+        mockMvc.perform(post("/api/sync/product")
+                        .header("Authorization", "Bearer " + API_KEY)
+                        .header("X-Company-ID", String.valueOf(connection.getCompanyId()))
+                        .contentType("application/json")
+                        .content(syncPayload(connection.getCompanyId() + 1)))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/webhooks/pos/stock-updated")
+                        .header("X-Signature", hmac(payload + timestamp, WEBHOOK_SECRET))
+                        .header("X-Company-ID", String.valueOf(connection.getCompanyId()))
+                        .header("X-Timestamp", timestamp)
+                        .contentType("application/json")
+                        .content(payload))
+                .andExpect(status().isForbidden());
+    }
+
     // --- fixtures ----------------------------------------------------------------------------------
 
     /**
