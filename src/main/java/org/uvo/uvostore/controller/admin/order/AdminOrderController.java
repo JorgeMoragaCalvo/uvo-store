@@ -115,7 +115,7 @@ public class AdminOrderController {
         return adminOrderService.saveTracking(id, request.trackingNumber());
     }
 
-    // G4. Permiso propio y no 'orders.manage': ése lo tiene cualquiera que despache pedidos, y esto
+    // G4. Permiso propio y no 'orders.manage': ese lo tiene cualquiera que despache pedidos, y esto
     // mueve dinero de vuelta. V19 se lo concede a quien ya tenga orders.manage, así que nadie pierde
     // acceso el día del despliegue — pero a partir de ahí se puede quitar por separado.
     @PostMapping("/{id}/refund")

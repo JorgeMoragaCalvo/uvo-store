@@ -60,7 +60,7 @@ public class AsyncConfig {
         executor.setThreadNamePrefix(namePrefix);
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
         // Un redespliegue no debe tirar a la basura una notificación ya aceptada. El margen va por
-        // debajo de spring.lifecycle.timeout-per-shutdown-phase (20s) para que el apagado ordenado
+        // debajo de spring.lifecycle.timeout-per-shutdown-phase (20 s) para que el apagado ordenado
         // siga siendo ordenado y no lo corte la plataforma por tardón.
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(15);

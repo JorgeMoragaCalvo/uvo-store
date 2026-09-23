@@ -57,14 +57,14 @@ public class GlobalExceptionHandler {
                 .body(ApiError.of(HttpStatus.FORBIDDEN.value(), "Forbidden", ex.getMessage()));
     }
 
-    // M1: IllegalStateException used to be mapped here too, which meant a wrapped Stripe error or a
+    // M1: IllegalStateException used to be mapped here too, which meant a wrapped Stripe error or
     // failed decryption reached the customer as a 400 carrying the raw message — and never reached
     // Sentry, because only the generic handler captures. The ~19 business cases now throw
-    // BusinessException; whatever still throws IllegalStateException is a bug, and falls through to
-    // the 500 handler where it belongs.
+    // BusinessException; whatever still throws IllegalStateException is a bug and falls through to
+    // the 500 handlers where it belongs.
     //
     // IllegalArgumentException stays: every use of it in this codebase is genuine input validation
-    // (UploadedImageValidator, the gateway config checks) and none of them wraps a cause.
+    // (UploadedImageValidator, the gateway config checks), and none of them wraps a cause.
     @ExceptionHandler({BusinessException.class, IllegalArgumentException.class})
     public ResponseEntity<ApiError> handleBadRequest(RuntimeException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)

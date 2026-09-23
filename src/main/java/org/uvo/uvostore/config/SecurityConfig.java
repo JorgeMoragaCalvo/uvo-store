@@ -4,6 +4,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -31,7 +32,7 @@ public class SecurityConfig {
             // A3: "/health" used to be here, but nothing ever served that path — actuator's real
             // endpoint is /actuator/health, and that one wasn't public. A liveness/readiness probe
             // got a 404 on one and a 401 on the other. Exposure is pinned to `health` alone in
-            // application.properties, so opening this doesn't open the rest of actuator.
+            // application.properties, so opening this doesn't open the rest of the actuator.
             "/actuator/health",
             "/v3/api-docs/**",
             "/swagger-ui/**",
@@ -54,11 +55,11 @@ public class SecurityConfig {
             PosApiKeyAuthFilter posApiKeyAuthFilter,
             PlatformApiKeyAuthFilter platformApiKeyAuthFilter) throws Exception {
         http
-                .csrf(csrf -> csrf.disable())
+                .csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .httpBasic(httpBasic -> httpBasic.disable())
-                .formLogin(formLogin -> formLogin.disable())
+                .httpBasic(AbstractHttpConfigurer::disable)
+                .formLogin(AbstractHttpConfigurer::disable)
                 // A8: explicit rather than relying on Spring Security's default, because it's the
                 // header that stops a browser from second-guessing the content type of anything
                 // under /uploads/** — public files served from this same origin — and rendering it
