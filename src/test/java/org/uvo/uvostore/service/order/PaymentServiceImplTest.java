@@ -1,5 +1,6 @@
 package org.uvo.uvostore.service.order;
 
+import com.stripe.model.PaymentIntent;
 import com.stripe.net.RequestOptions;
 import com.stripe.param.checkout.SessionCreateParams;
 import org.junit.jupiter.api.AfterEach;
@@ -143,5 +144,38 @@ class PaymentServiceImplTest {
         RequestOptions options = paymentService.requestOptions();
 
         assertEquals("sk_test_fallback", options.getApiKey());
+    }
+
+    @Test
+    void resolvesTheOrderOfAPaymentIntentFromItsMetadata() {
+        // F03. payment_intent.succeeded era código muerto: buscaba por stripePaymentIntentId, columna
+        // que solo se escribe DENTRO de markPaid, y luego filtraba por PENDING — la intersección es
+        // vacía, así que nunca pudo confirmar un pago. Si checkout.session.completed se perdía, no
+        // había segundo camino. La metadata del PaymentIntent sí lleva el order_id desde el principio
+        // (buildSessionParams), y por ahí sí se llega a una orden pendiente.
+        Order pending = orderWith(new BigDecimal("10000.00"), BigDecimal.ZERO,
+                new BigDecimal("1900.00"), new BigDecimal("11900.00"));
+        when(orderRepository.findById(1L)).thenReturn(java.util.Optional.of(pending));
+
+        PaymentIntent intent = new PaymentIntent();
+        intent.setId("pi_sin_columna");
+        intent.setMetadata(java.util.Map.of("order_id", "1"));
+
+        assertEquals(java.util.Optional.of(pending), paymentService.orderFromIntent(intent));
+    }
+
+    @Test
+    void fallsBackToTheStoredPaymentIntentColumnWhenThereIsNoUsableMetadata() {
+        // Órdenes creadas antes de que la metadata existiera, o un order_id que no es un número: se
+        // sigue pudiendo resolver por la columna, que es como funcionaba hasta ahora.
+        Order paid = orderWith(new BigDecimal("10000.00"), BigDecimal.ZERO,
+                new BigDecimal("1900.00"), new BigDecimal("11900.00"));
+        when(orderRepository.findByStripePaymentIntentId("pi_en_columna")).thenReturn(java.util.Optional.of(paid));
+
+        PaymentIntent intent = new PaymentIntent();
+        intent.setId("pi_en_columna");
+        intent.setMetadata(java.util.Map.of("order_id", "no-es-un-numero"));
+
+        assertEquals(java.util.Optional.of(paid), paymentService.orderFromIntent(intent));
     }
 }

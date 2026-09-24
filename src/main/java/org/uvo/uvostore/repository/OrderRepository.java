@@ -27,11 +27,17 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
     Optional<Order> findByPaymentId(String paymentId); // Webpay token / MercadoPago reference
 
     /**
-     * G4. La orden bloqueada hasta el fin de la transacción. La usa el reembolso y solo el reembolso:
-     * lo devuelto se valida sumando {@code order_refunds} contra el total, y dos reembolsos parciales
-     * simultáneos que leyeran la misma suma podrían autorizar entre los dos más dinero del cobrado.
-     * Es el mismo razonamiento de C5 con el stock, resuelto aquí con un cerrojo porque lo que hay que
-     * proteger es una suma sobre otra tabla, no un UPDATE atómico sobre una columna.
+     * G4. La orden bloqueada hasta el fin de la transacción.
+     *
+     * <p>Nació para el reembolso: lo devuelto se valida sumando {@code order_refunds} contra el total,
+     * y dos reembolsos parciales simultáneos que leyeran la misma suma podrían autorizar entre los dos
+     * más dinero del cobrado. Es el mismo razonamiento de C5 con el stock, resuelto aquí con un
+     * cerrojo porque lo que hay que proteger es una suma sobre otra tabla, no un UPDATE atómico sobre
+     * una columna.
+     *
+     * <p>F03: ahora también la usa {@code OrderStatusServiceImpl} en todo lo que cambia
+     * {@code paymentStatus}, por el mismo motivo de fondo — la decisión se toma sobre un estado leído
+     * antes de escribir, y sin cerrojo dos notificaciones simultáneas leen las dos el estado viejo.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select o from Order o where o.id = :id")

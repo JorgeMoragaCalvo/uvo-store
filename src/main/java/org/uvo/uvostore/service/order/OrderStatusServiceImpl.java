@@ -44,7 +44,10 @@ public class OrderStatusServiceImpl implements OrderStatusService {
     @Override
     @Transactional
     public Order markPaid(Long orderId, String paymentReference, BigDecimal amountPaid) {
-        Order order = findOrThrow(orderId);
+        // F03: con cerrojo, como los otros cambios de paymentStatus. Sin él, dos notificaciones
+        // simultáneas del mismo pago leen las dos PENDING, las dos marcan pagado y las dos publican
+        // PaymentConfirmedEvent.
+        Order order = findForUpdateOrThrow(orderId);
         if (order.getPaymentStatus() != PaymentStatus.PENDING) {
             return order;
         }
@@ -79,7 +82,10 @@ public class OrderStatusServiceImpl implements OrderStatusService {
     @Override
     @Transactional
     public Order markPaymentFailed(Long orderId) {
-        Order order = findOrThrow(orderId);
+        Order order = findForUpdateOrThrow(orderId);
+        if (!canFail(order, "Pago fallido")) {
+            return order;
+        }
         order.setPaymentStatus(PaymentStatus.FAILED);
         appendHistory(order, order.getStatus(), "Pago fallido");
         // C5: the coupon use was claimed at checkout, before the payment. Without giving it back, a
@@ -91,7 +97,10 @@ public class OrderStatusServiceImpl implements OrderStatusService {
     @Override
     @Transactional
     public Order markCancelled(Long orderId) {
-        Order order = findOrThrow(orderId);
+        Order order = findForUpdateOrThrow(orderId);
+        if (!canFail(order, "Sesión de pago expirada o cancelada")) {
+            return order;
+        }
         order.setPaymentStatus(PaymentStatus.FAILED);
         order.setStatus(OrderStatus.CANCELLED);
         appendHistory(order, OrderStatus.CANCELLED, "Sesión de pago expirada o cancelada");
@@ -105,7 +114,9 @@ public class OrderStatusServiceImpl implements OrderStatusService {
     @Override
     @Transactional
     public Order markRefunded(Long orderId, String detail) {
-        Order order = findOrThrow(orderId);
+        // El llamador (RefundService) ya toma este mismo cerrojo antes de mover el dinero; volver a
+        // pedirlo dentro de su transacción no cuesta nada y deja el método a salvo por sí mismo.
+        Order order = findForUpdateOrThrow(orderId);
         // Idempotente por el mismo motivo que markPaid: un segundo paso por aquí devolvería el stock
         // y el cupón otra vez, regalando unidades que nadie compró.
         if (order.getPaymentStatus() == PaymentStatus.REFUNDED) {
@@ -135,6 +146,41 @@ public class OrderStatusServiceImpl implements OrderStatusService {
                 .compareTo(order.getTotal().setScale(2, RoundingMode.HALF_UP)) == 0;
     }
 
+    /**
+     * F03. Un pago confirmado no se deshace por un evento que llega tarde. A {@code FAILED} solo se
+     * llega desde {@code PENDING}: {@code PAID} y {@code REFUNDED} no retroceden.
+     *
+     * <p><b>Por qué vive aquí y no en cada pasarela.</b> Webpay
+     * ({@code WebpayServiceImpl}) y MercadoPago ({@code MercadoPagoServiceImpl}) ya comprobaban
+     * {@code PENDING} antes de llamar; Stripe no. La invariante estaba replicada en tres sitios y
+     * faltaba en uno — que es como se pierde siempre. Los guardas de esas dos pasarelas se quedan:
+     * ahora son redundantes en vez de ser lo único que hay.
+     *
+     * <p><b>El caso real, que no es una carrera exótica.</b> Los handlers de
+     * {@code payment_intent.payment_failed} y {@code payment_intent.canceled} buscan la orden por
+     * {@code stripePaymentIntentId}, y ese campo <b>solo se escribe en markPaid</b> (unas líneas más
+     * arriba). Sobre una orden pendiente no encuentran nada; la única orden que pueden encontrar es
+     * una ya pagada. Con una tarjeta rechazada y un reintento exitoso en la misma sesión, Stripe
+     * genera el evento de fallo <i>antes</i> que el de éxito y reintenta su entrega hasta tres días:
+     * llegaba con la orden ya PAID y la tumbaba, liberando el cupón, con el dinero cobrado y sin que
+     * la conciliación la volviera a mirar (solo mira PENDING).
+     *
+     * <p>No se calla cuando rechaza: una orden que ignora un webhook tiene que poder verse, por el
+     * mismo motivo que un descuadre de monto — ver {@code reportAmountMismatch}.
+     */
+    private boolean canFail(Order order, String attempted) {
+        if (order.getPaymentStatus() == PaymentStatus.PENDING) {
+            return true;
+        }
+        String detail = "Evento de pago ignorado (" + attempted + "): la orden está en "
+                + order.getPaymentStatus() + " y no vuelve atrás.";
+        appendHistory(order, order.getStatus(), detail);
+        orderRepository.save(order);
+        log.warn("{} order_id={} order_number={}", detail, order.getId(), order.getOrderNumber());
+        Sentry.captureMessage(detail + " [order_number=" + order.getOrderNumber() + "]");
+        return false;
+    }
+
     private void reportAmountMismatch(Order order, BigDecimal amountPaid) {
         String detail = AMOUNT_MISMATCH_PREFIX + ": se recibieron " + (amountPaid == null ? "un importe desconocido" : amountPaid)
                 + " y la orden es de " + order.getTotal() + ". La orden queda pendiente para revisión manual.";
@@ -153,8 +199,13 @@ public class OrderStatusServiceImpl implements OrderStatusService {
         order.getStatusHistory().add(history);
     }
 
-    private Order findOrThrow(Long orderId) {
-        return orderRepository.findById(orderId)
+    /**
+     * F03. Para lo que cambia {@code paymentStatus}, leer y escribir sin cerrojo no basta: dos
+     * webhooks simultáneos leerían los dos el mismo estado y el candado de {@code canFail} no vería
+     * nada raro. Con el bloqueo, el segundo espera y encuentra el estado que dejó el primero.
+     */
+    private Order findForUpdateOrThrow(Long orderId) {
+        return orderRepository.findByIdForUpdate(orderId)
                 .orElseThrow(() -> new NoSuchElementException("Order " + orderId + " not found"));
     }
 }

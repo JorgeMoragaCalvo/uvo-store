@@ -11,6 +11,8 @@ import com.stripe.model.checkout.Session;
 import com.stripe.net.RequestOptions;
 import com.stripe.net.Webhook;
 import com.stripe.param.checkout.SessionCreateParams;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,6 +32,8 @@ import java.util.Optional;
 // order/customer details passed as PaymentIntent metadata instead.
 @Service
 public class PaymentServiceImpl implements PaymentService {
+
+    private static final Logger log = LoggerFactory.getLogger(PaymentServiceImpl.class);
 
     private final OrderRepository orderRepository;
     private final SettingRepository settingRepository;
@@ -201,11 +205,23 @@ public class PaymentServiceImpl implements PaymentService {
             case "checkout.session.expired" -> deserialize(event, Session.class).ifPresent(session ->
                     orderRepository.findByStripeCheckoutSessionId(session.getId())
                             .ifPresent(order -> orderStatusService.markCancelled(order.getId())));
+            // F03: esto era código muerto. Buscaba por stripePaymentIntentId, columna que SOLO se
+            // escribe dentro de markPaid, y encima filtraba por PENDING: la intersección es vacía, así
+            // que nunca pudo confirmar un pago. Era una red de seguridad que no existía — si
+            // checkout.session.completed se perdía, no había segundo camino. Ahora resuelve por el
+            // order_id que ya viaja en la metadata del PaymentIntent (ver buildSessionParams) y cae
+            // hacia atrás a la columna.
             case "payment_intent.succeeded" -> deserialize(event, PaymentIntent.class).ifPresent(intent ->
-                    orderRepository.findByStripePaymentIntentId(intent.getId())
+                    orderFromIntent(intent)
                             .filter(order -> order.getPaymentStatus() == PaymentStatus.PENDING)
                             .ifPresent(order -> orderStatusService.markPaid(order.getId(), intent.getId(),
                                     stripeAmount(intent.getAmount()))));
+            // Estos dos se quedan buscando SOLO por la columna, y es deliberado. Resolverlos por la
+            // metadata los haría alcanzar también órdenes pendientes, y entonces un rechazo seguido de
+            // un reintento exitoso (Stripe reutiliza el PaymentIntent) dejaría la orden en FAILED y
+            // markPaid ya no la tocaría: dinero cobrado y pedido muerto. Eso exige antes decidir si
+            // FAILED es terminal —hoy lo es— y no es este arreglo. Mientras tanto, lo que cubre el
+            // fallo real de una orden pendiente es el commit de Webpay/MercadoPago y la conciliación.
             case "payment_intent.payment_failed" -> deserialize(event, PaymentIntent.class).ifPresent(intent ->
                     orderRepository.findByStripePaymentIntentId(intent.getId())
                             .ifPresent(order -> orderStatusService.markPaymentFailed(order.getId())));
@@ -216,6 +232,28 @@ public class PaymentServiceImpl implements PaymentService {
                 // No-op — matches PaymentController::webhook()'s switch, which ignores unhandled types.
             }
         }
+    }
+
+    // F03. La orden de un PaymentIntent, por la metadata primero y por la columna después. El orden
+    // importa: stripePaymentIntentId solo existe si la orden YA se pagó, así que por sí sola nunca
+    // encuentra una orden pendiente, que es justo lo que hay que confirmar aquí.
+    // Package-visible por el mismo motivo que buildSessionParams: poder comprobar la resolución sin
+    // fabricar un evento firmado de Stripe. Ver PaymentServiceImplTest.
+    Optional<Order> orderFromIntent(PaymentIntent intent) {
+        String orderId = intent.getMetadata() == null ? null : intent.getMetadata().get("order_id");
+        if (orderId != null) {
+            try {
+                Optional<Order> byMetadata = orderRepository.findById(Long.valueOf(orderId));
+                if (byMetadata.isPresent()) {
+                    return byMetadata;
+                }
+            } catch (NumberFormatException e) {
+                // Metadata la escribe esta misma clase, pero viene de vuelta por la red: si no es un
+                // número, se ignora y queda la búsqueda por la columna.
+                log.warn("order_id no numérico en la metadata del PaymentIntent {}: {}", intent.getId(), orderId);
+            }
+        }
+        return orderRepository.findByStripePaymentIntentId(intent.getId());
     }
 
     @SuppressWarnings("unchecked")
