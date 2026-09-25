@@ -16,12 +16,12 @@ import org.uvo.uvostore.repository.ShippingMethodRepository;
 import org.uvo.uvostore.repository.ShippingRateRepository;
 import org.uvo.uvostore.repository.ShippingZoneRepository;
 import org.uvo.uvostore.security.TenantContext;
+import org.uvo.uvostore.service.Money;
 import org.uvo.uvostore.service.order.CartLineCommand;
 import org.uvo.uvostore.service.shipping.carrier.ShippingCarrierQuoteDispatcher;
 import org.uvo.uvostore.service.shipping.carrier.ShippingCarrierQuoteRequest;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -199,7 +199,8 @@ public class ShippingRateServiceImpl implements ShippingRateService {
         if (rate.getWeightRatePerKg() != null && weight.signum() > 0) {
             cost = cost.add(weight.multiply(rate.getWeightRatePerKg()));
         }
-        return cost.setScale(2, RoundingMode.HALF_UP);
+        // F06: pesos enteros. El peso sí es fraccionario (kg con decimales), pero lo que se cobra no.
+        return Money.round(cost);
     }
 
     private String deliveryTimeString(ShippingMethod method) {

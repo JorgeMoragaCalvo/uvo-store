@@ -5,6 +5,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.uvo.uvostore.entity.catalog.Product;
 import org.uvo.uvostore.entity.catalog.ProductVariation;
 import org.uvo.uvostore.entity.order.Coupon;
+import org.uvo.uvostore.service.Money;
 import org.uvo.uvostore.repository.ProductRepository;
 import org.uvo.uvostore.repository.ProductVariationRepository;
 import org.uvo.uvostore.repository.SettingRepository;
@@ -74,20 +75,30 @@ public class CartPricingServiceImpl implements CartPricingService {
         boolean pricesIncludeTax = settingRepository.findByStoreIdAndSettingKey(storeId, "prices_include_tax")
                 .map(s -> Boolean.parseBoolean(s.getValue())).orElse(false);
 
+        // F06. A partir de aquí todo es dinero en pesos enteros. El redondeo va en el origen y no en
+        // la comparación de markPaid: lo que se persiste tiene que ser exactamente lo que una pasarela
+        // puede cobrar, y también lo que viaja al POS en el documento tributario.
+        //
+        // El subtotal primero, para que lo que se derive de él ya sea entero; y el IVA por diferencia
+        // en el caso de precios con IVA incluido, no redondeado por su cuenta, para que
+        // subtotalSinIVA + IVA sea exactamente el subtotal y no se descuadre por un peso.
+        subtotalWithTax = Money.round(subtotalWithTax);
+
         BigDecimal subtotalWithoutTax;
         BigDecimal taxAmount;
         if (pricesIncludeTax) {
-            subtotalWithoutTax = subtotalWithTax.divide(BigDecimal.ONE.add(taxRate), 2, RoundingMode.HALF_UP);
+            subtotalWithoutTax = Money.round(subtotalWithTax.divide(BigDecimal.ONE.add(taxRate), 6, RoundingMode.HALF_UP));
             taxAmount = subtotalWithTax.subtract(subtotalWithoutTax);
         } else {
             subtotalWithoutTax = subtotalWithTax;
-            taxAmount = subtotalWithTax.multiply(taxRate).setScale(2, RoundingMode.HALF_UP);
+            taxAmount = Money.round(subtotalWithTax.multiply(taxRate));
         }
 
         boolean shippingEnabled = settingRepository.findByStoreIdAndSettingKey(storeId, "shipping_enabled")
                 .map(s -> Boolean.parseBoolean(s.getValue())).orElse(true);
         Optional<ShippingOption> best = shippingRateService.getBestOption(region, commune, subtotalWithTax, totalWeight);
-        BigDecimal shippingCost = best.map(ShippingOption::cost).orElse(BigDecimal.ZERO);
+        // F06: la tarifa por peso y las cotizaciones de los transportistas pueden traer decimales.
+        BigDecimal shippingCost = Money.round(best.map(ShippingOption::cost).orElse(BigDecimal.ZERO));
         // A7: the cost alone can't distinguish "free shipping" from "no zone covers this address",
         // and that ambiguity is exactly why every order shipped for $0 — the SPA never sent a
         // region, no zone ever matched, and .orElse(ZERO) made it look deliberate. A store that
@@ -104,6 +115,9 @@ public class CartPricingServiceImpl implements CartPricingService {
             // —que sí validaba bien— se limitaba a no adjuntar el cupón. El descuento se quedaba.
             CouponValidationResult result = couponService.validate(couponCode, subtotalWithoutTax, customerId);
             if (result.valid()) {
+                // Ya viene redondeado de calculateDiscount, que es también quien calcula el importe de
+                // la fila de CouponUsage: si se redondeara aquí y no allí, los informes de cupones
+                // dejarían de cuadrar con los totales de las órdenes.
                 discountAmount = couponService.calculateDiscount(result.coupon(), subtotalWithoutTax);
                 couponApplied = true;
                 appliedCoupon = result.coupon();
@@ -115,6 +129,10 @@ public class CartPricingServiceImpl implements CartPricingService {
             }
         }
 
+        // Todos los sumandos ya son enteros, así que el total lo es sin necesidad de redondearlo — y,
+        // lo que importa más, es exactamente la suma de las partes que se guardan con él. Redondear el
+        // total por separado habría dejado órdenes donde subtotal + IVA + envío − descuento no da el
+        // total, que es lo que descuadra los informes y el documento del POS.
         BigDecimal total = pricesIncludeTax
                 ? subtotalWithTax.add(shippingCost).subtract(discountAmount)
                 : subtotalWithTax.add(taxAmount).add(shippingCost).subtract(discountAmount);

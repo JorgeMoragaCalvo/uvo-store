@@ -47,7 +47,16 @@ import static org.mockito.Mockito.when;
  */
 class RefundServiceTest {
 
+    /** El total persistido de la orden, con la escala con que lo guarda la base (numeric(10,2)). */
     private static final BigDecimal TOTAL = new BigDecimal("10000.00");
+
+    /**
+     * F06: lo que se le pide a la pasarela va en pesos enteros — es lo que las tres redondean antes de
+     * llamar, y ahora también lo que se guarda en {@code order_refunds}, para que el saldo restante no
+     * mienta por fracciones de peso. Mismo valor que {@code TOTAL}, distinta escala: Mockito compara
+     * los argumentos con {@code equals}, y {@code BigDecimal.equals} sí mira la escala.
+     */
+    private static final BigDecimal TOTAL_CHARGED = new BigDecimal("10000");
 
     private final OrderRepository orderRepository = mock(OrderRepository.class);
     private final OrderRefundRepository refundRepository = mock(OrderRefundRepository.class);
@@ -81,11 +90,11 @@ class RefundServiceTest {
     @DisplayName("Sin monto se devuelve todo el saldo, por la pasarela de la orden, y la orden queda cerrada")
     void afullRefundGoesThroughTheOrdersOwnGateway() {
         Order order = paidOrder(PaymentMethodType.WEBPAY);
-        when(webpayService.refund(order.getId(), TOTAL)).thenReturn("NULLIFIED");
+        when(webpayService.refund(order.getId(), TOTAL_CHARGED)).thenReturn("NULLIFIED");
 
         OrderRefund refund = service.refund(new RefundCommand(order.getId(), null, "Producto defectuoso", 7L));
 
-        verify(webpayService).refund(order.getId(), TOTAL);
+        verify(webpayService).refund(order.getId(), TOTAL_CHARGED);
         assertThat(refund.getAmount()).isEqualByComparingTo(TOTAL);
         assertThat(refund.getType()).isEqualTo(RefundType.FULL);
         // El tipo que devuelve Transbank se guarda: REVERSED y NULLIFIED son operaciones distintas.
@@ -98,11 +107,11 @@ class RefundServiceTest {
     void eachGatewayIsAskedItsOwnWay() {
         Order stripe = paidOrder(PaymentMethodType.STRIPE);
         service.refund(new RefundCommand(stripe.getId(), null, null, null));
-        verify(paymentService).refund(stripe.getId(), TOTAL);
+        verify(paymentService).refund(stripe.getId(), TOTAL_CHARGED);
 
         Order mercadoPago = paidOrder(PaymentMethodType.MERCADOPAGO);
         service.refund(new RefundCommand(mercadoPago.getId(), null, null, null));
-        verify(mercadoPagoService).refund(mercadoPago.getId(), TOTAL);
+        verify(mercadoPagoService).refund(mercadoPago.getId(), TOTAL_CHARGED);
     }
 
     @Test
@@ -113,7 +122,7 @@ class RefundServiceTest {
         OrderRefund refund = service.refund(new RefundCommand(order.getId(), new BigDecimal("2500"), null, null));
 
         assertThat(refund.getType()).isEqualTo(RefundType.PARTIAL);
-        verify(webpayService).refund(order.getId(), new BigDecimal("2500.00"));
+        verify(webpayService).refund(order.getId(), new BigDecimal("2500"));
         // La compra no se deshizo: devolver stock y cupón aquí regalaría unidades que el cliente
         // todavía tiene.
         verify(orderStatusService, never()).markRefunded(any(), anyString());

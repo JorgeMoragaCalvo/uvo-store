@@ -16,11 +16,11 @@ import org.uvo.uvostore.repository.OrderStatusHistoryRepository;
 import org.uvo.uvostore.repository.UserRepository;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.BusinessException;
+import org.uvo.uvostore.service.Money;
 import org.uvo.uvostore.service.order.OrderStatusService;
 import org.uvo.uvostore.service.order.PaymentService;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.NoSuchElementException;
 
 /**
@@ -163,7 +163,10 @@ public class RefundService {
             // saldo para un reembolso total.
             return remaining;
         }
-        BigDecimal amount = requested.setScale(2, RoundingMode.HALF_UP);
+        // F06: a pesos enteros, que es lo que la pasarela va a devolver de verdad —las tres redondean
+        // así antes de llamar. Guardar 1.000,50 en order_refunds mientras se devuelven 1.001 deja el
+        // saldo restante mintiendo por medio peso en cada reembolso parcial.
+        BigDecimal amount = Money.round(requested);
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new BusinessException("El monto a reembolsar debe ser mayor que cero");
         }
@@ -176,7 +179,10 @@ public class RefundService {
 
     private BigDecimal remaining(Order order) {
         BigDecimal alreadyRefunded = refundRepository.totalRefunded(order.getId());
-        return order.getTotal().subtract(alreadyRefunded).setScale(2, RoundingMode.HALF_UP);
+        // F06: el saldo, en la misma unidad que todo lo demás. Total y reembolsos ya son enteros, así
+        // que esto no mueve ningún importe; lo que evita es que closesOrder compare dos números
+        // iguales con escalas distintas.
+        return Money.round(order.getTotal().subtract(alreadyRefunded));
     }
 
     // Cierra la orden si se lleva todo lo que quedaba. Lo decide el saldo y no el llamador, para que
