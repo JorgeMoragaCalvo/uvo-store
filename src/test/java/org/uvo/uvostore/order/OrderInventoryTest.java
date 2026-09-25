@@ -176,6 +176,62 @@ class OrderInventoryTest extends IntegrationTestSupport {
         assertThat(couponRepository.findById(coupon.getId()).orElseThrow().getTimesUsed()).isZero();
     }
 
+    @Test
+    @DisplayName("Tras un éxito parcial, cancelar devuelve solo lo que se descontó")
+    void cancellingAfterAPartialDecrementRestoresOnlyWhatWasTaken() {
+        // F04, el escenario del hallazgo. Dos productos: de A hay de sobra, de B no queda nada. El
+        // pago descuenta A y falla en B, y la orden queda marcada como aplicada igualmente. Antes, la
+        // cancelación devolvía las dos líneas y B terminaba con una unidad que nunca existió.
+        Store store = createStore("inv");
+        Product plenty = productWithStock(store, 5);
+        Product empty = productWithStock(store, 0);
+        Order order = orderFor(store, plenty, 2);
+        addItem(order, empty, 1);
+        orderRepository.save(order);
+
+        orderInventoryService.applyOrderStock(order);
+        assertThat(reloadStock(plenty)).isEqualTo(3);
+        assertThat(reloadStock(empty)).isZero();
+
+        orderInventoryService.restoreOrderStock(order);
+
+        assertThat(reloadStock(plenty)).as("lo que se descontó vuelve").isEqualTo(5);
+        assertThat(reloadStock(empty)).as("lo que nunca se descontó no puede aparecer").isZero();
+    }
+
+    @Test
+    @DisplayName("Dos líneas del mismo producto con stock para una no inventan la segunda al cancelar")
+    void duplicateLinesDoNotInventStockOnCancellation() {
+        // F10 llega al mismo sitio sin ninguna concurrencia: basta mandar el mismo producto dos veces.
+        // La validación del carrito ahora lo rechaza, pero una orden así ya creada no puede acabar
+        // devolviendo más de lo que se llevó.
+        Store store = createStore("inv");
+        Product product = productWithStock(store, 1);
+        Order order = orderFor(store, product, 1);
+        addItem(order, product, 1);
+        orderRepository.save(order);
+
+        orderInventoryService.applyOrderStock(order);
+        assertThat(reloadStock(product)).isZero();
+
+        orderInventoryService.restoreOrderStock(order);
+
+        assertThat(reloadStock(product)).as("se descontó 1, vuelve 1").isEqualTo(1);
+    }
+
+    private void addItem(Order order, Product product, int quantity) {
+        OrderItem item = new OrderItem();
+        item.setOrder(order);
+        item.setProduct(product);
+        item.setProductName(product.getName());
+        item.setProductSku(product.getSku());
+        item.setQuantity(quantity);
+        item.setPrice(product.getPrice());
+        item.setSubtotal(product.getPrice().multiply(BigDecimal.valueOf(quantity)));
+        item.setTaxAmount(BigDecimal.ZERO);
+        order.getItems().add(item);
+    }
+
     private int reloadStock(Product product) {
         return productRepository.findById(product.getId()).orElseThrow().getStock();
     }

@@ -83,6 +83,16 @@ public class OrderItem {
     @Builder.Default
     private BigDecimal taxAmount = BigDecimal.ZERO;
 
+    /**
+     * F04. Si el stock de <b>esta</b> línea llegó a descontarse. El flag equivalente de la orden
+     * ({@code Order.stockApplied}) dice que la orden ya pasó por el descuento, no que todas sus líneas
+     * lo consiguieran: cada línea es su propio UPDATE condicional y cualquiera puede afectar cero
+     * filas. Sin esta marca, la cancelación devolvía también las líneas que nunca se descontaron, y
+     * eso no pierde inventario: lo inventa.
+     */
+    @Column(name = "stock_applied", nullable = false)
+    private boolean stockApplied;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;

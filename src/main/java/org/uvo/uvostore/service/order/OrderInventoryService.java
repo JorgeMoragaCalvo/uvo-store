@@ -71,6 +71,8 @@ public class OrderInventoryService {
             }
         }
 
+        // Sigue significando "esta orden ya pasó por el descuento" —de ahí la idempotencia de arriba—,
+        // no "todas sus líneas se descontaron". Eso último lo dice ahora cada línea por su cuenta.
         order.setStockApplied(true);
         if (!failures.isEmpty()) {
             reportStockFailure(order, failures);
@@ -82,6 +84,12 @@ public class OrderInventoryService {
      * Puts the order's items back into stock. Only does anything if the stock was actually taken
      * (i.e. the order reached PAID) and hasn't been returned yet — cancelling an unpaid order is a
      * no-op, because nothing was ever decremented.
+     *
+     * <p>F04: y devuelve <b>solo las líneas que se descontaron</b>. Antes devolvía todas en cuanto la
+     * orden estaba marcada, y la marca de la orden se ponía aunque una línea hubiera fallado: quedaban
+     * 1 de A y 0 de B, se descontaba A, fallaba B, y una cancelación sumaba 1 a cada una. La unidad de
+     * B nunca existió. Restaurar de menos pierde inventario; restaurar de más lo inventa, y eso
+     * termina en una venta que no se puede cumplir.
      */
     @Transactional
     public void restoreOrderStock(Order order) {
@@ -90,10 +98,16 @@ public class OrderInventoryService {
         }
 
         for (OrderItem item : order.getItems()) {
+            if (!item.isStockApplied()) {
+                continue;
+            }
             if (item.getVariation() != null) {
                 variationRepository.restoreStock(item.getVariation().getId(), item.getQuantity());
                 productRepository.recalculateStockFromVariations(item.getProduct().getId());
-            } else if (item.getProduct().isManageStock()) {
+            } else {
+                // Ya no hace falta volver a preguntar por manageStock: si estuviera en false, la línea
+                // no se descontó y no lleva la marca. Y así queda bien incluso si alguien lo cambia
+                // entre el cobro y la cancelación, que antes descuadraba.
                 productRepository.restoreStock(item.getProduct().getId(), item.getQuantity());
             }
         }
@@ -131,6 +145,9 @@ public class OrderInventoryService {
             failures.add("variación " + item.getProductSku() + " (id " + variationId + ", cantidad " + item.getQuantity() + ")");
             return;
         }
+        // F04: la marca va aquí, pegada al único dato de fiar — que el UPDATE condicional afectó una
+        // fila. Es lo que luego decide si esta línea se devuelve al cancelar.
+        item.setStockApplied(true);
         // Parent Product.stock is the sum of its variations, so it has to follow. Recomputed in one
         // statement rather than through recalculateParentAggregate, which also touches minPrice and
         // needs TenantContext — neither belongs in an AFTER_COMMIT listener.
@@ -145,7 +162,9 @@ public class OrderInventoryService {
         int updated = productRepository.decrementStock(productId, item.getQuantity());
         if (updated == 0) {
             failures.add("producto " + item.getProductSku() + " (id " + productId + ", cantidad " + item.getQuantity() + ")");
+            return;
         }
+        item.setStockApplied(true);
     }
 
     private void reportStockFailure(Order order, List<String> failures) {

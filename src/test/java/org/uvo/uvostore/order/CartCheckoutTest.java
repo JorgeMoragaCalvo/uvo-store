@@ -155,6 +155,74 @@ class CartCheckoutTest extends IntegrationTestSupport {
                 .andExpect(status().isBadRequest());
     }
 
+    @Test
+    void cartValidateAddsUpDuplicateLinesOfTheSameProduct() throws Exception {
+        // F10. Cada línea se comparaba por su cuenta contra el stock completo, así que seis y seis
+        // pasaban las dos con stock 10. La orden se cobraba y al descontar una de las dos líneas no
+        // cabía — con el pago ya hecho. Se mide el total pedido por SKU.
+        Store store = createStore("cart-val-dup");
+        Category category = createCategory(store, "Cat");
+        Product product = createProduct(store, category, "Producto", BigDecimal.TEN); // stock=10
+
+        String body = """
+                {"items":[{"id":%d,"type":"product","quantity":6},{"id":%d,"type":"product","quantity":6}]}
+                """.formatted(product.getId(), product.getId());
+
+        mockMvc.perform(post("/api/v1/cart/validate")
+                        .header("Host", hostHeader(store))
+                        .contentType("application/json")
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(false));
+    }
+
+    @Test
+    void cartValidateStillAcceptsDuplicateLinesThatFitTogether() throws Exception {
+        // El control positivo: repetir un producto no es un error por sí mismo, solo pasarse del stock
+        // entre todas sus líneas.
+        Store store = createStore("cart-val-dup-ok");
+        Category category = createCategory(store, "Cat");
+        Product product = createProduct(store, category, "Producto", BigDecimal.TEN); // stock=10
+
+        String body = """
+                {"items":[{"id":%d,"type":"product","quantity":4},{"id":%d,"type":"product","quantity":4}]}
+                """.formatted(product.getId(), product.getId());
+
+        mockMvc.perform(post("/api/v1/cart/validate")
+                        .header("Host", hostHeader(store))
+                        .contentType("application/json")
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(true));
+    }
+
+    @Test
+    void checkoutRejectsDuplicateLinesThatExceedStockTogether() throws Exception {
+        // El mismo caso llegando al checkout, que reutiliza esta validación: 409, no una orden cobrada
+        // que luego no se puede servir.
+        Store store = createStore("checkout-dup");
+        disableShipping(store);
+        Category category = createCategory(store, "Cat");
+        Product product = createProduct(store, category, "Producto", BigDecimal.valueOf(1000)); // stock=10
+
+        String body = """
+                {
+                  "customer": {"email":"a@test.local","firstName":"A","lastName":"B","phone":"+56911111111"},
+                  "shippingAddress": {"addressLine1":"Calle 1","city":"Santiago","state":"RM","postalCode":"8320000","country":"CL"},
+                  "region": "RM",
+                  "commune": "Santiago",
+                  "items": [{"id":%d,"type":"product","quantity":6},{"id":%d,"type":"product","quantity":6}],
+                  "paymentMethod": "manual"
+                }
+                """.formatted(product.getId(), product.getId());
+
+        mockMvc.perform(post("/api/v1/checkout")
+                        .header("Host", hostHeader(store))
+                        .contentType("application/json")
+                        .content(body))
+                .andExpect(status().isConflict());
+    }
+
     private String checkoutBody(Long productId, int quantity, String paymentMethod) {
         return """
                 {
