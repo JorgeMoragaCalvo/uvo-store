@@ -43,9 +43,20 @@ public class CartServiceImpl implements CartService {
         List<CartValidatedItemDto> validated = new ArrayList<>();
         Map<String, String> errors = new HashMap<>();
 
+        // F10: el stock se compara contra la cantidad TOTAL pedida de cada SKU, no contra la de cada
+        // línea por separado. Dos líneas de cantidad 1 del mismo producto con stock 1 pasaban las dos,
+        // y al confirmar el pago una de las dos no se podía descontar — con la orden ya cobrada. No
+        // hace falta ninguna concurrencia para llegar ahí: basta mandar el mismo id dos veces.
+        Map<String, Integer> requestedByKey = new HashMap<>();
+        for (CartItemCommand item : items) {
+            requestedByKey.merge(item.type() + ":" + item.id(), item.quantity(), Integer::sum);
+        }
+
         for (int index = 0; index < items.size(); index++) {
             CartItemCommand item = items.get(index);
             String key = "items." + index;
+            // La cantidad que de verdad hay que poder servir de este SKU, sumando líneas repetidas.
+            int requested = requestedByKey.get(item.type() + ":" + item.id());
 
             if ("variation".equals(item.type())) {
                 variationRepository.findById(item.id())
@@ -53,7 +64,7 @@ public class CartServiceImpl implements CartService {
                         .ifPresentOrElse(variation -> {
                     if (!variation.isActive() || !variation.getProduct().isActive()) {
                         errors.put(key, "Producto no disponible");
-                    } else if (variation.getStock() < item.quantity()) {
+                    } else if (variation.getStock() < requested) {
                         errors.put(key, "Stock insuficiente. Solo hay " + variation.getStock() + " disponibles");
                     } else {
                         String image = variation.getImage() != null ? fileStorageService.publicUrl(variation.getImage())
@@ -70,7 +81,7 @@ public class CartServiceImpl implements CartService {
                         .ifPresentOrElse(product -> {
                     if (!product.isActive()) {
                         errors.put(key, "Producto no disponible");
-                    } else if (product.isManageStock() && product.getStock() < item.quantity()) {
+                    } else if (product.isManageStock() && product.getStock() < requested) {
                         errors.put(key, "Stock insuficiente. Solo hay " + product.getStock() + " disponibles");
                     } else {
                         validated.add(new CartValidatedItemDto(
