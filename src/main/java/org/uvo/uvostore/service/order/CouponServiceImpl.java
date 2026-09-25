@@ -49,10 +49,15 @@ public class CouponServiceImpl implements CouponService {
             return new CouponValidationResult(false, "El cupón ha alcanzado su límite de usos.", coupon);
         }
 
+        // F05: la única comprobación que depende de quién compra — y por eso el resultado va marcado
+        // como customerSpecific. Con customerId nulo (la cotización anónima del carrito) no se evalúa,
+        // que es correcto para una cotización pero fue exactamente el agujero: el checkout cotizaba
+        // con null, se quedaba el descuento en el total, y luego descartaba el cupón en silencio.
         if (coupon.getUsageLimitPerCustomer() != null && customerId != null) {
             long customerUsage = couponUsageRepository.countByCouponIdAndCustomerId(coupon.getId(), customerId);
             if (customerUsage >= coupon.getUsageLimitPerCustomer()) {
-                return new CouponValidationResult(false, "Ya has usado este cupón el máximo de veces permitido.", coupon);
+                return new CouponValidationResult(false, "Ya has usado este cupón el máximo de veces permitido.",
+                        coupon, true);
             }
         }
 

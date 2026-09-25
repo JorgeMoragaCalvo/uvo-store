@@ -105,7 +105,10 @@ public class CartServiceImpl implements CartService {
                         : new CartLineCommand(item.id(), null, item.quantity()))
                 .toList();
 
-        CartTotals totals = cartPricingService.price(lines, couponCode, region, commune);
+        // F05: cotización pública, sin cliente. Aquí no hay email —el checkout es quien identifica al
+        // comprador— así que se muestra el mejor precio posible; si el cupón resulta no aplicarle a
+        // quien acabe comprando, el checkout lo rechaza explicándolo en vez de cobrar otra cosa.
+        CartTotals totals = cartPricingService.price(lines, couponCode, region, commune, null);
 
         Long storeId = TenantContext.requireStoreId();
         boolean pricesIncludeTax = settingRepository.findByStoreIdAndSettingKey(storeId, "prices_include_tax")
