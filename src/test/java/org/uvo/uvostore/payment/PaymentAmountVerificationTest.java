@@ -104,6 +104,47 @@ class PaymentAmountVerificationTest extends IntegrationTestSupport {
                 .isEqualTo(PaymentStatus.PENDING);
     }
 
+    @Test
+    @DisplayName("Una compra con IVA se paga con el importe entero y queda PAGADA")
+    void anOrderWithTaxIsMarkedPaidByAWholePesoCharge() throws Exception {
+        // F06, el criterio de aceptación del hallazgo, de punta a punta: la orden la crea el checkout
+        // real (no una fixture), con un precio que antes producía 11.888,10, y se paga el importe
+        // entero que cobraría cualquiera de las tres pasarelas. Antes esto dejaba la orden PENDING con
+        // nota de descuadre, sin stock descontado y fuera de la conciliación para siempre.
+        Store store = createStore("amount-tax");
+        disableShipping(store);
+        setSetting(store, "tax_rate", "19");
+        Product product = createProduct(store, createCategory(store, "Cat"), "Producto", BigDecimal.valueOf(9990));
+
+        String body = """
+                {
+                  "customer": {"email":"a@test.local","firstName":"A","lastName":"B","phone":"+56911111111"},
+                  "shippingAddress": {"addressLine1":"Calle 1","city":"Santiago","state":"RM","postalCode":"8320000","country":"CL"},
+                  "region": "RM", "commune": "Santiago",
+                  "items": [{"id":%d,"type":"product","quantity":1}],
+                  "paymentMethod": "manual"
+                }
+                """.formatted(product.getId());
+
+        String response = mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post("/api/v1/checkout")
+                        .header("Host", hostHeader(store))
+                        .contentType("application/json")
+                        .content(body))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        long orderId = objectMapper.readTree(response).get("orderId").asLong();
+
+        Order created = orderRepository.findById(orderId).orElseThrow();
+        assertThat(created.getTotal()).isEqualByComparingTo("11888");
+
+        orderStatusService.markPaid(orderId, "pay_entero", new BigDecimal("11888"));
+
+        assertThat(orderRepository.findById(orderId).orElseThrow().getPaymentStatus())
+                .as("el importe que cobra la pasarela tiene que ser el que dice la orden")
+                .isEqualTo(PaymentStatus.PAID);
+    }
+
     private Order pendingOrder(BigDecimal total) {
         Store store = createStore("amount");
         disableShipping(store);

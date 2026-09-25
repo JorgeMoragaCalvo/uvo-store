@@ -10,6 +10,7 @@ import org.uvo.uvostore.entity.order.enums.CouponType;
 import org.uvo.uvostore.repository.CouponRepository;
 import org.uvo.uvostore.repository.CouponUsageRepository;
 import org.uvo.uvostore.security.TenantContext;
+import org.uvo.uvostore.service.Money;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -68,16 +69,20 @@ public class CouponServiceImpl implements CouponService {
         return new CouponValidationResult(true, "Cupón válido", coupon);
     }
 
+    // F06: el descuento sale en pesos enteros. Un cupón porcentual daba céntimos —el 10 % de 41.151,26
+    // son 4.115,126— y esos céntimos acababan en el total de la orden, que entonces ningún cobro
+    // entero podía igualar. Es también el importe que se guarda en CouponUsage (ver recordUsage, que
+    // vuelve a llamar aquí), así que redondear en este punto mantiene informes y órdenes de acuerdo.
     @Override
     public BigDecimal calculateDiscount(Coupon coupon, BigDecimal subtotal) {
         if (coupon.getType() == CouponType.PERCENTAGE) {
-            BigDecimal discount = subtotal.multiply(coupon.getValue()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+            BigDecimal discount = subtotal.multiply(coupon.getValue()).divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP);
             if (coupon.getMaximumDiscount() != null && discount.compareTo(coupon.getMaximumDiscount()) > 0) {
                 discount = coupon.getMaximumDiscount();
             }
-            return discount;
+            return Money.round(discount);
         }
-        return coupon.getValue().min(subtotal);
+        return Money.round(coupon.getValue().min(subtotal));
     }
 
     // C5: validate() above is a read, so two concurrent checkouts can both pass its usage_limit
