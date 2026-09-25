@@ -96,7 +96,17 @@ public class CheckoutServiceImpl implements CheckoutService {
             throw new OutOfStockException(stockCheck.errors());
         }
 
-        CartTotals totals = cartPricingService.price(command.lines(), command.couponCode(), command.region(), command.commune());
+        // F05: el cliente se resuelve ANTES de cotizar, no después. El precio depende de quién compra
+        // —el límite de usos por cliente de un cupón—, así que cotizar primero y averiguar el cliente
+        // después obligaba a decidir dos veces sobre el mismo cupón, y las dos decisiones podían no
+        // coincidir. Todo esto va en una transacción: si el checkout falla más abajo, el invitado
+        // recién creado se deshace con el resto.
+        Customer customer = customerService.findOrCreateGuest(
+                command.customerEmail(), command.customerFirstName(), command.customerLastName(), command.customerPhone());
+        customer = customerService.markInvitedIfGuest(customer);
+
+        CartTotals totals = cartPricingService.price(command.lines(), command.couponCode(), command.region(),
+                command.commune(), customer.getId());
 
         // A7: refuse instead of creating an order the merchant can't dispatch. Every order used to
         // ship for $0 here — the SPA never sent a region, so no zone matched and the cost fell
@@ -106,9 +116,13 @@ public class CheckoutServiceImpl implements CheckoutService {
             throw new ShippingUnavailableException(command.region(), command.commune());
         }
 
-        Customer customer = customerService.findOrCreateGuest(
-                command.customerEmail(), command.customerFirstName(), command.customerLastName(), command.customerPhone());
-        customer = customerService.markInvitedIfGuest(customer);
+        // F05: el carrito no sabe quién compra, así que pudo mostrar un descuento que a este cliente
+        // no le corresponde. Se rechaza en vez de cobrar la diferencia sin avisar. Solo aquí: un
+        // código inexistente o caducado tampoco se aplicó en la cotización, no hay nada que explicar y
+        // la compra sigue a precio completo, como hasta ahora.
+        if (totals.customerRejectionReason() != null) {
+            throw new BusinessException(totals.customerRejectionReason());
+        }
 
         Order order = new Order();
         order.setStore(TenantContext.requireCurrent());
@@ -140,20 +154,21 @@ public class CheckoutServiceImpl implements CheckoutService {
         order.setShippingCommune(command.commune());
         order.setShippingPostalCode(command.shippingAddress().postalCode());
 
-        if (command.couponCode() != null && !command.couponCode().isBlank()) {
-            CouponValidationResult couponResult = couponService.validate(command.couponCode(), totals.subtotalWithoutTax(), customer.getId());
-            if (couponResult.valid()) {
-                // Claimed here, before the order is built, because the discount is already baked
-                // into `totals` above. If the coupon ran out in the meantime we can't quietly
-                // re-price without it — the customer would be charged an amount they never saw —
-                // so the checkout fails and they can retry. The claim is part of this transaction,
-                // so any later failure rolls it back.
-                if (!couponService.claimUsage(couponResult.coupon())) {
-                    throw new BusinessException("El cupón alcanzó su límite de usos.");
-                }
-                order.setCoupon(couponResult.coupon());
-                order.setCouponCode(command.couponCode());
+        // F05: aquí ya no se vuelve a validar nada. El cupón es el que entró en el total, decidido en
+        // el mismo cálculo que lo fijó — antes esta segunda validación podía discrepar de la primera y
+        // el `if` sin `else` se limitaba a no adjuntar el cupón, dejando la orden rebajada, sin cupón
+        // y sin uso registrado: un descuento que ningún contador veía y que se repetía en cada compra.
+        if (totals.appliedCoupon() != null) {
+            // Claimed here, before the order is built, because the discount is already baked
+            // into `totals` above. If the coupon ran out in the meantime we can't quietly
+            // re-price without it — the customer would be charged an amount they never saw —
+            // so the checkout fails and they can retry. The claim is part of this transaction,
+            // so any later failure rolls it back.
+            if (!couponService.claimUsage(totals.appliedCoupon())) {
+                throw new BusinessException("El cupón alcanzó su límite de usos.");
             }
+            order.setCoupon(totals.appliedCoupon());
+            order.setCouponCode(command.couponCode());
         }
 
         List<OrderItem> items = new ArrayList<>();

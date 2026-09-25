@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.uvo.uvostore.entity.catalog.Product;
 import org.uvo.uvostore.entity.catalog.ProductVariation;
+import org.uvo.uvostore.entity.order.Coupon;
 import org.uvo.uvostore.repository.ProductRepository;
 import org.uvo.uvostore.repository.ProductVariationRepository;
 import org.uvo.uvostore.repository.SettingRepository;
@@ -41,7 +42,8 @@ public class CartPricingServiceImpl implements CartPricingService {
 
     @Override
     @Transactional(readOnly = true)
-    public CartTotals price(List<CartLineCommand> lines, String couponCode, String region, String commune) {
+    public CartTotals price(List<CartLineCommand> lines, String couponCode, String region, String commune,
+                            Long customerId) {
         Long storeId = TenantContext.requireStoreId();
         BigDecimal subtotalWithTax = BigDecimal.ZERO;
         BigDecimal totalWeight = BigDecimal.ZERO;
@@ -94,11 +96,22 @@ public class CartPricingServiceImpl implements CartPricingService {
 
         BigDecimal discountAmount = BigDecimal.ZERO;
         boolean couponApplied = false;
+        Coupon appliedCoupon = null;
+        String customerRejectionReason = null;
         if (couponCode != null && !couponCode.isBlank()) {
-            CouponValidationResult result = couponService.validate(couponCode, subtotalWithoutTax, null);
+            // F05: se valida con el cliente que hace la compra, no con null. Esa validación con null
+            // saltaba el límite de usos por cliente, metía el descuento en el total, y el checkout
+            // —que sí validaba bien— se limitaba a no adjuntar el cupón. El descuento se quedaba.
+            CouponValidationResult result = couponService.validate(couponCode, subtotalWithoutTax, customerId);
             if (result.valid()) {
                 discountAmount = couponService.calculateDiscount(result.coupon(), subtotalWithoutTax);
                 couponApplied = true;
+                appliedCoupon = result.coupon();
+            } else if (result.customerSpecific()) {
+                // El carrito no pudo prever este rechazo (no sabe quién compra), así que ahí se mostró
+                // un descuento. Se avisa para que el checkout no cobre en silencio un importe distinto
+                // del que el cliente vio.
+                customerRejectionReason = result.reason();
             }
         }
 
@@ -107,6 +120,6 @@ public class CartPricingServiceImpl implements CartPricingService {
                 : subtotalWithTax.add(taxAmount).add(shippingCost).subtract(discountAmount);
 
         return new CartTotals(subtotalWithoutTax, taxAmount, subtotalWithTax, shippingCost, discountAmount, total,
-                shippingAvailable, couponApplied);
+                shippingAvailable, couponApplied, appliedCoupon, customerRejectionReason);
     }
 }
