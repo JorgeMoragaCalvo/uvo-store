@@ -24,6 +24,11 @@ import org.uvo.uvostore.service.pos.PosOrderNotifier;
 // un tercero, y estaba metida dentro de la respuesta al comprador: un POS lento hacía lento el
 // checkout, con el tope de read timeout de PosClient por cada empresa a la que hubiera que notificar.
 // Ahora va al posExecutor, que tiene sus propios hilos y no comparte cola con el correo.
+//
+// F07: y cuelga del pago confirmado, no de la creación de la orden. Notificar al POS emite un
+// DOCUMENTO TRIBUTARIO (ver application.properties, donde se explica por qué el reintento viene
+// desactivado), y colgaba de un evento que se publica con la orden todavía en PENDING: cada checkout
+// abandonado emitía la boleta de una venta que no llegó a ocurrir.
 @Component
 public class PosNotificationListener {
 
@@ -39,7 +44,7 @@ public class PosNotificationListener {
 
     @Async(AsyncConfig.POS_EXECUTOR)
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    public void onOrderCompleted(OrderCompletedEvent event) {
+    public void onPaymentConfirmed(PaymentConfirmedEvent event) {
         try {
             // El tenant es un ThreadLocal y no cruza al hilo del executor, así que se resuelve desde
             // la orden —igual que hace el reintento programado— y no desde el hilo. Hoy PosOrderNotifier

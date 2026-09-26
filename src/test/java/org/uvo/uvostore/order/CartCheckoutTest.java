@@ -67,7 +67,7 @@ class CartCheckoutTest extends IntegrationTestSupport {
         Product product = createProduct(store, category, "Producto", BigDecimal.valueOf(9990));
 
         // Se comprueba contra la orden guardada, no contra el JSON: jsonPath().value(11888) de Spring
-        // re-evalúa la ruta con el tipo del valor esperado, así que un 11.888,10 se lee como 11.888 y
+        // reevalúa la ruta con el tipo del valor esperado, así que un 11.888,10 se lee como 11.888 y
         // la aserción pasa igual. Es, de paso, por lo que el test que ya existía aquí (2.380) nunca
         // pudo detectar esto.
         Order order = checkoutAndLoad(store, product);

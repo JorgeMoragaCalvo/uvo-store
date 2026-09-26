@@ -20,12 +20,14 @@ public class AdminOrderServiceImpl implements AdminOrderService {
     private final OrderRepository orderRepository;
     private final AdminOrderQueryService adminOrderQueryService;
     private final OrderInventoryService orderInventoryService;
+    private final OrderStatusService orderStatusService;
 
     public AdminOrderServiceImpl(OrderRepository orderRepository, AdminOrderQueryService adminOrderQueryService,
-                                 OrderInventoryService orderInventoryService) {
+                                 OrderInventoryService orderInventoryService, OrderStatusService orderStatusService) {
         this.orderRepository = orderRepository;
         this.adminOrderQueryService = adminOrderQueryService;
         this.orderInventoryService = orderInventoryService;
+        this.orderStatusService = orderStatusService;
     }
 
     @Override
@@ -93,6 +95,23 @@ public class AdminOrderServiceImpl implements AdminOrderService {
         Order order = findOrThrow(orderId);
         PaymentStatus newStatus = PaymentStatus.valueOf(paymentStatus.toUpperCase());
         guardAgainstManualRefund(newStatus == PaymentStatus.REFUNDED);
+
+        // F07. Confirmar un pago deja de ser un setter y pasa por markPaid, que es donde vive lo que
+        // significa cobrar: publica PaymentConfirmedEvent y con él se descuenta el stock, se emite el
+        // documento al POS y sale el correo de compra confirmada.
+        //
+        // Antes esto solo escribía la columna, así que una orden pagada por transferencia —el método
+        // principal de muchas tiendas— se quedaba PAID pero **sin descontar stock nunca**, sin boleta
+        // y sin correo. No estaba en la auditoría; salió al mover los efectos al pago confirmado.
+        //
+        // El importe que se pasa es el total de la orden: el operador está afirmando que recibió el
+        // ingreso íntegro, que es justamente lo que confirma a mano. El resto de estados sigue siendo
+        // un cambio de columna — la máquina de transiciones completa es F14.
+        if (newStatus == PaymentStatus.PAID) {
+            orderStatusService.markPaid(orderId, "manual:" + order.getOrderNumber(), order.getTotal());
+            return adminOrderQueryService.getById(orderId);
+        }
+
         order.setPaymentStatus(newStatus);
         orderRepository.save(order);
         return adminOrderQueryService.getById(orderId);

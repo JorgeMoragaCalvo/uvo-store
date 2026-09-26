@@ -4,7 +4,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.scheduling.annotation.Async;
 import org.uvo.uvostore.service.order.event.OrderConfirmationEmailListener;
-import org.uvo.uvostore.service.order.event.OrderCompletedEvent;
+import org.uvo.uvostore.service.order.event.OrderPlacedEmailListener;
+import org.uvo.uvostore.service.order.event.OrderPlacedEvent;
 import org.uvo.uvostore.service.order.event.PaymentConfirmedEvent;
 import org.uvo.uvostore.service.order.event.PosNotificationListener;
 import org.uvo.uvostore.service.order.event.StockDecrementListener;
@@ -35,7 +36,7 @@ class AsyncListenerDispatchTest {
     @Test
     @DisplayName("La notificación al POS sale del hilo de la petición, por su propio executor")
     void thePosNotificationRunsOnThePosExecutor() throws Exception {
-        Async async = listenerMethod(PosNotificationListener.class, "onOrderCompleted", OrderCompletedEvent.class)
+        Async async = listenerMethod(PosNotificationListener.class, "onPaymentConfirmed", PaymentConfirmedEvent.class)
                 .getAnnotation(Async.class);
 
         assertThat(async).as("notificar al POS es una llamada de red: no puede ir en el hilo de la petición").isNotNull();
@@ -45,7 +46,7 @@ class AsyncListenerDispatchTest {
     @Test
     @DisplayName("El correo de confirmación sale del hilo de la petición, por un executor distinto")
     void theConfirmationEmailRunsOnTheMailExecutor() throws Exception {
-        Async async = listenerMethod(OrderConfirmationEmailListener.class, "onOrderCompleted", OrderCompletedEvent.class)
+        Async async = listenerMethod(OrderConfirmationEmailListener.class, "onPaymentConfirmed", PaymentConfirmedEvent.class)
                 .getAnnotation(Async.class);
 
         assertThat(async).as("el SMTP es el que puede colgarse sin lanzar nada").isNotNull();
@@ -64,6 +65,18 @@ class AsyncListenerDispatchTest {
                 .as("solo toca la base y es rápido; moverlo abre la ventana en la que dos compras del "
                         + "último artículo se cruzan")
                 .isNull();
+    }
+
+    @Test
+    @DisplayName("El acuse de recibo del pedido también sale del hilo de la petición")
+    void theOrderPlacedEmailRunsOnTheMailExecutor() throws Exception {
+        // F07: es el único efecto que sigue colgando de la creación de la orden, y por eso está aquí —
+        // es correo, o sea red, o sea que tampoco puede ir en el hilo que atiende el checkout.
+        Async async = listenerMethod(OrderPlacedEmailListener.class, "onOrderPlaced", OrderPlacedEvent.class)
+                .getAnnotation(Async.class);
+
+        assertThat(async).isNotNull();
+        assertThat(async.value()).isEqualTo(AsyncConfig.MAIL_EXECUTOR);
     }
 
     private Method listenerMethod(Class<?> type, String name, Class<?> eventType) throws Exception {
