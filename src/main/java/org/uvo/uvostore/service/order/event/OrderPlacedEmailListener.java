@@ -12,33 +12,37 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import org.uvo.uvostore.config.AsyncConfig;
 import org.uvo.uvostore.entity.order.Order;
 import org.uvo.uvostore.entity.order.OrderItem;
+import org.uvo.uvostore.entity.order.enums.PaymentMethodType;
 import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.notification.EmailService;
 
 import java.util.NoSuchElementException;
 
-// Same AFTER_COMMIT / REQUIRES_NEW pattern as PosNotificationListener — a failed or skipped email
-// (EmailService degrades gracefully when SMTP isn't configured) must never affect the order that's
-// already been committed.
-//
-// R1: y tampoco puede hacerla esperar. Esto corría en el hilo de la petición, y hasta que se pusieron
-// los timeouts de spring.mail.* el default de JavaMail era esperar para siempre: un relay que aceptaba
-// la conexión y no contestaba iba dejando hilos de Tomcat colgados hasta agotar el pool y tumbar la
-// tienda entera. El try/catch de abajo no protegía de eso — una espera infinita no lanza nada.
-//
-// F07: este es el correo de compra confirmada, y por eso cuelga del pago. Antes colgaba de la creación
-// de la orden, así que decía "Gracias por tu compra" a quien todavía no había pagado — y a quien
-// abandonaba el checkout. El acuse de recibo del pedido es otro correo: OrderPlacedEmailListener.
+/**
+ * F07. El acuse de recibo del pedido: "lo recibimos", no "gracias por tu compra".
+ *
+ * <p>Existe porque mover el correo de confirmación al pago confirmado dejaba mudo al cliente que paga
+ * por transferencia — el método principal de la tienda demo—, que no recibiría nada hasta que un
+ * administrador confirme el ingreso, quizá al día siguiente. Callar ahí sería peor que el fallo que se
+ * está arreglando.
+ *
+ * <p>La diferencia con {@link OrderConfirmationEmailListener} no es de plantilla, es de significado:
+ * este no afirma que haya habido un pago, y cuando el método es MANUAL lo dice explícitamente.
+ *
+ * <p>Mismo andamiaje que los otros dos oyentes AFTER_COMMIT: el executor del correo (R1), transacción
+ * propia, el tenant tomado de la orden porque no cruza al hilo del pool, y los fallos registrados aquí
+ * porque en un hilo de pool no hay a quién relanzarlos.
+ */
 @Component
-public class OrderConfirmationEmailListener {
+public class OrderPlacedEmailListener {
 
-    private static final Logger log = LoggerFactory.getLogger(OrderConfirmationEmailListener.class);
+    private static final Logger log = LoggerFactory.getLogger(OrderPlacedEmailListener.class);
 
     private final OrderRepository orderRepository;
     private final EmailService emailService;
 
-    public OrderConfirmationEmailListener(OrderRepository orderRepository, EmailService emailService) {
+    public OrderPlacedEmailListener(OrderRepository orderRepository, EmailService emailService) {
         this.orderRepository = orderRepository;
         this.emailService = emailService;
     }
@@ -46,17 +50,14 @@ public class OrderConfirmationEmailListener {
     @Async(AsyncConfig.MAIL_EXECUTOR)
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void onPaymentConfirmed(PaymentConfirmedEvent event) {
+    public void onOrderPlaced(OrderPlacedEvent event) {
         try {
             Order order = orderRepository.findById(event.orderId())
                     .orElseThrow(() -> new NoSuchElementException("Order " + event.orderId() + " not found"));
-            // El tenant no cruza al hilo del executor: se toma de la orden, que es de donde viene.
             TenantContext.runWithin(order.getStore(), () -> emailService.send(order.getCustomerEmail(),
-                    "Confirmación de tu pedido " + order.getOrderNumber(), body(order)));
+                    "Recibimos tu pedido " + order.getOrderNumber(), body(order)));
         } catch (Exception e) {
-            // G2, mismo criterio que en los otros dos listeners: no se relanza (la transacción ya se
-            // confirmó), pero deja de morir en una línea de log que nadie mira.
-            log.error("Error enviando confirmación de compra order_id={} error={}", event.orderId(), e.getMessage());
+            log.error("Error enviando el acuse de recibo del pedido order_id={} error={}", event.orderId(), e.getMessage());
             Sentry.captureException(e);
         }
     }
@@ -64,14 +65,19 @@ public class OrderConfirmationEmailListener {
     private String body(Order order) {
         StringBuilder sb = new StringBuilder();
         sb.append("Hola ").append(order.getCustomerFirstName()).append(",\n\n");
-        sb.append("Gracias por tu compra. Este es el resumen de tu pedido ").append(order.getOrderNumber()).append(":\n\n");
+        sb.append("Recibimos tu pedido ").append(order.getOrderNumber()).append(". Este es el detalle:\n\n");
         for (OrderItem item : order.getItems()) {
             sb.append("- ").append(item.getProductName())
                     .append(" x").append(item.getQuantity())
                     .append(" — $").append(item.getSubtotal()).append("\n");
         }
         sb.append("\nTotal: $").append(order.getTotal()).append("\n\n");
-        sb.append("Te avisaremos cuando tu pedido sea despachado.");
+        if (order.getPaymentMethod() == PaymentMethodType.MANUAL) {
+            sb.append("Queda pendiente de pago: en cuanto confirmemos la transferencia te enviamos la "
+                    + "confirmación de compra.");
+        } else {
+            sb.append("Te confirmaremos la compra en cuanto se acredite el pago.");
+        }
         return sb.toString();
     }
 }

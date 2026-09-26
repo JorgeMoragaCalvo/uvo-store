@@ -66,10 +66,16 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
     // El `join fetch o.store` no es una optimización: quien consume esto es un job, fuera de toda
     // petición y por tanto sin sesión abierta, y lo primero que hace con cada orden es leer su
     // tienda para fijar el tenant. Sin el fetch, eso es un LazyInitializationException.
+    // F07: y solo órdenes pagadas. Notificar al POS emite un documento tributario, así que una orden
+    // sin cobrar no tiene nada que emitir. Tras mover la notificación al pago confirmado ninguna orden
+    // impaga llega ya a syncAttempts >= 1 — pero las que quedaron con intentos de cuando la
+    // notificación colgaba de la creación sí se reintentarían. La condición deja escrito el requisito
+    // en vez de confiar en que nadie vuelva a colgar la notificación del evento equivocado.
     @Query("""
             select o from Order o
             join fetch o.store
             where o.posSynced = false
+              and o.paymentStatus = org.uvo.uvostore.entity.order.enums.PaymentStatus.PAID
               and o.syncAttempts >= 1
               and o.syncAttempts < :maxAttempts
               and o.createdAt < :notAfter

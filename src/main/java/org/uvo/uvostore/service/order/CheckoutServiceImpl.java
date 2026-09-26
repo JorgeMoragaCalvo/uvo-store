@@ -24,7 +24,7 @@ import org.uvo.uvostore.repository.ProductVariationRepository;
 import org.uvo.uvostore.repository.SettingRepository;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.customer.CustomerService;
-import org.uvo.uvostore.service.order.event.OrderCompletedEvent;
+import org.uvo.uvostore.service.order.event.OrderPlacedEvent;
 
 import java.math.BigDecimal;
 import java.security.SecureRandom;
@@ -189,9 +189,10 @@ public class CheckoutServiceImpl implements CheckoutService {
             couponService.recordUsage(order.getCoupon(), saved, customer);
         }
 
-        // Ports event(new OrderCompleted($order)) — PosNotificationListener reacts to this
-        // AFTER_COMMIT.
-        applicationEventPublisher.publishEvent(new OrderCompletedEvent(saved.getId()));
+        // F07: el pedido se ha hecho, no se ha pagado. De este evento cuelga solo el acuse de recibo;
+        // la notificación al POS —que emite un documento tributario— y el correo de compra confirmada
+        // esperan a PaymentConfirmedEvent, que publica markPaid.
+        applicationEventPublisher.publishEvent(new OrderPlacedEvent(saved.getId()));
 
         return new OrderConfirmation(saved.getId(), saved.getOrderNumber(), saved.getTotal());
     }
