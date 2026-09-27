@@ -5,6 +5,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.uvo.uvostore.entity.catalog.Product;
 import org.uvo.uvostore.entity.catalog.ProductVariation;
 import org.uvo.uvostore.entity.catalog.ProductVariationAttribute;
+import org.uvo.uvostore.entity.catalog.enums.ProductType;
 import org.uvo.uvostore.repository.ProductRepository;
 import org.uvo.uvostore.repository.ProductVariationRepository;
 import org.uvo.uvostore.repository.SettingRepository;
@@ -81,6 +82,15 @@ public class CartServiceImpl implements CartService {
                         .ifPresentOrElse(product -> {
                     if (!product.isActive()) {
                         errors.put(key, "Producto no disponible");
+                    } else if (product.getProductType() != ProductType.SIMPLE) {
+                        // F09: la ficha padre de un producto variable no es comprable. Su precio es el
+                        // de la variación más barata (recalculateParentAggregate) —o 0 mientras no tenga
+                        // ninguna— y la línea no dice talla ni color, así que el pedido nace sin poder
+                        // cumplirse. Y como el padre lleva manageStock=false para siempre, la
+                        // comprobación de stock de la línea siguiente se salta entera: sin esto se puede
+                        // pedir cualquier cantidad de algo que no hay. La UI guía bien; esto cierra la
+                        // petición directa a la API.
+                        errors.put(key, "Elige una variante de este producto");
                     } else if (product.isManageStock() && product.getStock() < requested) {
                         errors.put(key, "Stock insuficiente. Solo hay " + product.getStock() + " disponibles");
                     } else {
