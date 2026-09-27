@@ -2,8 +2,13 @@ package org.uvo.uvostore.platform;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Value;
+import org.uvo.uvostore.entity.security.Role;
 import org.uvo.uvostore.support.IntegrationTestSupport;
 
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -147,6 +152,61 @@ class StoreOnboardingTest extends IntegrationTestSupport {
                         .contentType("application/json")
                         .content("{\"domain\":\"" + domainB + "\"}"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void theAdminOfANewStoreCanActuallyUseThePanel() throws Exception {
+        // F08. El test de alta terminaba en "el login devuelve un token", y por eso este fallo llevaba
+        // desde que existe el API de plataforma sin que nadie lo viera: el alta creaba el administrador
+        // SIN NINGÚN ROL, así que su token traía solo ROLE_ADMIN y todos los endpoints del panel
+        // respondían 403. Peor aún, el menú se dibuja a partir de los permisos, así que el dueño veía
+        // un panel sin secciones —incluida la de Roles, la única que lo habría arreglado.
+        String slug = "onboard-usable-" + nextSeq();
+        String response = mockMvc.perform(post("/api/platform/stores")
+                        .header("X-Platform-Key", platformKey)
+                        .contentType("application/json")
+                        .content(onboardingBody(slug, "", "Tienda usable")))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String adminEmail = objectMapper.readTree(response).get("adminEmail").asText();
+        long storeId = objectMapper.readTree(response).get("storeId").asLong();
+
+        String login = mockMvc.perform(post("/api/admin/auth/login")
+                        .header("Host", slug + ".localhost")
+                        .contentType("application/json")
+                        .content("{\"email\":\"" + adminEmail + "\",\"password\":\"password123456\"}"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String token = objectMapper.readTree(login).get("token").asText();
+
+        // Leer. Las aserciones sobre los endpoints van primero a propósito: son el síntoma que sufre el
+        // cliente, y así un fallo se lee como "403 al abrir el panel" y no como un detalle del token.
+        mockMvc.perform(get("/api/admin/products")
+                        .header("Host", slug + ".localhost")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk());
+
+        // Y escribir: un permiso de lectura por sí solo no haría gestionable la tienda. Se usa un
+        // endpoint con cuerpo JSON (crear un cupón exige 'coupons.manage'); el de categorías es
+        // multipart y aquí lo que se comprueba es el permiso, no el formato.
+        mockMvc.perform(post("/api/admin/coupons")
+                        .header("Host", slug + ".localhost")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType("application/json")
+                        .content("{\"code\":\"ALTA-" + nextSeq() + "\",\"name\":\"Cupón inicial\","
+                                + "\"type\":\"FIXED\",\"value\":1000,\"active\":true}"))
+                .andExpect(status().is2xxSuccessful());
+
+        // Y lo que decide qué secciones dibuja el panel: con la lista vacía solo queda el Dashboard.
+        assertThat(objectMapper.readTree(login).get("permissions")).isNotEmpty();
+
+        // El rol es de esta tienda y trae el catálogo completo — contado, no un número fijo que se
+        // quede viejo en cuanto una migración añada un permiso.
+        List<Role> roles = roleRepository.findByStoreId(storeId);
+        assertThat(roles).singleElement().satisfies(role -> {
+            assertThat(role.getName()).isEqualTo("Administrador");
+            assertThat(role.getPermissions()).hasSize((int) permissionRepository.count());
+        });
     }
 
     private String onboardingBody(String slug, String domain, String storeName) {
