@@ -22,6 +22,7 @@ import org.uvo.uvostore.repository.PaymentGatewayConfigRepository;
 import org.uvo.uvostore.repository.ProductRepository;
 import org.uvo.uvostore.repository.ProductVariationRepository;
 import org.uvo.uvostore.repository.SettingRepository;
+import org.uvo.uvostore.service.catalog.EffectivePrice;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.customer.CustomerService;
 import org.uvo.uvostore.service.order.event.OrderPlacedEvent;
@@ -270,7 +271,10 @@ public class CheckoutServiceImpl implements CheckoutService {
             // OrderItem — por si mañana alguien reordena las llamadas de checkout() y esta línea deja de
             // pasar por la validación.
             CartPricingServiceImpl.requireSimpleProduct(product);
-            unitPrice = product.getPrice();
+            // F11: el snapshot del OrderItem es lo que se cobra y lo que va al documento del POS, así que
+            // tiene que llevar el precio vigente — el mismo que cotizó CartPricingServiceImpl. Si aquí se
+            // colara product.getPrice(), el total y las líneas de la orden dejarían de cuadrar.
+            unitPrice = EffectivePrice.of(product);
             sku = product.getSku();
         }
 

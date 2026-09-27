@@ -43,7 +43,8 @@ final class ProductDtoMapper {
                 product.getDescription(),
                 product.getProductType().name().toLowerCase(),
                 product.getSku(),
-                product.getPrice(),
+                EffectivePrice.of(product),
+                EffectivePrice.compareAtPrice(product),
                 formattedPrice(product, activeVariations),
                 product.getStock(),
                 inStock(product, activeVariations),
@@ -121,7 +122,10 @@ final class ProductDtoMapper {
             }
             return formatClp(min) + " - " + formatClp(max);
         }
-        return product.getPrice() == null ? "No disponible" : formatClp(product.getPrice());
+        // F11: el precio que se muestra es el vigente, no el de lista. Si no, la ficha diría un importe y
+        // el carrito otro.
+        BigDecimal effective = EffectivePrice.of(product);
+        return effective == null ? "No disponible" : formatClp(effective);
     }
 
     // Ports number_format($price, 0, ',', '.') — thousands separated with '.', no decimals.

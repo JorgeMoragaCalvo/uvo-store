@@ -11,6 +11,7 @@ import org.uvo.uvostore.service.Money;
 import org.uvo.uvostore.repository.ProductRepository;
 import org.uvo.uvostore.repository.ProductVariationRepository;
 import org.uvo.uvostore.repository.SettingRepository;
+import org.uvo.uvostore.service.catalog.EffectivePrice;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.shipping.ShippingOption;
 import org.uvo.uvostore.service.shipping.ShippingRateService;
@@ -68,7 +69,9 @@ public class CartPricingServiceImpl implements CartPricingService {
                 // devolvería el precio de la variante más barata —o 0 si aún no tiene variaciones—
                 // como si fuera comprable.
                 requireSimpleProduct(product);
-                unitPrice = product.getPrice();
+                // F11: el precio vigente, no el de lista. Es la misma función que usa el catálogo, así
+                // que lo que se cotiza es lo que la ficha mostró.
+                unitPrice = EffectivePrice.of(product);
                 unitWeight = product.getWeight();
             }
             subtotalWithTax = subtotalWithTax.add(unitPrice.multiply(BigDecimal.valueOf(line.quantity())));

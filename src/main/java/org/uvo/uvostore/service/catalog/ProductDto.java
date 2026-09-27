@@ -12,7 +12,11 @@ public record ProductDto(
         String description,
         String productType,
         String sku,
+        // F11: `price` es el precio VIGENTE (con la oferta aplicada si la hay) y `compareAtPrice` el
+        // habitual cuando hay algo que tachar, o null. Es el mismo convenio que ya usaba
+        // ProductVariationDto, para que el storefront pinte las dos mitades del catálogo igual.
         BigDecimal price,
+        BigDecimal compareAtPrice,
         String formattedPrice,
         int stock,
         boolean inStock,
