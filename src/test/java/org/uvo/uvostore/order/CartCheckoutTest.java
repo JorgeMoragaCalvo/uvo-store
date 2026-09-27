@@ -4,12 +4,15 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.uvo.uvostore.entity.catalog.Category;
 import org.uvo.uvostore.entity.catalog.Product;
+import org.uvo.uvostore.entity.catalog.ProductVariation;
+import org.uvo.uvostore.entity.catalog.enums.ProductType;
 import org.uvo.uvostore.entity.order.Coupon;
 import org.uvo.uvostore.entity.order.Order;
 import org.uvo.uvostore.entity.order.enums.CouponType;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.CouponRepository;
 import org.uvo.uvostore.repository.OrderRepository;
+import org.uvo.uvostore.repository.ProductVariationRepository;
 import org.uvo.uvostore.support.IntegrationTestSupport;
 
 import java.math.BigDecimal;
@@ -31,6 +34,8 @@ class CartCheckoutTest extends IntegrationTestSupport {
     private OrderRepository orderRepository;
     @Autowired
     private CouponRepository couponRepository;
+    @Autowired
+    private ProductVariationRepository variationRepository;
 
     @Test
     void cartCalculateReturnsCorrectTotalsForKnownPriceAndTaxRate() throws Exception {
@@ -278,6 +283,83 @@ class CartCheckoutTest extends IntegrationTestSupport {
                         .contentType("application/json")
                         .content(body))
                 .andExpect(status().isConflict());
+    }
+
+    @Test
+    void cartValidateAddsUpDuplicateLinesOfTheSameVariation() throws Exception {
+        // F10, la otra mitad de lo que pedía el hallazgo ("probar duplicados de producto y variación").
+        // La rama de la variación comparte el mismo total agregado que la de producto, así que hoy
+        // funciona — pero sin este caso nada lo sujeta: bastaría volver a comparar contra la cantidad de
+        // la línea en esa rama y no habría un solo test rojo.
+        Store store = createStore("cart-val-dup-var");
+        ProductVariation variation = variationWithStock(store, 10);
+
+        mockMvc.perform(post("/api/v1/cart/validate")
+                        .header("Host", hostHeader(store))
+                        .contentType("application/json")
+                        .content("""
+                                {"items":[{"id":%d,"type":"variation","quantity":6},{"id":%d,"type":"variation","quantity":6}]}
+                                """.formatted(variation.getId(), variation.getId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(false));
+    }
+
+    @Test
+    void cartValidateStillAcceptsDuplicateVariationLinesThatFitTogether() throws Exception {
+        Store store = createStore("cart-val-dup-var-ok");
+        ProductVariation variation = variationWithStock(store, 10);
+
+        mockMvc.perform(post("/api/v1/cart/validate")
+                        .header("Host", hostHeader(store))
+                        .contentType("application/json")
+                        .content("""
+                                {"items":[{"id":%d,"type":"variation","quantity":4},{"id":%d,"type":"variation","quantity":4}]}
+                                """.formatted(variation.getId(), variation.getId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(true));
+    }
+
+    @Test
+    void checkoutRejectsDuplicateVariationLinesThatExceedStockTogether() throws Exception {
+        Store store = createStore("checkout-dup-var");
+        disableShipping(store);
+        ProductVariation variation = variationWithStock(store, 10);
+        long ordersBefore = orderRepository.count();
+
+        mockMvc.perform(post("/api/v1/checkout")
+                        .header("Host", hostHeader(store))
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "customer": {"email":"a@test.local","firstName":"A","lastName":"B","phone":"+56911111111"},
+                                  "shippingAddress": {"addressLine1":"Calle 1","city":"Santiago","state":"RM","postalCode":"8320000","country":"CL"},
+                                  "region": "RM", "commune": "Santiago",
+                                  "items": [{"id":%d,"type":"variation","quantity":6},{"id":%d,"type":"variation","quantity":6}],
+                                  "paymentMethod": "manual"
+                                }
+                                """.formatted(variation.getId(), variation.getId())))
+                .andExpect(status().isConflict());
+
+        assertEquals(ordersBefore, orderRepository.count(),
+                "una orden que no se puede servir no debe llegar a existir");
+    }
+
+    /** Una variación con su producto padre variable, como la deja el admin al añadir variaciones. */
+    private ProductVariation variationWithStock(Store store, int stock) {
+        Product parent = createProduct(store, createCategory(store, "Ropa"), "Polera variable",
+                BigDecimal.valueOf(9990));
+        parent.setProductType(ProductType.VARIABLE);
+        parent.setManageStock(false);
+        productRepository.save(parent);
+
+        ProductVariation variation = new ProductVariation();
+        variation.setStore(store);
+        variation.setProduct(parent);
+        variation.setSku("VAR-" + nextSeq());
+        variation.setPrice(BigDecimal.valueOf(9990));
+        variation.setStock(stock);
+        variation.setActive(true);
+        return variationRepository.save(variation);
     }
 
     private Order checkoutAndLoad(Store store, Product product) throws Exception {
