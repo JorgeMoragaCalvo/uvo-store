@@ -4,7 +4,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.uvo.uvostore.entity.catalog.Product;
 import org.uvo.uvostore.entity.catalog.ProductVariation;
+import org.uvo.uvostore.entity.catalog.enums.ProductType;
 import org.uvo.uvostore.entity.order.Coupon;
+import org.uvo.uvostore.service.BusinessException;
 import org.uvo.uvostore.service.Money;
 import org.uvo.uvostore.repository.ProductRepository;
 import org.uvo.uvostore.repository.ProductVariationRepository;
@@ -61,6 +63,11 @@ public class CartPricingServiceImpl implements CartPricingService {
                 Product product = productRepository.findById(line.productId())
                         .filter(p -> p.getStore().getId().equals(storeId))
                         .orElseThrow(() -> new NoSuchElementException("Product " + line.productId() + " not found"));
+                // F09: aquí también, y no solo en la validación del carrito, porque /cart/calculate
+                // entra directo a este cálculo sin pasar por validateItems. Cotizar la ficha padre
+                // devolvería el precio de la variante más barata —o 0 si aún no tiene variaciones—
+                // como si fuera comprable.
+                requireSimpleProduct(product);
                 unitPrice = product.getPrice();
                 unitWeight = product.getWeight();
             }
@@ -139,5 +146,23 @@ public class CartPricingServiceImpl implements CartPricingService {
 
         return new CartTotals(subtotalWithoutTax, taxAmount, subtotalWithTax, shippingCost, discountAmount, total,
                 shippingAvailable, couponApplied, appliedCoupon, customerRejectionReason);
+    }
+
+    /**
+     * F09. Una línea sin {@code variationId} tiene que referirse a un producto simple.
+     *
+     * <p>La ficha padre de un producto variable no es un artículo: no tiene talla ni color, su precio es
+     * el de la variación más barata —o cero mientras no tenga ninguna— y arrastra
+     * {@code manageStock = false} de por vida, así que ni el stock la frena.
+     *
+     * <p>Está duplicado a propósito con el mensaje por línea de {@code CartServiceImpl.validateItems}:
+     * ese es el que ve el comprador, y este es el que impide que el importe se calcule siquiera. La
+     * solución de fondo —un único resolutor de línea compartido por validación, cálculo y checkout— es
+     * un refactor de los tres servicios de dinero a la vez, y no toca hacerlo dentro de este arreglo.
+     */
+    static void requireSimpleProduct(Product product) {
+        if (product.getProductType() != ProductType.SIMPLE) {
+            throw new BusinessException("Elige una variante de este producto");
+        }
     }
 }

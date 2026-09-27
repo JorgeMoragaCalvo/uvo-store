@@ -265,6 +265,11 @@ public class CheckoutServiceImpl implements CheckoutService {
             product = productRepository.findById(line.productId())
                     .filter(p -> p.getStore().getId().equals(storeId))
                     .orElseThrow(() -> new NoSuchElementException("Product " + line.productId() + " not found"));
+            // F09: el cinturón. La validación del carrito ya rechaza la ficha padre de un producto
+            // variable con un error por línea, y aquí se vuelve a comprobar antes de escribir el
+            // OrderItem — por si mañana alguien reordena las llamadas de checkout() y esta línea deja de
+            // pasar por la validación.
+            CartPricingServiceImpl.requireSimpleProduct(product);
             unitPrice = product.getPrice();
             sku = product.getSku();
         }
