@@ -9,6 +9,7 @@ import org.uvo.uvostore.entity.catalog.enums.ProductType;
 import org.uvo.uvostore.repository.ProductRepository;
 import org.uvo.uvostore.repository.ProductVariationRepository;
 import org.uvo.uvostore.repository.SettingRepository;
+import org.uvo.uvostore.service.catalog.EffectivePrice;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.catalog.FileStorageService;
 
@@ -94,8 +95,10 @@ public class CartServiceImpl implements CartService {
                     } else if (product.isManageStock() && product.getStock() < requested) {
                         errors.put(key, "Stock insuficiente. Solo hay " + product.getStock() + " disponibles");
                     } else {
+                        // F11: el precio vigente, la misma función que el catálogo y el cálculo. Este es
+                        // el que el carrito del storefront pinta por línea.
                         validated.add(new CartValidatedItemDto(
-                                product.getId(), "product", product.getName(), null, product.getPrice(),
+                                product.getId(), "product", product.getName(), null, EffectivePrice.of(product),
                                 product.getStock(), featuredImage(product),
                                 product.isManageStock() ? product.getStock() : 999));
                     }
