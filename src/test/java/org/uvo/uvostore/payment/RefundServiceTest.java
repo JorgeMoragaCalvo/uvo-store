@@ -22,6 +22,7 @@ import org.uvo.uvostore.service.order.OrderStatusService;
 import org.uvo.uvostore.service.order.PaymentService;
 import org.uvo.uvostore.service.payment.MercadoPagoService;
 import org.uvo.uvostore.service.payment.RefundCommand;
+import org.uvo.uvostore.service.payment.RefundIntentStore;
 import org.uvo.uvostore.service.payment.RefundService;
 import org.uvo.uvostore.service.payment.WebpayService;
 
@@ -66,9 +67,12 @@ class RefundServiceTest {
     private final PaymentService paymentService = mock(PaymentService.class);
     private final WebpayService webpayService = mock(WebpayService.class);
     private final MercadoPagoService mercadoPagoService = mock(MercadoPagoService.class);
+    // F12: la intención se abre en un bean aparte porque necesita su propia transacción (con
+    // REQUIRES_NEW en un método de la misma clase la autoinvocación no pasaría por el proxy de Spring).
+    private final RefundIntentStore intentStore = mock(RefundIntentStore.class);
 
     private final RefundService service = new RefundService(orderRepository, refundRepository, historyRepository,
-            userRepository, orderStatusService, paymentService, webpayService, mercadoPagoService);
+            userRepository, orderStatusService, paymentService, webpayService, mercadoPagoService, intentStore);
 
     private Store store;
 
@@ -79,6 +83,12 @@ class RefundServiceTest {
         TenantContext.set(store);
         when(refundRepository.save(any(OrderRefund.class))).thenAnswer(i -> i.getArgument(0));
         when(refundRepository.totalRefunded(any())).thenReturn(BigDecimal.ZERO);
+        when(intentStore.open(any(), any(), any(), any())).thenAnswer(i -> {
+            OrderRefund intent = OrderRefund.builder()
+                    .order(i.getArgument(0)).amount(i.getArgument(1)).type(i.getArgument(2)).build();
+            intent.setId(1L);
+            return intent;
+        });
     }
 
     @AfterEach
@@ -107,11 +117,11 @@ class RefundServiceTest {
     void eachGatewayIsAskedItsOwnWay() {
         Order stripe = paidOrder(PaymentMethodType.STRIPE);
         service.refund(new RefundCommand(stripe.getId(), null, null, null));
-        verify(paymentService).refund(stripe.getId(), TOTAL_CHARGED);
+        verify(paymentService).refund(stripe.getId(), TOTAL_CHARGED, null);
 
         Order mercadoPago = paidOrder(PaymentMethodType.MERCADOPAGO);
         service.refund(new RefundCommand(mercadoPago.getId(), null, null, null));
-        verify(mercadoPagoService).refund(mercadoPago.getId(), TOTAL_CHARGED);
+        verify(mercadoPagoService).refund(mercadoPago.getId(), TOTAL_CHARGED, null);
     }
 
     @Test

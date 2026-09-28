@@ -8,6 +8,7 @@ import org.uvo.uvostore.entity.order.Order;
 import org.uvo.uvostore.entity.order.OrderRefund;
 import org.uvo.uvostore.entity.order.OrderStatusHistory;
 import org.uvo.uvostore.entity.order.enums.PaymentStatus;
+import org.uvo.uvostore.entity.order.enums.RefundStatus;
 import org.uvo.uvostore.entity.order.enums.RefundType;
 import org.uvo.uvostore.entity.security.User;
 import org.uvo.uvostore.repository.OrderRefundRepository;
@@ -50,11 +51,13 @@ public class RefundService {
     private final PaymentService paymentService;
     private final WebpayService webpayService;
     private final MercadoPagoService mercadoPagoService;
+    private final RefundIntentStore intentStore;
 
     public RefundService(OrderRepository orderRepository, OrderRefundRepository refundRepository,
                          OrderStatusHistoryRepository historyRepository, UserRepository userRepository,
                          OrderStatusService orderStatusService, PaymentService paymentService,
-                         WebpayService webpayService, MercadoPagoService mercadoPagoService) {
+                         WebpayService webpayService, MercadoPagoService mercadoPagoService,
+                         RefundIntentStore intentStore) {
         this.orderRepository = orderRepository;
         this.refundRepository = refundRepository;
         this.historyRepository = historyRepository;
@@ -63,6 +66,7 @@ public class RefundService {
         this.paymentService = paymentService;
         this.webpayService = webpayService;
         this.mercadoPagoService = mercadoPagoService;
+        this.intentStore = intentStore;
     }
 
     /**
@@ -75,18 +79,34 @@ public class RefundService {
         // Se calcula ANTES de escribir nada: en cuanto se guarde la fila, el saldo cambia.
         boolean closesOrder = closesOrder(order, amount);
 
-        String reference = switch (order.getPaymentMethod()) {
-            case STRIPE -> paymentService.refund(order.getId(), amount);
-            case WEBPAY -> webpayService.refund(order.getId(), amount);
-            case MERCADOPAGO -> mercadoPagoService.refund(order.getId(), amount);
-            // No hay pasarela contra la que pedir nada: una transferencia se devuelve por el banco,
-            // y luego se registra aquí con recordExternal.
-            case MANUAL -> throw new BusinessException(
-                    "Esta orden se pagó fuera de una pasarela: registra el reembolso con el endpoint de reembolso externo");
-        };
+        // F12. La intención se guarda y se confirma ANTES de mover un peso, en su propia transacción.
+        // El fallo que esto cubre no es que la pasarela falle —eso lanza, se deshace todo y no queda
+        // rastro de un reembolso que no ocurrió— sino el contrario: la pasarela devuelve el dinero y
+        // luego se cae lo local. Antes eso dejaba el dinero fuera y la base diciendo que no se había
+        // devuelto nada, así que el reintento del operador lo devolvía por segunda vez. Este commit es
+        // el que sobrevive a esa caída.
+        OrderRefund intent = intentStore.open(order, amount, closesOrder ? RefundType.FULL : RefundType.PARTIAL, command);
 
-        return register(order, amount, reference, closesOrder ? RefundType.FULL : RefundType.PARTIAL,
-                closesOrder, command);
+        String reference;
+        try {
+            reference = switch (order.getPaymentMethod()) {
+                case STRIPE -> paymentService.refund(order.getId(), amount, intent.getIdempotencyKey());
+                case WEBPAY -> webpayService.refund(order.getId(), amount);
+                case MERCADOPAGO -> mercadoPagoService.refund(order.getId(), amount, intent.getIdempotencyKey());
+                // No hay pasarela contra la que pedir nada: una transferencia se devuelve por el banco,
+                // y luego se registra aquí con recordExternal.
+                case MANUAL -> throw new BusinessException(
+                        "Esta orden se pagó fuera de una pasarela: registra el reembolso con el endpoint de reembolso externo");
+            };
+        } catch (RuntimeException e) {
+            // La pasarela dijo no: la intención se marca fallida —también en su propia transacción, para
+            // que sobreviva al rollback de ésta— y el saldo vuelve a quedar disponible. Sin esto, un
+            // rechazo dejaría mordido para siempre un dinero que nunca salió.
+            intentStore.fail(intent.getId());
+            throw e;
+        }
+
+        return complete(intent, order, amount, reference, closesOrder, command);
     }
 
     /**
@@ -104,22 +124,37 @@ public class RefundService {
         BigDecimal amount = resolveAmount(order, command.amount());
         // El tipo es EXTERNAL lo cubra todo o no —lo que distingue a estos es que el dinero no se
         // movió desde aquí—, así que si cierra la orden se decide aparte, por el saldo.
-        return register(order, amount, null, RefundType.EXTERNAL, closesOrder(order, amount), command);
+        return registerExternal(order, amount, closesOrder(order, amount), command);
     }
 
-    private OrderRefund register(Order order, BigDecimal amount, String reference, RefundType type,
+    private OrderRefund complete(OrderRefund intent, Order order, BigDecimal amount, String reference,
                                  boolean closesOrder, RefundCommand command) {
+        intent.setGatewayReference(reference);
+        intent.setStatus(RefundStatus.COMPLETED);
+        return finish(refundRepository.save(intent), order, amount, reference, closesOrder, command);
+    }
+
+    /**
+     * F12. El reembolso externo no pasa por ninguna pasarela —el dinero ya se movió en el panel del
+     * proveedor—, así que no hay intención que abrir: nace {@code COMPLETED} y sin clave, porque no hay
+     * ninguna llamada remota que deduplicar.
+     */
+    private OrderRefund registerExternal(Order order, BigDecimal amount, boolean closesOrder, RefundCommand command) {
         User user = command.userId() == null ? null : userRepository.findById(command.userId()).orElse(null);
-        OrderRefund refund = OrderRefund.builder()
+        OrderRefund refund = refundRepository.save(OrderRefund.builder()
                 .order(order)
                 .amount(amount)
-                .gatewayReference(reference)
-                .type(type)
+                .type(RefundType.EXTERNAL)
                 .reason(command.reason())
                 .user(user)
-                .build();
-        refund = refundRepository.save(refund);
+                .status(RefundStatus.COMPLETED)
+                .build());
+        return finish(refund, order, amount, null, closesOrder, command);
+    }
 
+    private OrderRefund finish(OrderRefund refund, Order order, BigDecimal amount, String reference,
+                               boolean closesOrder, RefundCommand command) {
+        RefundType type = refund.getType();
         String detail = describe(type, amount, reference, command.reason());
         log.info("Reembolso registrado order_id={} order_number={} monto={} tipo={} referencia={}",
                 order.getId(), order.getOrderNumber(), amount, type, reference);
