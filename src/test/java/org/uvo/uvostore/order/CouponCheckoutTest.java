@@ -66,18 +66,21 @@ class CouponCheckoutTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("El segundo intento del mismo cliente se rechaza, no se cobra rebajado")
-    void theSecondAttemptIsRejected() throws Exception {
+    @DisplayName("Una SEGUNDA compra del mismo cliente con el mismo cupón se rechaza")
+    void aSecondPurchaseByTheSameCustomerIsRejected() throws Exception {
         Store store = createStore("coupon-second");
         disableShipping(store);
         Product product = createProduct(store, createCategory(store, "Cat"), "Producto", BigDecimal.valueOf(10000));
         Coupon coupon = onePerCustomerCoupon(store);
 
-        mockMvc.perform(checkout(store, product, coupon.getCode())).andExpect(status().isOk());
+        mockMvc.perform(checkout(store, product, coupon.getCode(), 1)).andExpect(status().isOk());
         long ordersAfterFirst = orderRepository.count();
 
-        // Mismo email = mismo cliente (el checkout identifica por email, ver findOrCreateGuest).
-        mockMvc.perform(checkout(store, product, coupon.getCode()))
+        // F15: la segunda compra tiene que ser DISTINTA (aquí, otra cantidad). Con el carrito idéntico
+        // esto ya no es "una segunda compra" sino el reintento del mismo checkout, y entonces lo correcto
+        // es reutilizar la orden que ya existe —lo fija CheckoutRetryTest—, no rechazarla. Lo que este
+        // caso protege es lo de F05: el límite por cliente no se puede gastar dos veces.
+        mockMvc.perform(checkout(store, product, coupon.getCode(), 2))
                 .andExpect(status().isBadRequest());
 
         assertThat(orderRepository.count())
@@ -184,17 +187,22 @@ class CouponCheckoutTest extends IntegrationTestSupport {
 
     private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder checkout(
             Store store, Product product, String couponCode) {
+        return checkout(store, product, couponCode, 1);
+    }
+
+    private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder checkout(
+            Store store, Product product, String couponCode, int quantity) {
         String body = """
                 {
                   "customer": {"email":"cliente-fijo@test.local","firstName":"A","lastName":"B","phone":"+56911111111"},
                   "shippingAddress": {"addressLine1":"Calle 1","city":"Santiago","state":"RM","postalCode":"8320000","country":"CL"},
                   "region": "RM",
                   "commune": "Santiago",
-                  "items": [{"id":%d,"type":"product","quantity":1}],
+                  "items": [{"id":%d,"type":"product","quantity":%d}],
                   "couponCode": "%s",
                   "paymentMethod": "manual"
                 }
-                """.formatted(product.getId(), couponCode);
+                """.formatted(product.getId(), quantity, couponCode);
         return post("/api/v1/checkout")
                 .header("Host", hostHeader(store))
                 .contentType("application/json")

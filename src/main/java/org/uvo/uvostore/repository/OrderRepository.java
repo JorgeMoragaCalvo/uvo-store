@@ -106,6 +106,27 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
                                                @Param("mismatchPrefix") String mismatchPrefix,
                                                Pageable pageable);
 
+    /**
+     * F15. Órdenes pendientes que nadie va a pagar, para soltar su reserva de cupón.
+     *
+     * <p><b>No</b> exige id de pasarela, y esa es la diferencia con
+     * {@code findPendingPaymentsToReconcile}: las órdenes que interesan aquí son justamente las que se
+     * quedaron sin él porque la llamada a la pasarela falló, así que la conciliación no las mira nunca —
+     * ni las resuelve ni las alerta.
+     *
+     * <p>{@code join fetch o.store} por el mismo motivo que en la consulta del POS: lo consume un job, sin
+     * sesión abierta, y lo primero que hace con cada orden es leer su tienda para fijar el tenant.
+     */
+    @Query("""
+            select o from Order o
+            join fetch o.store
+            where o.status = org.uvo.uvostore.entity.order.enums.OrderStatus.PENDING
+              and o.paymentStatus = org.uvo.uvostore.entity.order.enums.PaymentStatus.PENDING
+              and o.createdAt < :notAfter
+            order by o.createdAt asc
+            """)
+    List<Order> findAbandonedPending(@Param("notAfter") Instant notAfter, Pageable pageable);
+
     // Admin\Shipping\{Zones,Methods}\Index delete guards — refuse to delete a zone/method that
     // still has orders referencing it.
     long countByShippingZoneId(Long shippingZoneId);

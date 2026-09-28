@@ -29,8 +29,13 @@ import org.uvo.uvostore.service.order.event.OrderPlacedEvent;
 
 import java.math.BigDecimal;
 import java.security.SecureRandom;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.NoSuchElementException;
 
 // Consolidates the checkout order-creation path onto the single CartPricingService calculator
@@ -52,6 +57,7 @@ public class CheckoutServiceImpl implements CheckoutService {
     private final SettingRepository settingRepository;
     private final PaymentGatewayConfigRepository paymentGatewayConfigRepository;
     private final ApplicationEventPublisher applicationEventPublisher;
+    private final int retryWindowMinutes;
 
     public CheckoutServiceImpl(
             CartPricingService cartPricingService,
@@ -63,7 +69,8 @@ public class CheckoutServiceImpl implements CheckoutService {
             ProductVariationRepository variationRepository,
             SettingRepository settingRepository,
             PaymentGatewayConfigRepository paymentGatewayConfigRepository,
-            ApplicationEventPublisher applicationEventPublisher) {
+            ApplicationEventPublisher applicationEventPublisher,
+            @org.springframework.beans.factory.annotation.Value("${app.abandoned-orders.retry-window-minutes:60}") int retryWindowMinutes) {
         this.cartPricingService = cartPricingService;
         this.cartService = cartService;
         this.couponService = couponService;
@@ -74,6 +81,7 @@ public class CheckoutServiceImpl implements CheckoutService {
         this.settingRepository = settingRepository;
         this.paymentGatewayConfigRepository = paymentGatewayConfigRepository;
         this.applicationEventPublisher = applicationEventPublisher;
+        this.retryWindowMinutes = retryWindowMinutes;
     }
 
     @Override
@@ -105,6 +113,24 @@ public class CheckoutServiceImpl implements CheckoutService {
         Customer customer = customerService.findOrCreateGuest(
                 command.customerEmail(), command.customerFirstName(), command.customerLastName(), command.customerPhone());
         customer = customerService.markInvitedIfGuest(customer);
+
+        // F15. El reintento de la misma compra devuelve la orden que ya existe, y se comprueba ANTES de
+        // cotizar. El orden importa: si se cotizara primero, la validación del cupón vería la reserva que
+        // hizo el primer intento, la rechazaría por límite por cliente y el checkout moriría con un 400
+        // (F05) sin llegar nunca hasta aquí. Era justo el caso que hay que arreglar.
+        //
+        // El frontend crea la orden y solo después llama a la pasarela (useCheckoutStore), así que un
+        // fallo al abrir la sesión de pago deja una orden PENDING y el carrito intacto: el siguiente clic
+        // vuelve a entrar por este método. Y esas órdenes no las mira nadie — la conciliación exige un id
+        // de pasarela y estas no llegaron a tenerlo.
+        Optional<Order> retried = findReusablePendingOrder(customer, command);
+        if (retried.isPresent()) {
+            Order existing = retried.get();
+            // No se vuelve a cotizar ni a reclamar el cupón: la reserva ya es de esta orden, y su total es
+            // el precio que el cliente aceptó hace un momento. Tampoco se publica OrderPlacedEvent otra
+            // vez, que mandaría un segundo "recibimos tu pedido".
+            return new OrderConfirmation(existing.getId(), existing.getOrderNumber(), existing.getTotal());
+        }
 
         CartTotals totals = cartPricingService.price(command.lines(), command.couponCode(), command.region(),
                 command.commune(), customer.getId());
@@ -246,6 +272,61 @@ public class CheckoutServiceImpl implements CheckoutService {
                     : new CartItemCommand(line.productId(), "product", line.quantity()));
         }
         return items;
+    }
+
+    /**
+     * F15. La orden pendiente de este mismo cliente que corresponde a <b>esta misma compra</b>, si la hay.
+     *
+     * <p>Tres condiciones, y las tres importan:
+     * <ul>
+     *   <li><b>Mismas líneas</b>: mismo producto o variación y misma cantidad, sin importar el orden en
+     *       que lleguen.</li>
+     *   <li><b>Mismo cupón</b>, incluido "ninguno en ninguna de las dos".</li>
+     *   <li><b>Reciente.</b> Es la que acota el riesgo. No se compara el total —no se puede: al recotizar,
+     *       el cupón que reservó el primer intento ya está gastado, así que el importe nuevo nunca
+     *       coincidiría con el de la orden—, y a cambio la ventana es corta. Reintentar un pago pasa en
+     *       minutos; pasado el plazo se crea una orden nueva con el precio de hoy y de la vieja se encarga
+     *       {@code AbandonedOrderJob}.</li>
+     * </ul>
+     *
+     * <p>Consecuencia asumida: dentro de esa ventana se honra el precio de la orden existente aunque el
+     * catálogo haya cambiado. Es el precio que el cliente aceptó hace un momento, así que es lo correcto.
+     *
+     * <p>Solo se mira la más reciente: si hubiera varias pendientes iguales (de antes de este arreglo),
+     * reutilizar la última es lo razonable y el job se encarga del resto.
+     */
+    private Optional<Order> findReusablePendingOrder(Customer customer, CheckoutCommand command) {
+        Instant notBefore = Instant.now().minus(Duration.ofMinutes(retryWindowMinutes));
+        return orderRepository.findByCustomerIdOrderByCreatedAtDesc(customer.getId()).stream()
+                .filter(o -> o.getStatus() == OrderStatus.PENDING && o.getPaymentStatus() == PaymentStatus.PENDING)
+                .filter(o -> o.getCreatedAt() != null && o.getCreatedAt().isAfter(notBefore))
+                .filter(o -> sameCoupon(o, command.couponCode()))
+                .filter(o -> sameLines(o, command.lines()))
+                .findFirst();
+    }
+
+    private boolean sameCoupon(Order order, String couponCode) {
+        String existing = order.getCouponCode();
+        if (existing == null || existing.isBlank()) {
+            return couponCode == null || couponCode.isBlank();
+        }
+        return existing.equals(couponCode);
+    }
+
+    private boolean sameLines(Order order, List<CartLineCommand> lines) {
+        Map<String, Integer> requested = new HashMap<>();
+        for (CartLineCommand line : lines) {
+            String key = line.variationId() != null ? "v:" + line.variationId() : "p:" + line.productId();
+            requested.merge(key, line.quantity(), Integer::sum);
+        }
+        Map<String, Integer> stored = new HashMap<>();
+        for (OrderItem item : order.getItems()) {
+            String key = item.getVariation() != null
+                    ? "v:" + item.getVariation().getId()
+                    : "p:" + item.getProduct().getId();
+            stored.merge(key, item.getQuantity(), Integer::sum);
+        }
+        return requested.equals(stored);
     }
 
     private OrderItem buildOrderItem(Order order, CartLineCommand line) {
