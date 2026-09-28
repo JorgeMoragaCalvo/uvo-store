@@ -54,6 +54,24 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     @Query("UPDATE Product p SET p.stock = p.stock + :quantity WHERE p.id = :id")
     int restoreStock(@Param("id") Long id, @Param("quantity") int quantity);
 
+    /**
+     * F13. El stock que manda el POS, aplicado <b>solo si nadie lo ha movido</b> desde que el POS lo leyó.
+     *
+     * <p>El webhook de stock hacía {@code setStock(valorAbsoluto)} + {@code save}: si el POS leía 5,
+     * entraba una venta que dejaba 4 y luego llegaba el absoluto 5, el stock volvía a 5 y se podía vender
+     * otra vez algo que ya no estaba. La venta sí usa un UPDATE condicional; esto no, así que la carrera
+     * la perdía siempre el descuento.
+     *
+     * <p>La condición es el {@code oldStock} que el POS declara haber visto, y va <b>dentro</b> de la
+     * sentencia por el mismo motivo que en {@code decrementStock}: comparar en Java y guardar después no
+     * serializa nada. Un retorno de 0 significa "alguien lo movió mientras" — y entonces no se pisa, se
+     * informa. Es también lo que descarta un evento viejo reenviado.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE Product p SET p.stock = :newStock WHERE p.id = :id AND p.stock = :expectedStock")
+    int setStockIfUnchanged(@Param("id") Long id, @Param("expectedStock") int expectedStock,
+                            @Param("newStock") int newStock);
+
     // Stock-only version of ProductVariationServiceImpl.recalculateParentAggregate, for the payment
     // listener. That one also recomputes minPrice and needs TenantContext, neither of which belongs
     // in an AFTER_COMMIT listener — and a stock decrement can't change a variation's price anyway.
