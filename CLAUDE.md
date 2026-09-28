@@ -174,7 +174,9 @@ separate paths can cancel an order and a second cancellation would otherwise inv
 deliberately does not extend `IntegrationTestSupport`, whose per-test transaction would hide the
 race.
 
-Two related gaps that are **not** covered: `PosWebhookServiceImpl.handleStockUpdated` still overwrites stock blindly from the POS and can clobber a decrement, and marking an order paid from the admin panel (`AdminOrderServiceImpl.updatePaymentStatus`) does **not** decrement stock — only the gateway paths publish `PaymentConfirmedEvent`.
+Both gaps that used to be listed here are now closed. `PosWebhookServiceImpl.handleStockUpdated` no longer overwrites stock blindly: it uses `ProductRepository.setStockIfUnchanged`, conditioned on the `oldStock` the POS says it saw, so a concurrent web sale can't be erased — a mismatch is reported as a divergence (same wording and Sentry alert as `PosOrderNotifier.checkStockDivergence`, which already treats our own decrement as the authority for web stock) instead of written (F13). And marking an order paid from the admin panel now goes through `OrderStatusService.markPaid`, so it publishes `PaymentConfirmedEvent` and does decrement stock (F07).
+
+Still open in the same area: `PosSyncServiceImpl` writes an absolute stock too, but it's the create-or-update of a whole product rather than a reaction to an inventory movement, and it carries no `oldStock` to compare against — coordinating that one is the next step.
 
 `OpenApiConfig` wires springdoc — API docs at `/swagger-ui.html`, grouped into five surfaces
 (public/admin/customer/pos/platform) with a `bearerAuth` JWT scheme wired to the "Authorize"
