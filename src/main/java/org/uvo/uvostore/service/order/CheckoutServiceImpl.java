@@ -22,10 +22,13 @@ import org.uvo.uvostore.repository.PaymentGatewayConfigRepository;
 import org.uvo.uvostore.repository.ProductRepository;
 import org.uvo.uvostore.repository.ProductVariationRepository;
 import org.uvo.uvostore.repository.SettingRepository;
+import org.uvo.uvostore.repository.ShippingMethodRepository;
+import org.uvo.uvostore.repository.ShippingRateRepository;
 import org.uvo.uvostore.service.catalog.EffectivePrice;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.customer.CustomerService;
 import org.uvo.uvostore.service.order.event.OrderPlacedEvent;
+import org.uvo.uvostore.service.shipping.ShippingOption;
 
 import java.math.BigDecimal;
 import java.security.SecureRandom;
@@ -57,6 +60,8 @@ public class CheckoutServiceImpl implements CheckoutService {
     private final SettingRepository settingRepository;
     private final PaymentGatewayConfigRepository paymentGatewayConfigRepository;
     private final ApplicationEventPublisher applicationEventPublisher;
+    private final ShippingMethodRepository shippingMethodRepository;
+    private final ShippingRateRepository shippingRateRepository;
     private final int retryWindowMinutes;
 
     public CheckoutServiceImpl(
@@ -70,6 +75,8 @@ public class CheckoutServiceImpl implements CheckoutService {
             SettingRepository settingRepository,
             PaymentGatewayConfigRepository paymentGatewayConfigRepository,
             ApplicationEventPublisher applicationEventPublisher,
+            ShippingMethodRepository shippingMethodRepository,
+            ShippingRateRepository shippingRateRepository,
             @org.springframework.beans.factory.annotation.Value("${app.abandoned-orders.retry-window-minutes:60}") int retryWindowMinutes) {
         this.cartPricingService = cartPricingService;
         this.cartService = cartService;
@@ -81,6 +88,8 @@ public class CheckoutServiceImpl implements CheckoutService {
         this.settingRepository = settingRepository;
         this.paymentGatewayConfigRepository = paymentGatewayConfigRepository;
         this.applicationEventPublisher = applicationEventPublisher;
+        this.shippingMethodRepository = shippingMethodRepository;
+        this.shippingRateRepository = shippingRateRepository;
         this.retryWindowMinutes = retryWindowMinutes;
     }
 
@@ -180,6 +189,7 @@ public class CheckoutServiceImpl implements CheckoutService {
         order.setShippingRegion(command.region());
         order.setShippingCommune(command.commune());
         order.setShippingPostalCode(command.shippingAddress().postalCode());
+        applyShipping(order, totals.appliedShipping());
 
         // F05: aquí ya no se vuelve a validar nada. El cupón es el que entró en el total, decidido en
         // el mismo cálculo que lo fijó — antes esta segunda validación podía discrepar de la primera y
@@ -272,6 +282,40 @@ public class CheckoutServiceImpl implements CheckoutService {
                     : new CartItemCommand(line.productId(), "product", line.quantity()));
         }
         return items;
+    }
+
+    /**
+     * F16. Deja escrito en la orden con qué se cotizó el envío.
+     *
+     * <p>Las cuatro columnas existían en {@code orders} desde el principio y <b>nadie las rellenaba</b>, así
+     * que no solo se perdía la trazabilidad —el comerciante no podía saber qué transportista ni qué plazo
+     * respaldaron el precio— sino que dos comprobaciones quedaban inertes:
+     * {@code AdminShippingZoneServiceImpl} y {@code AdminShippingMethodServiceImpl} se niegan a borrar una
+     * zona o un método "con órdenes asociadas", y como ninguna orden apuntaba a ninguno, siempre
+     * contaban cero. Se podía borrar la zona que explicaba el precio de una venta.
+     *
+     * <p>El nombre se guarda además como texto en {@code shipping_method} a propósito: es el único dato
+     * que sobrevive si el método se borra más adelante.
+     *
+     * <p>{@code rateId} es nulo cuando el precio vino de una cotización en vivo de transportista, y
+     * entonces tampoco hay zona que anotar: la zona la aporta la tarifa (un {@code ShippingMethod} no
+     * pertenece a ninguna), y una cotización en vivo no pasa por la tabla de tarifas. Queda el método y
+     * su nombre, que es lo que hay.
+     */
+    private void applyShipping(Order order, ShippingOption shipping) {
+        if (shipping == null) {
+            return;
+        }
+        order.setShippingMethod(shipping.methodName());
+        if (shipping.methodId() != null) {
+            shippingMethodRepository.findById(shipping.methodId()).ifPresent(order::setShippingMethodRef);
+        }
+        if (shipping.rateId() != null) {
+            shippingRateRepository.findById(shipping.rateId()).ifPresent(rate -> {
+                order.setShippingRate(rate);
+                order.setShippingZone(rate.getZone());
+            });
+        }
     }
 
     /**

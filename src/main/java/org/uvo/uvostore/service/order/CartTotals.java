@@ -1,6 +1,7 @@
 package org.uvo.uvostore.service.order;
 
 import org.uvo.uvostore.entity.order.Coupon;
+import org.uvo.uvostore.service.shipping.ShippingOption;
 
 import java.math.BigDecimal;
 
@@ -24,6 +25,12 @@ public record CartTotals(
         BigDecimal subtotalWithoutTax, BigDecimal taxAmount, BigDecimal subtotalWithTax,
         BigDecimal shippingCost, BigDecimal discountAmount, BigDecimal total,
         boolean shippingAvailable, boolean couponApplied,
-        Coupon appliedCoupon, String customerRejectionReason
+        Coupon appliedCoupon, String customerRejectionReason,
+        // F16: la opción de envío que produjo `shippingCost`, o null si la tienda no envía. Viaja con el
+        // precio por el mismo motivo que `appliedCoupon`: quien decide el importe es quien tiene que decir
+        // con qué lo decidió. Antes solo sobrevivía el número, así que la orden no podía guardar qué
+        // transportista ni qué tarifa lo respaldaron — y con ello los guardas de borrado de zonas y
+        // métodos, que preguntan por órdenes asociadas, nunca encontraban ninguna.
+        ShippingOption appliedShipping
 ) {
 }

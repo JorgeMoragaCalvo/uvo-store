@@ -64,6 +64,11 @@ public class ShippingRateServiceImpl implements ShippingRateService {
         ShippingZone zone = findZone(region, commune);
         if (zone != null) {
             for (ShippingRate rate : rateRepository.findByZoneIdAndIsActiveTrue(zone.getId())) {
+                // F16: findByZoneIdAndIsActiveTrue filtra el flag de la TARIFA, no el del MÉTODO, así que
+                // desactivar un método de envío no lo quitaba de las cotizaciones: se seguía ofreciendo y
+                // cobrando su tarifa. Y era una incoherencia dentro de este mismo método — la vía de
+                // transportistas de abajo (carrierQuotes) sí filtra por isActive desde el principio.
+                if (!rate.getMethod().isActive()) continue;
                 if (!isApplicable(rate, orderAmount, totalWeight)) continue;
                 BigDecimal cost = calculateCost(rate, orderAmount, totalWeight);
                 if (cost.signum() < 0) continue;
@@ -72,7 +77,9 @@ public class ShippingRateServiceImpl implements ShippingRateService {
                         rate.getMethod().getName(),
                         cost,
                         deliveryTimeString(rate.getMethod()),
-                        cost.signum() == 0
+                        cost.signum() == 0,
+                        // F16: con qué tarifa se calculó, para que la orden lo guarde.
+                        rate.getId()
                 ));
             }
         }

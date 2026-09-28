@@ -148,7 +148,8 @@ public class CartPricingServiceImpl implements CartPricingService {
                 : subtotalWithTax.add(taxAmount).add(shippingCost).subtract(discountAmount);
 
         return new CartTotals(subtotalWithoutTax, taxAmount, subtotalWithTax, shippingCost, discountAmount, total,
-                shippingAvailable, couponApplied, appliedCoupon, customerRejectionReason);
+                shippingAvailable, couponApplied, appliedCoupon, customerRejectionReason,
+                best.orElse(null));
     }
 
     /**
