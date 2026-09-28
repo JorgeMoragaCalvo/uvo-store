@@ -83,11 +83,23 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
      * hilo que la hizo — el de la petición en el checkout, o el del planificador en la conciliación.
      */
     private MPRequestOptions requestOptions(String accessToken) {
-        return MPRequestOptions.builder()
+        return requestOptions(accessToken, null);
+    }
+
+    /**
+     * F12. Con {@code idempotencyKey}, MercadoPago deduplica en su lado: un reintento de la misma
+     * devolución responde el reembolso original en vez de crear otro. Es la segunda red, sobre la fila
+     * PENDING que {@code RefundService} deja commiteada antes de llamar aquí.
+     */
+    private MPRequestOptions requestOptions(String accessToken, String idempotencyKey) {
+        MPRequestOptions.MPRequestOptionsBuilder builder = MPRequestOptions.builder()
                 .accessToken(accessToken)
                 .connectionTimeout(gatewayConnectTimeoutMs)
-                .socketTimeout(gatewayReadTimeoutMs)
-                .build();
+                .socketTimeout(gatewayReadTimeoutMs);
+        if (idempotencyKey != null) {
+            builder.customHeaders(java.util.Map.of("X-Idempotency-Key", idempotencyKey));
+        }
+        return builder.build();
     }
 
     @Override
@@ -262,7 +274,7 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
 
     @Override
     @Transactional
-    public String refund(Long orderId, java.math.BigDecimal amount) {
+    public String refund(Long orderId, java.math.BigDecimal amount, String idempotencyKey) {
         Long storeId = TenantContext.requireStoreId();
         Order order = orderRepository.findById(orderId)
                 .filter(o -> o.getStore().getId().equals(storeId))
@@ -278,7 +290,9 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
         try {
             refund = new PaymentRefundClient().refund(Long.parseLong(paymentId),
                     amount.setScale(0, RoundingMode.HALF_UP),
-                    requestOptions(requireAccessToken(storeId)));
+                    // F12: la clave de la intención viaja como X-Idempotency-Key, así que un reintento
+                    // de la misma devolución no crea un segundo reembolso.
+                    requestOptions(requireAccessToken(storeId), idempotencyKey));
         } catch (NumberFormatException e) {
             throw new BusinessException("El identificador de pago de la orden no es de MercadoPago: " + paymentId);
         } catch (Exception e) {

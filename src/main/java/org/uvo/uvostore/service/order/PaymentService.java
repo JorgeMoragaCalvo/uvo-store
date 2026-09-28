@@ -13,5 +13,7 @@ public interface PaymentService {
      *        una parte.
      * @return el id del refund en Stripe, para poder rastrearlo desde el historial de la orden.
      */
-    String refund(Long orderId, java.math.BigDecimal amount);
+    // F12: la clave de idempotencia de la intención ya persistida, para que un reintento de la MISMA
+    // devolución no mueva el dinero dos veces. Este SDK la admite; el de Transbank no.
+    String refund(Long orderId, java.math.BigDecimal amount, String idempotencyKey);
 }

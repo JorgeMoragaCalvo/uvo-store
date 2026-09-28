@@ -154,7 +154,7 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Override
     @Transactional
-    public String refund(Long orderId, java.math.BigDecimal amount) {
+    public String refund(Long orderId, java.math.BigDecimal amount, String idempotencyKey) {
         Long storeId = TenantContext.requireStoreId();
         Order order = orderRepository.findById(orderId)
                 .filter(o -> o.getStore().getId().equals(storeId))
@@ -174,7 +174,10 @@ public class PaymentServiceImpl implements PaymentService {
                             // tiene unidad menor. Enviar centavos aquí devolvería 100 veces de más.
                             .setAmount(amount.setScale(0, java.math.RoundingMode.HALF_UP).longValueExact())
                             .build(),
-                    requestOptions());
+                    // F12: con la clave de la intención, un reintento de la misma devolución no crea un
+                    // segundo refund — Stripe devuelve el original. Es la segunda red, sobre la fila
+                    // PENDING que RefundService ya dejó commiteada antes de llegar aquí.
+                    requestOptions().toBuilderFullCopy().setIdempotencyKey(idempotencyKey).build());
         } catch (StripeException e) {
             throw new IllegalStateException("Error al reembolsar en Stripe: " + e.getMessage(), e);
         }

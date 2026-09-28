@@ -20,6 +20,7 @@ import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
+import org.uvo.uvostore.entity.order.enums.RefundStatus;
 import org.uvo.uvostore.entity.order.enums.RefundType;
 import org.uvo.uvostore.entity.security.User;
 
@@ -65,6 +66,24 @@ public class OrderRefund {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private RefundType type;
+
+    /**
+     * F12. Ver {@link RefundStatus}. Por defecto {@code COMPLETED} para que un reembolso externo —que se
+     * registra cuando el dinero ya se movió fuera de aquí— no tenga que decirlo cada vez.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    @Builder.Default
+    private RefundStatus status = RefundStatus.COMPLETED;
+
+    /**
+     * F12. La clave que identifica <b>esta</b> devolución, derivada de (orden, ya devuelto, importe) y
+     * por tanto estable entre reintentos del mismo reembolso. Es única en la base: aunque la lógica
+     * falle, no se puede guardar dos veces la misma intención. Donde el SDK lo permite (Stripe,
+     * MercadoPago) viaja además a la pasarela para que deduplique en su lado.
+     */
+    @Column(name = "idempotency_key")
+    private String idempotencyKey;
 
     @Column(columnDefinition = "text")
     private String reason;
