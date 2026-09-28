@@ -119,6 +119,17 @@ class AdminCouponOrderCrudTest extends IntegrationTestSupport {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("PROCESSING"));
 
+        // F14: hay que confirmar el pago antes de despachar. Este test recorría el ciclo entero con la
+        // orden IMPAGA y pasaba — era el fallo del hallazgo, ejercitado sin que nadie lo notara. Lo que
+        // el test quiere comprobar (que los endpoints del panel funcionan y persisten) sigue intacto;
+        // que se pueda enviar sin cobrar lo comprueba ahora AdminOrderTransitionsTest, y es un 400.
+        mockMvc.perform(put("/api/admin/orders/" + orderId + "/payment-status")
+                        .header("Host", hostHeader(store))
+                        .header("Authorization", "Bearer " + token)
+                        .contentType("application/json")
+                        .content("{\"status\":\"PAID\"}"))
+                .andExpect(status().isOk());
+
         mockMvc.perform(post("/api/admin/orders/" + orderId + "/tracking")
                         .header("Host", hostHeader(store))
                         .header("Authorization", "Bearer " + token)
