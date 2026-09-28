@@ -43,7 +43,7 @@ public class PlatformApiKeyAuthFilter extends OncePerRequestFilter {
         }
 
         String key = request.getHeader("X-Platform-Key");
-        // No blank check on platformApiKey any more — the constructor guarantees it's set.
+        // No blank check on platformApiKey anymore — the constructor guarantees it's set.
         if (key == null || !constantTimeEquals(platformApiKey, key)) {
             reject(response);
             return;

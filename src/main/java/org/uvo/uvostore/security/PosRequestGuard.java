@@ -4,7 +4,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.uvo.uvostore.entity.pos.PosConnection;
 
 /**
- * F01. El único sitio donde se decide a qué empresa —y por tanto a qué tienda— pertenece una petición
+ * F01. El único sitio donde se decide a qué empresa —y, por tanto, a qué tienda— pertenece una petición
  * del POS: <b>la conexión que autenticó el filtro, nunca el cuerpo</b>.
  *
  * <p>Lo que había antes: {@code PosWebhookAuthFilter} y {@code PosApiKeyAuthFilter} resolvían la

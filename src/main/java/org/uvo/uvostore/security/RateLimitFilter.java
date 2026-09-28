@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 // order-number enumeration all had zero cost.
 //
 // Fixed-window counters keyed by client IP + rule. Deliberately not per-account: keying on the
-// submitted email would mean reading the request body inside a filter, and the attacks this
+// submitted email would mean reading the request body inside a filter, and the attacks these
 // addresses are per-origin anyway. Per-account throttling is a separate, later concern.
 //
 // Storage is a Caffeine cache rather than a map so entries expire and the total is capped —

@@ -4,6 +4,8 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.uvo.uvostore.entity.customer.Customer;
+import org.uvo.uvostore.entity.security.User;
 import org.uvo.uvostore.repository.CustomerRepository;
 import org.uvo.uvostore.repository.UserRepository;
 
@@ -45,8 +47,8 @@ public class TokenVersionService {
      */
     public int currentVersion(String principalType, Long principalId) {
         return versions.get(cacheKey(principalType, principalId), key -> CUSTOMER.equals(principalType)
-                ? customerRepository.findById(principalId).map(c -> c.getTokenVersion()).orElse(-1)
-                : userRepository.findById(principalId).map(u -> u.getTokenVersion()).orElse(-1));
+                ? customerRepository.findById(principalId).map(Customer::getTokenVersion).orElse(-1)
+                : userRepository.findById(principalId).map(User::getTokenVersion).orElse(-1));
     }
 
     /** Invalidates every token already issued to this admin user. */

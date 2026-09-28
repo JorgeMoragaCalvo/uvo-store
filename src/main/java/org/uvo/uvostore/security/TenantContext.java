@@ -46,7 +46,7 @@ public final class TenantContext {
 
     /**
      * Ejecuta algo en nombre de una tienda concreta, fuera de una petición HTTP. Lo necesitan los
-     * trabajos programados (G1, G2): no tienen petición y por tanto no pasan por
+     * trabajos programados (G1, G2): no tienen petición y, por tanto, no pasan por
      * TenantResolutionFilter, pero sí llaman a código que exige tenant — {@code WebpayServiceImpl} y
      * {@code MercadoPagoServiceImpl} llaman a {@link #requireStoreId()} para leer las credenciales
      * de la tienda.
