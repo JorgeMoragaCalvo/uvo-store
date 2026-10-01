@@ -17,6 +17,7 @@ import org.uvo.uvostore.entity.security.User;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.CustomerRepository;
 import org.uvo.uvostore.repository.UserRepository;
+import org.uvo.uvostore.security.AccountAttemptThrottle;
 import org.uvo.uvostore.security.JwtService;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.security.TokenVersionService;
@@ -42,11 +43,12 @@ public class AuthController {
     private final JwtService jwtService;
     private final EmailService emailService;
     private final TokenVersionService tokenVersionService;
+    private final AccountAttemptThrottle accountThrottle;
     private final String frontendUrl;
 
     public AuthController(UserRepository userRepository, CustomerRepository customerRepository,
                            PasswordEncoder passwordEncoder, JwtService jwtService, EmailService emailService,
-                           TokenVersionService tokenVersionService,
+                           TokenVersionService tokenVersionService, AccountAttemptThrottle accountThrottle,
                            @Value("${app.frontend-url}") String frontendUrl) {
         this.userRepository = userRepository;
         this.customerRepository = customerRepository;
@@ -54,6 +56,7 @@ public class AuthController {
         this.jwtService = jwtService;
         this.emailService = emailService;
         this.tokenVersionService = tokenVersionService;
+        this.accountThrottle = accountThrottle;
         this.frontendUrl = frontendUrl;
     }
 
@@ -61,12 +64,21 @@ public class AuthController {
     @Transactional // also persists lastLoginAt; adminAuthorities() below walks the lazy User.roles/Role.permissions collections
     public ResponseEntity<AuthResponse> adminLogin(@Valid @RequestBody AdminLoginRequest request) {
         Store store = TenantContext.requireCurrent();
-        User user = userRepository.findByStoreIdAndEmail(store.getId(), request.email())
-                .orElseThrow(() -> new BadCredentialsException("Credenciales inválidas"));
+        // F18: el presupuesto de ESTA cuenta, antes de mirar nada. El límite por IP de RateLimitFilter no
+        // ve al atacante que reparte los intentos entre muchas direcciones. Se comprueba sin consumir, y
+        // más abajo se cuenta el fallo: lo que gasta presupuesto es equivocarse, no intentarlo.
+        //
+        // Y se cuenta exista o no la cuenta, a propósito: un 429 que solo apareciera para los correos
+        // reales diría qué correos son reales.
+        accountThrottle.check(store.getId(), AccountAttemptThrottle.Flow.ADMIN_LOGIN, request.email());
 
-        if (!user.isActive() || !user.isAdmin() || !passwordEncoder.matches(request.password(), user.getPassword())) {
+        User user = userRepository.findByStoreIdAndEmail(store.getId(), request.email()).orElse(null);
+        if (user == null || !user.isActive() || !user.isAdmin()
+                || !passwordEncoder.matches(request.password(), user.getPassword())) {
+            accountThrottle.recordFailure(store.getId(), AccountAttemptThrottle.Flow.ADMIN_LOGIN, request.email());
             throw new BadCredentialsException("Credenciales inválidas");
         }
+        accountThrottle.clear(store.getId(), AccountAttemptThrottle.Flow.ADMIN_LOGIN, request.email());
 
         user.setLastLoginAt(Instant.now());
         userRepository.save(user);
@@ -83,13 +95,15 @@ public class AuthController {
     @PostMapping("/api/customer/auth/login")
     public ResponseEntity<AuthResponse> customerLogin(@Valid @RequestBody CustomerLoginRequest request) {
         Store store = TenantContext.requireCurrent();
-        Customer customer = customerRepository.findByStoreIdAndEmail(store.getId(), request.email())
-                .orElseThrow(() -> new BadCredentialsException("Credenciales inválidas"));
+        accountThrottle.check(store.getId(), AccountAttemptThrottle.Flow.CUSTOMER_LOGIN, request.email());
 
-        if (customer.getPassword() == null || customer.getAccountStatus() != AccountStatus.ACTIVE
+        Customer customer = customerRepository.findByStoreIdAndEmail(store.getId(), request.email()).orElse(null);
+        if (customer == null || customer.getPassword() == null || customer.getAccountStatus() != AccountStatus.ACTIVE
                 || !passwordEncoder.matches(request.password(), customer.getPassword())) {
+            accountThrottle.recordFailure(store.getId(), AccountAttemptThrottle.Flow.CUSTOMER_LOGIN, request.email());
             throw new BadCredentialsException("Credenciales inválidas");
         }
+        accountThrottle.clear(store.getId(), AccountAttemptThrottle.Flow.CUSTOMER_LOGIN, request.email());
 
         String token = jwtService.generateToken(customer.getId(), customer.getEmail(), "CUSTOMER", store.getId(),
                 List.of("ROLE_CUSTOMER"), customer.getTokenVersion());
@@ -125,6 +139,12 @@ public class AuthController {
     @Transactional
     public ResponseEntity<Void> adminForgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
         Store store = TenantContext.requireCurrent();
+        // F18: aquí cada llamada cuenta, no solo las que fallan, porque el costo de este endpoint es el
+        // correo que sale. Y cuenta antes de buscar la cuenta: si solo contara las que existen, el 429
+        // acabaría diciendo exactamente lo que el 200 de abajo se cuida de no decir.
+        accountThrottle.check(store.getId(), AccountAttemptThrottle.Flow.ADMIN_FORGOT_PASSWORD, request.email());
+        accountThrottle.recordFailure(store.getId(), AccountAttemptThrottle.Flow.ADMIN_FORGOT_PASSWORD, request.email());
+
         // Always respond 200 regardless of whether the email matches an account — don't leak
         // which admin emails exist on this store.
         userRepository.findByStoreIdAndEmail(store.getId(), request.email()).ifPresent(user -> {

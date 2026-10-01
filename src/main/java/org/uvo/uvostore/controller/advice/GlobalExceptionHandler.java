@@ -16,6 +16,7 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.uvo.uvostore.service.BusinessException;
+import org.uvo.uvostore.service.TooManyRequestsException;
 import org.uvo.uvostore.service.order.OutOfStockException;
 import org.uvo.uvostore.service.order.ShippingUnavailableException;
 
@@ -102,6 +103,18 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleShippingUnavailable(ShippingUnavailableException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ApiError.of(HttpStatus.CONFLICT.value(), "Conflict", ex.getMessage()));
+    }
+
+    // F18. El 429 del presupuesto por cuenta (AccountAttemptThrottle). Mismo cuerpo y misma cabecera
+    // Retry-After que escribe a mano RateLimitFilter.reject: el cliente no debería notar por dónde se
+    // alcanzó el límite. El mensaje no dice si la cuenta existe — contar ocurra o no la cuenta es
+    // justamente lo que impide que este 429 revele qué correos hay registrados.
+    @ExceptionHandler(TooManyRequestsException.class)
+    public ResponseEntity<ApiError> handleTooManyRequests(TooManyRequestsException ex) {
+        long seconds = Math.max(1, ex.getRetryAfter().getSeconds());
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header("Retry-After", String.valueOf(seconds))
+                .body(ApiError.of(HttpStatus.TOO_MANY_REQUESTS.value(), "Too Many Requests", ex.getMessage()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
