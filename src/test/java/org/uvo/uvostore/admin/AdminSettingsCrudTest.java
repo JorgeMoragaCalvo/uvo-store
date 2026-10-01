@@ -81,14 +81,18 @@ class AdminSettingsCrudTest extends IntegrationTestSupport {
                         .header("Host", hostHeader(storeA))
                         .header("Authorization", "Bearer " + tokenA)
                         .contentType("application/json")
-                        .content(generalSettingsBody("").replace("\"currency\":\"CLP\"", "\"currency\":\"USD\"")))
+                        // F17: era "currency":"USD", usado solo como marca distinguible del valor por
+                        // defecto. Ahora la divisa sale de un catálogo de una entrada, así que la marca
+                        // pasa a la tasa de impuesto — que también participa en dinero y también tiene
+                        // que estar aislada por tienda.
+                        .content(generalSettingsBody("").replace("\"taxRate\":\"19\"", "\"taxRate\":\"12\"")))
                 .andExpect(status().isOk());
 
         mockMvc.perform(get("/api/admin/settings/general")
                         .header("Host", hostHeader(storeB))
                         .header("Authorization", "Bearer " + tokenB))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.currency").value("CLP"));
+                .andExpect(jsonPath("$.taxRate").value("19"));
     }
 
     @Test

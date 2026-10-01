@@ -25,11 +25,14 @@ import java.math.RoundingMode;
 public final class Money {
 
     /**
-     * Escala de la unidad mínima de la moneda. Cero porque el CLP no tiene fracción, y hoy CLP es lo
-     * único que el sistema puede cobrar de verdad: Webpay y MercadoPago llevan {@code "CLP"} fijo en
-     * el código. El día que se admita otra divisa esto deja de ser una constante y pasa a depender de
-     * la moneda de la tienda — pero eso exige antes validar el ajuste {@code currency} contra un
-     * catálogo, que es F17. Una tabla de escalas hoy sería adivinar.
+     * Escala de la unidad mínima de la moneda. Cero porque el CLP no tiene fracción, y CLP es lo único
+     * que el sistema puede cobrar: Webpay y MercadoPago llevan {@code "CLP"} fijo en el código.
+     *
+     * <p>F17 cerró la parte que faltaba: el ajuste {@code currency} ya no es texto libre, se valida
+     * contra {@link org.uvo.uvostore.service.settings.SettingValues#SUPPORTED_CURRENCIES}, que tiene
+     * una entrada. Así que esta constante ya no es una suposición sobre lo que hay configurado, es la
+     * consecuencia de un catálogo que lo garantiza. El día que ese catálogo crezca, la escala se mueve
+     * con él y deja de ser una constante.
      */
     private static final int CLP_SCALE = 0;
 

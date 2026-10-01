@@ -1,5 +1,6 @@
 package org.uvo.uvostore.controller.settings;
 
+import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -30,7 +31,9 @@ public class SettingsController {
 
     @PutMapping
     @PreAuthorize("hasAuthority('settings.manage')")
-    public GeneralSettingsDto update(@RequestBody GeneralSettingsUpdateRequest request) {
+    // F17: el @Valid que le faltaba. Era el único cuerpo de petición del proyecto que entraba sin
+    // validar, frente a 32 @Valid @RequestBody en el resto de controladores.
+    public GeneralSettingsDto update(@Valid @RequestBody GeneralSettingsUpdateRequest request) {
         return settingsService.updateGeneralSettings(request);
     }
 }

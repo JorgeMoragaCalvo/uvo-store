@@ -6,8 +6,10 @@ import org.uvo.uvostore.entity.catalog.Product;
 import org.uvo.uvostore.entity.catalog.ProductVariation;
 import org.uvo.uvostore.entity.catalog.enums.ProductType;
 import org.uvo.uvostore.entity.order.Coupon;
+import org.uvo.uvostore.entity.settings.Setting;
 import org.uvo.uvostore.service.BusinessException;
 import org.uvo.uvostore.service.Money;
+import org.uvo.uvostore.service.settings.SettingValues;
 import org.uvo.uvostore.repository.ProductRepository;
 import org.uvo.uvostore.repository.ProductVariationRepository;
 import org.uvo.uvostore.repository.SettingRepository;
@@ -80,8 +82,13 @@ public class CartPricingServiceImpl implements CartPricingService {
             }
         }
 
-        BigDecimal taxRate = BigDecimal.valueOf(settingRepository.findByStoreIdAndSettingKey(storeId, "tax_rate")
-                .map(s -> Double.parseDouble(s.getValue())).orElse(19.0)).divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP);
+        // F17: el mismo lector que usan /cart/calculate y /checkout/config. Antes aquí había
+        // Double.parseDouble y allí new BigDecimal, que no aceptan el mismo texto: con
+        // tax_rate=" 19 " esta línea cobraba bien y las otras dos respondían 400. Y un valor no
+        // numérico guardado ya no llega como NumberFormatException con el mensaje interno de
+        // BigDecimal: SettingValues avisa a Sentry y responde algo accionable.
+        BigDecimal taxRate = decimalSetting(storeId, "tax_rate", BigDecimal.valueOf(19))
+                .divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP);
         boolean pricesIncludeTax = settingRepository.findByStoreIdAndSettingKey(storeId, "prices_include_tax")
                 .map(s -> Boolean.parseBoolean(s.getValue())).orElse(false);
 
@@ -150,6 +157,12 @@ public class CartPricingServiceImpl implements CartPricingService {
         return new CartTotals(subtotalWithoutTax, taxAmount, subtotalWithTax, shippingCost, discountAmount, total,
                 shippingAvailable, couponApplied, appliedCoupon, customerRejectionReason,
                 best.orElse(null));
+    }
+
+    private BigDecimal decimalSetting(Long storeId, String key, BigDecimal fallback) {
+        return SettingValues.decimal(key,
+                settingRepository.findByStoreIdAndSettingKey(storeId, key).map(Setting::getValue).orElse(null),
+                fallback);
     }
 
     /**

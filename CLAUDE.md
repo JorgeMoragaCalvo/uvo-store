@@ -134,10 +134,26 @@ the amount sat unused in the SDK response. A mismatch (including an unknown amou
 `OrderInventoryService` uses. The check lives inside `markPaid`, not in the five callers, so no
 gateway can skip it. Comparison is exact, no tolerance: CLP has no cents.
 
-> Latent, not fixed: `PaymentServiceImpl` sends `setUnitAmount(order.getTotal())` in whole units,
-> which is only right for zero-decimal currencies like CLP. With `stripe.default-currency=usd` Stripe
-> would read that as cents and charge 100x too little. The amount check uses the same convention, so
-> it stays self-consistent — but the currency is configurable.
+Closed by F17: `PaymentServiceImpl` still sends `setUnitAmount(order.getTotal())` in whole units, which
+is only right for a zero-decimal currency, and the amount check uses the same convention — so a wrong
+currency would have been a wrong charge that *passed* the check, since the comparison is blind to the
+unit. The currency is no longer free text: `SettingValues.SUPPORTED_CURRENCIES` is the one place that
+says which currencies exist (today: CLP only), the `currency` setting is validated against it on write,
+and `Money`'s scale-0 constant plus MercadoPago/Webpay's hardcoded `"CLP"` are documented as moving with
+that catalogue. Supporting a second currency means changing all four together, not just the setting.
+
+**Money settings can't be saved broken** (F17). `tax_rate`, `currency`, `default_shipping_cost` and
+`free_shipping_threshold` are text in a key/value table read by five consumers, and nothing used to
+check them: `tax_rate=abc` left quoting and checkout answering 400 with BigDecimal's internal message —
+and a 400 doesn't reach Sentry, so the store stopped selling with nobody alerted. Worse were the valid
+numbers: a negative rate charged *below* the product price silently, and `-100` with tax-inclusive
+prices divided by zero. `SettingValues` is now the single place that decides what a valid money setting
+is, **both on write and on read** — validating the PUT doesn't heal stores that already stored garbage.
+Two parsers had also drifted apart (`Double.parseDouble` when pricing vs `new BigDecimal` in
+`/cart/calculate` and `/checkout/config`, which disagree on `" 19 "`), so the same setting was valid or
+invalid depending on the entry point; there is one reader now. A stored value that won't parse fails
+loudly with a Sentry message rather than falling back to 19%, which would invent a tax for a store that
+may be exempt.
 
 **MercadoPago's webhook is signature-verified** (M3). `x-signature` (`ts=…,v1=…`) is checked against
 the HMAC-SHA256 of `id:<data.id>;request-id:<x-request-id>;ts:<ts>;` with the store's `webhookSecret`

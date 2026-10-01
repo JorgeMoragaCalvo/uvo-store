@@ -160,6 +160,10 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
                 .description(order.getItems().size() + " producto(s)")
                 .quantity(1)
                 .unitPrice(order.getTotal().setScale(0, RoundingMode.HALF_UP))
+                // F17: sigue fijo, y ahora es coherente en vez de una suposición. El ajuste `currency`
+                // se valida contra SettingValues.SUPPORTED_CURRENCIES, que solo admite CLP, así que
+                // leerlo aquí no podría dar otra cosa. Cuando ese catálogo crezca, este literal y la
+                // escala de Money se mueven juntos.
                 .currencyId("CLP")
                 .build();
 

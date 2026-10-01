@@ -92,6 +92,11 @@ public class PaymentServiceImpl implements PaymentService {
     // Package-visible so tests can assert the built params (line items, total) without making a
     // real Stripe API call.
     SessionCreateParams buildSessionParams(Order order, String successUrl, String cancelUrl) {
+        // F17: `unit_amount` va en la unidad mínima de la divisa, y abajo se envía el total tal cual.
+        // Eso solo es correcto para una divisa sin fracción: con `currency = usd` los mismos 11888
+        // habrían cobrado 118,88 dólares, y stripeAmount() más abajo compara 11888 contra 11888 y lo
+        // da por bueno, porque la comprobación de importe es ciega a la unidad. Por eso este ajuste ya
+        // no es texto libre: SettingValues.SUPPORTED_CURRENCIES solo admite CLP.
         String currency = settingValue("currency", defaultCurrency);
 
         // A single line item for order.getTotal() — the total already computed correctly on the
