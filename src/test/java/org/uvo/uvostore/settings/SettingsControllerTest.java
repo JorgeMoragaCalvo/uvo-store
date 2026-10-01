@@ -24,17 +24,22 @@ class SettingsControllerTest extends IntegrationTestSupport {
     private EntityManager entityManager;
 
     private String fullUpdateBody(String stripeSecretKey, String posApiToken, String posWebhookSecret) {
+        // F17: `stripeEnabled` sale de si este cuerpo trae clave secreta, en vez de ir fijo en true.
+        // Con true y el secreto en blanco el fixture estaba ejerciendo el fallo —activar Stripe sin
+        // credenciales, que es justo lo que ahora se rechaza— y lo hacía en el único caso que no
+        // tiene nada que ver con Stripe (el de las credenciales del POS).
         return """
                 {
                   "storeName":"Tienda","storeEmail":"tienda@test.local","storePhone":"","adminEmail":"admin@test.local",
                   "currency":"CLP","currencySymbol":"$","taxRate":"19","pricesIncludeTax":true,
                   "shippingEnabled":true,"defaultShippingCost":"0","freeShippingEnabled":false,"freeShippingThreshold":"0",
                   "allowGuestCheckout":true,"requirePhone":false,"requireCompany":false,
-                  "stripePublicKey":"pk_test_123","stripeSecretKey":"%s","stripeEnabled":true,
+                  "stripePublicKey":"pk_test_123","stripeSecretKey":"%s","stripeEnabled":%s,
                   "posApiUrl":"https://pos.test","posApiToken":"%s","posWebhookSecret":"%s","posSyncEnabled":%s,
                   "metaTitle":"","metaDescription":"","metaKeywords":"","facebookUrl":"","instagramUrl":"","twitterUrl":""
                 }
-                """.formatted(stripeSecretKey, posApiToken, posWebhookSecret, !posApiToken.isBlank());
+                """.formatted(stripeSecretKey, !stripeSecretKey.isBlank(), posApiToken, posWebhookSecret,
+                !posApiToken.isBlank());
     }
 
     @Test

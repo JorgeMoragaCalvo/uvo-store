@@ -6,12 +6,14 @@ import org.uvo.uvostore.entity.catalog.Product;
 import org.uvo.uvostore.entity.catalog.ProductVariation;
 import org.uvo.uvostore.entity.catalog.ProductVariationAttribute;
 import org.uvo.uvostore.entity.catalog.enums.ProductType;
+import org.uvo.uvostore.entity.settings.Setting;
 import org.uvo.uvostore.repository.ProductRepository;
 import org.uvo.uvostore.repository.ProductVariationRepository;
 import org.uvo.uvostore.repository.SettingRepository;
 import org.uvo.uvostore.service.catalog.EffectivePrice;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.catalog.FileStorageService;
+import org.uvo.uvostore.service.settings.SettingValues;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -126,10 +128,11 @@ public class CartServiceImpl implements CartService {
         Long storeId = TenantContext.requireStoreId();
         boolean pricesIncludeTax = settingRepository.findByStoreIdAndSettingKey(storeId, "prices_include_tax")
                 .map(s -> Boolean.parseBoolean(s.getValue())).orElse(false);
-        BigDecimal taxRate = settingRepository.findByStoreIdAndSettingKey(storeId, "tax_rate")
-                .map(s -> new BigDecimal(s.getValue())).orElse(BigDecimal.valueOf(19));
-        BigDecimal freeShippingThreshold = settingRepository.findByStoreIdAndSettingKey(storeId, "free_shipping_threshold")
-                .map(s -> new BigDecimal(s.getValue())).orElse(BigDecimal.ZERO);
+        // F17: el mismo lector que el cálculo. Estas dos líneas eran new BigDecimal(valor) directo, así
+        // que un ajuste con un espacio de más —o cualquier cosa que no fuera un número— convertía este
+        // endpoint en un 400 con el mensaje interno de BigDecimal, mientras el checkout cobraba igual.
+        BigDecimal taxRate = decimalSetting(storeId, "tax_rate", BigDecimal.valueOf(19));
+        BigDecimal freeShippingThreshold = decimalSetting(storeId, "free_shipping_threshold", BigDecimal.ZERO);
         boolean shippingEnabled = settingRepository.findByStoreIdAndSettingKey(storeId, "shipping_enabled")
                 .map(s -> Boolean.parseBoolean(s.getValue())).orElse(true);
 
@@ -138,6 +141,12 @@ public class CartServiceImpl implements CartService {
                 totals.discountAmount(), totals.total(), pricesIncludeTax, taxRate, freeShippingThreshold, shippingEnabled,
                 totals.shippingAvailable(), totals.couponApplied()
         );
+    }
+
+    private BigDecimal decimalSetting(Long storeId, String key, BigDecimal fallback) {
+        return SettingValues.decimal(key,
+                settingRepository.findByStoreIdAndSettingKey(storeId, key).map(Setting::getValue).orElse(null),
+                fallback);
     }
 
     private Map<String, String> attributesOf(ProductVariation variation) {

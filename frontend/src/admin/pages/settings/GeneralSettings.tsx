@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Card, CardContent } from '@/components/ui/card'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAdminGeneralSettingsStore } from '@/admin/stores/useAdminGeneralSettingsStore'
 import type { GeneralSettingsDto, GeneralSettingsUpdateRequest } from '@/admin/types/admin'
@@ -169,9 +170,25 @@ function GeneralSettingsForm({ initial }: { initial: GeneralSettingsDto }) {
           <TabsContent value="currency">
             <Card>
               <CardContent className="grid grid-cols-1 gap-4 pt-6 sm:grid-cols-2">
-                <Field id="currency" label="Moneda" value={form.currency} onChange={(v) => set('currency', v)} />
+                {/* F17: era un campo de texto libre. La divisa sale de un catálogo —hoy solo CLP,
+                    porque es la única que el sistema puede cobrar de verdad— y el backend rechaza
+                    cualquier otra, así que dejar teclear aquí solo servía para producir un 400. */}
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="currency">Moneda</Label>
+                  <Select value={form.currency || 'CLP'} onValueChange={(v) => set('currency', v)}>
+                    <SelectTrigger id="currency">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="CLP">CLP — peso chileno</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
                 <Field id="currencySymbol" label="Símbolo" value={form.currencySymbol} onChange={(v) => set('currencySymbol', v)} />
-                <Field id="taxRate" label="Tasa de impuesto (%)" value={form.taxRate} onChange={(v) => set('taxRate', v)} />
+                {/* F17: `number` en los tres campos de dinero. No sustituye a la validación del
+                    servidor —la API se puede llamar directamente— pero evita el caso que la motivó:
+                    teclear letras en la tasa de impuesto y dejar la tienda sin poder vender. */}
+                <Field id="taxRate" label="Tasa de impuesto (%)" type="number" value={form.taxRate} onChange={(v) => set('taxRate', v)} />
                 <Toggle
                   id="pricesIncludeTax"
                   label="Los precios ya incluyen impuesto"
@@ -189,6 +206,7 @@ function GeneralSettingsForm({ initial }: { initial: GeneralSettingsDto }) {
                 <Field
                   id="defaultShippingCost"
                   label="Costo de envío por defecto"
+                  type="number"
                   value={form.defaultShippingCost}
                   onChange={(v) => set('defaultShippingCost', v)}
                 />
@@ -201,6 +219,7 @@ function GeneralSettingsForm({ initial }: { initial: GeneralSettingsDto }) {
                 <Field
                   id="freeShippingThreshold"
                   label="Monto mínimo para envío gratis"
+                  type="number"
                   value={form.freeShippingThreshold}
                   onChange={(v) => set('freeShippingThreshold', v)}
                 />

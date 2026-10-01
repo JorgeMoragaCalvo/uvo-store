@@ -28,6 +28,7 @@ import org.uvo.uvostore.service.catalog.EffectivePrice;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.customer.CustomerService;
 import org.uvo.uvostore.service.order.event.OrderPlacedEvent;
+import org.uvo.uvostore.service.settings.SettingValues;
 import org.uvo.uvostore.service.shipping.ShippingOption;
 
 import java.math.BigDecimal;
@@ -447,10 +448,12 @@ public class CheckoutServiceImpl implements CheckoutService {
         return settingRepository.findByStoreIdAndSettingKey(TenantContext.requireStoreId(), key).map(s -> Boolean.parseBoolean(s.getValue())).orElse(fallback);
     }
 
+    // F17: era .map(BigDecimal::new) crudo, y este es el sitio que la SPA pide para pintar la página de
+    // checkout: un ajuste mal tecleado mataba la compra antes de que el cliente escribiera nada.
     private BigDecimal decimalSetting(String key, BigDecimal fallback) {
-        return settingRepository.findByStoreIdAndSettingKey(TenantContext.requireStoreId(), key)
-                .map(Setting::getValue)
-                .map(BigDecimal::new)
-                .orElse(fallback);
+        return SettingValues.decimal(key,
+                settingRepository.findByStoreIdAndSettingKey(TenantContext.requireStoreId(), key)
+                        .map(Setting::getValue).orElse(null),
+                fallback);
     }
 }

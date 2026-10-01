@@ -8,6 +8,7 @@ import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.PosConnectionRepository;
 import org.uvo.uvostore.repository.SettingRepository;
 import org.uvo.uvostore.security.TenantContext;
+import org.uvo.uvostore.service.BusinessException;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -47,18 +48,31 @@ public class SettingsServiceImpl implements SettingsService {
     public GeneralSettingsDto updateGeneralSettings(GeneralSettingsUpdateRequest command) {
         String posToken = command.posApiToken() == null ? "" : command.posApiToken().trim();
 
+        // F17. Todo lo que participa en dinero se valida y se normaliza ANTES de escribir nada. El
+        // método es transaccional, así que un rechazo aquí deshace lo ya escrito de todos modos, pero
+        // resolverlo primero deja el orden explícito: la tienda no queda a medio configurar por un
+        // campo mal tecleado. El rango y el catálogo viven en SettingValues, que es también quien lee
+        // estos ajustes al cotizar.
+        String currency = SettingValues.normalizedCurrency(command.currency());
+        String taxRate = SettingValues.normalizedTaxRate(command.taxRate());
+        String defaultShippingCost = SettingValues.normalizedAmount(
+                command.defaultShippingCost(), "el costo de envío por defecto");
+        String freeShippingThreshold = SettingValues.normalizedAmount(
+                command.freeShippingThreshold(), "el monto mínimo para envío gratis");
+        requireStripeCredentials(command);
+
         set("store_name", command.storeName());
         set("store_email", command.storeEmail());
         set("store_phone", command.storePhone());
         set("admin_email", command.adminEmail());
-        set("currency", command.currency());
-        set("currency_symbol", command.currencySymbol());
-        set("tax_rate", command.taxRate());
+        set("currency", currency);
+        set("currency_symbol", command.currencySymbol().trim());
+        set("tax_rate", taxRate);
         set("prices_include_tax", String.valueOf(command.pricesIncludeTax()));
         set("shipping_enabled", String.valueOf(command.shippingEnabled()));
-        set("default_shipping_cost", command.defaultShippingCost());
+        set("default_shipping_cost", defaultShippingCost);
         set("free_shipping_enabled", String.valueOf(command.freeShippingEnabled()));
-        set("free_shipping_threshold", command.freeShippingThreshold());
+        set("free_shipping_threshold", freeShippingThreshold);
         set("allow_guest_checkout", String.valueOf(command.allowGuestCheckout()));
         set("require_phone", String.valueOf(command.requirePhone()));
         set("require_company", String.valueOf(command.requireCompany()));
@@ -106,6 +120,31 @@ public class SettingsServiceImpl implements SettingsService {
         }
 
         return getGeneralSettings();
+    }
+
+    /**
+     * F17. Activar Stripe exige tener con qué cobrar, igual que M3 exige el secreto de webhook para
+     * activar MercadoPago ({@code AdminPaymentGatewayServiceImpl}) y por la misma razón: se rechaza en
+     * el punto de configuración, donde la persona puede hacer algo al respecto. Sin esto,
+     * {@code stripe_enabled = true} sin clave secreta deja en la SPA un botón de pago que responde 500
+     * —la excepción de autenticación de Stripe se envuelve en {@code IllegalStateException}—, y el
+     * cliente lo descubre con el carrito lleno.
+     *
+     * <p>La clave secreta cuenta si <b>llega o ya estaba guardada</b>: un guardado que no toca el campo
+     * de secreto (que el panel nunca puede pre-rellenar) no puede fallar por eso. Es la misma regla que
+     * {@link #setSecret}.
+     */
+    private void requireStripeCredentials(GeneralSettingsUpdateRequest command) {
+        if (!command.stripeEnabled()) {
+            return;
+        }
+        boolean hasSecret = notBlank(command.stripeSecretKey()) || isSet("stripe_secret_key");
+        boolean hasPublicKey = notBlank(command.stripePublicKey());
+        if (!hasSecret || !hasPublicKey) {
+            throw new BusinessException(
+                    "Para activar Stripe debes configurar la clave pública y la clave secreta "
+                            + "(Developers > API keys en el panel de Stripe).");
+        }
     }
 
     private String get(String key, String fallback) {
