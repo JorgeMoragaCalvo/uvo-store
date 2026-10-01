@@ -79,14 +79,35 @@ cd frontend && npm run preview    # preview a production build
   (a separately hosted SPA build); empty by default, because in dev Vite proxies `/api/*` and
   requests are same-origin. Note when testing by hand: an `Origin` identical to the request's own
   host is same-origin and CORS never engages — use a different port.
-- **Rate limiting** (`RateLimitFilter`, A4) on the five unauthenticated endpoints: admin/customer
+- **Rate limiting** (`RateLimitFilter`, A4) on the six unauthenticated endpoints: admin/customer
   login, customer registration, admin forgot-password (window 5x longer — each hit sends a real
-  email) and order tracking. Keyed by client IP (`X-Forwarded-For` first hop, else the socket
-  address), counters in a bounded Caffeine cache. Limits are properties (`app.rate-limit.*`);
-  **surefire sets them absurdly high** because `IntegrationTestSupport.loginAdmin` hits the real
-  login endpoint and almost every test uses it — production's 5/min would break the suite
-  intermittently. `RateLimitTest` sets its own tiny limits and gives each test a distinct
-  `X-Forwarded-For`, since the counters are shared within a context.
+  email), order tracking and the MercadoPago webhook. Counters in a bounded Caffeine cache; limits
+  are properties (`app.rate-limit.*`). **Who the caller is, is `ClientIpResolver`'s decision, not this
+  filter's** (F18): the filter used to take `X-Forwarded-For`'s first entry without checking where it
+  came from, so anyone who sent the header picked their own counter and this control did not exist.
+  Two rules now, and both are needed — the header is read **only** when the socket peer is in
+  `app.rate-limit.trusted-proxies` (**empty by default**, so by default the header is ignored), and the
+  chain is walked **right to left**, because nginx's standard `proxy_add_x_forwarded_for` *appends* to
+  whatever the client sent, which makes the leftmost entry attacker-controlled even with a real proxy in
+  front. **Do not "fix" this with `server.forward-headers-strategy=framework`**: Spring's
+  `ForwardedHeaderFilter` does overwrite `getRemoteAddr()` from that header but has no trusted-proxy
+  notion at all, so it would spread the hole instead of closing it. Startup logs which mode is active —
+  behind an unconfigured proxy every client shares one bucket and login cuts off at 5 attempts total.
+- **Per-account throttling** (`AccountAttemptThrottle`, F18) on admin login, customer login and admin
+  forgot-password, because per-IP is blind to an attacker spread across many addresses. Same Caffeine
+  pattern, but called from `AuthController` where the email is already parsed — no body reading in a
+  filter. The key includes the **store id** (emails are per store). Logins count *failures* and a
+  success clears the counter; forgot-password counts every call. **Counting happens whether or not the
+  account exists**, deliberately: that endpoint answers 200 either way so as not to reveal which emails
+  are registered, and a 429 that only appeared for real ones would reveal exactly that. 429s from here
+  go through `TooManyRequestsException` and come out with the same body and `Retry-After` the filter
+  writes by hand.
+- Testing note for both: **surefire sets the limits absurdly high** because
+  `IntegrationTestSupport.loginAdmin` hits the real login endpoint and almost every test uses it —
+  production's 5/min would break the suite intermittently. `RateLimitTest` sets its own tiny limits and
+  separates counters with `req.setRemoteAddr(...)`; it used to use `X-Forwarded-For`, which no longer
+  does anything by default. `TrustedProxyRateLimitTest` and `AccountThrottleTest` need their own
+  contexts because they need different properties.
 - **JWTs are revocable** (`TokenVersionService`, A5). `users.token_version`/`customers.token_version`
   (V14) is carried in the token's `tv` claim and compared on every authenticated request through a
   60s Caffeine cache. Bumping the version — deactivating, deleting, re-roling a user, or any

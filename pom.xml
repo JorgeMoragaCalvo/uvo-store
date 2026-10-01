@@ -217,6 +217,11 @@
                         <app.rate-limit.forgot-password>100000</app.rate-limit.forgot-password>
                         <app.rate-limit.track>100000</app.rate-limit.track>
                         <app.rate-limit.webhook>100000</app.rate-limit.webhook>
+                        <!-- F18: por la misma razón, y es más necesario que los de arriba — el techo por
+                             cuenta se cuenta sobre el MISMO correo, y loginAdmin usa un correo por
+                             tienda, así que una clase con muchos logins del mismo admin lo tocaría
+                             incluso sin compartir IP. AccountThrottleTest pone el suyo pequeño. -->
+                        <app.rate-limit.account-attempts>100000</app.rate-limit.account-attempts>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>

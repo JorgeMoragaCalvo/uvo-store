@@ -73,18 +73,67 @@ class RateLimitTest extends IntegrationTestSupport {
         }
     }
 
+    @Test
+    @DisplayName("F18: falsificar X-Forwarded-For ya no renueva el contador")
+    void aForgedForwardedForDoesNotBuyMoreAttempts() throws Exception {
+        Store store = createStore("throttle-spoof");
+        User admin = createAdmin(store, "throttle-spoof");
+
+        // Una cabecera distinta en cada intento, que es todo lo que hacía falta para tener contador
+        // nuevo: el filtro tomaba su primera entrada sin comprobar de quién venía. Sin proxies
+        // confiables configurados —el valor por defecto— la cabecera se ignora y los cuatro intentos
+        // caen en el mismo cubo, el del socket.
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            mockMvc.perform(loginFrom(store, "198.51.100.77", "10.0.0." + attempt, admin.getEmail(), "mal"))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        mockMvc.perform(loginFrom(store, "198.51.100.77", "203.0.113.99", admin.getEmail(), "mal"))
+                .andExpect(status().isTooManyRequests());
+    }
+
+    @Test
+    @DisplayName("F18: dos clientes desde el mismo socket siguen contando por separado si no hay proxy")
+    void differentSocketsKeepSeparateCounters() throws Exception {
+        Store store = createStore("throttle-sockets");
+        User admin = createAdmin(store, "throttle-sockets");
+
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            mockMvc.perform(loginFrom(store, "198.51.100.30", null, admin.getEmail(), "mal"))
+                    .andExpect(status().isUnauthorized());
+        }
+        mockMvc.perform(loginFrom(store, "198.51.100.30", null, admin.getEmail(), "mal"))
+                .andExpect(status().isTooManyRequests());
+
+        // Otro cliente, otra dirección: el arreglo no puede meter a todo el mundo en un solo cubo, que
+        // es justamente lo que temía el comentario original del filtro.
+        mockMvc.perform(loginFrom(store, "198.51.100.31", null, admin.getEmail(), "mal"))
+                .andExpect(status().isUnauthorized());
+    }
+
     private org.springframework.test.web.servlet.RequestBuilder loginRequest(
             Store store, String clientIp, String email, String password) throws Exception {
+        // F18: el contador se separa fijando la dirección del SOCKET, no una cabecera. Antes bastaba
+        // X-Forwarded-For, y eso es precisamente el fallo: ahora se ignora salvo que venga de un proxy
+        // confiable, y no hay ninguno configurado. Sin esto los tres casos compartirían cubo, porque
+        // MockHttpServletRequest usa 127.0.0.1 para todos (DEFAULT_REMOTE_ADDR).
+        return loginFrom(store, clientIp, null, email, password);
+    }
+
+    private org.springframework.test.web.servlet.RequestBuilder loginFrom(
+            Store store, String socketAddress, String forwardedFor, String email, String password) throws Exception {
         String body = objectMapper.writeValueAsString(new HashMap<>() {{
             put("email", email);
             put("password", password);
         }});
-        return post("/api/admin/auth/login")
+        var request = post("/api/admin/auth/login")
                 .header("Host", hostHeader(store))
-                // Each test gets its own client IP so they don't share a counter: the filter keys on
-                // X-Forwarded-For when present, which is also how it behaves behind a reverse proxy.
-                .header("X-Forwarded-For", clientIp)
                 .contentType("application/json")
-                .content(body);
+                .content(body)
+                .with(req -> {
+                    req.setRemoteAddr(socketAddress);
+                    return req;
+                });
+        return forwardedFor == null ? request : request.header("X-Forwarded-For", forwardedFor);
     }
 }

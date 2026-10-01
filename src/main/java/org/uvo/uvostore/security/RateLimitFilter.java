@@ -23,13 +23,18 @@ import java.util.concurrent.atomic.AtomicInteger;
 // brute force, credential stuffing, mail bombing (every forgot-password hit sends an email) and
 // order-number enumeration all had zero cost.
 //
-// Fixed-window counters keyed by client IP + rule. Deliberately not per-account: keying on the
-// submitted email would mean reading the request body inside a filter, and the attacks these
-// addresses are per-origin anyway. Per-account throttling is a separate, later concern.
+// Fixed-window counters keyed by client IP + rule. La IP la decide ClientIpResolver, no este filtro:
+// F18 encontró que se tomaba la primera entrada de X-Forwarded-For sin mirar de quién venía, así que
+// quien mandaba la cabecera elegía su propio contador y este control no existía.
 //
-// Storage is a Caffeine cache rather than a map so entries expire and the total is capped —
-// otherwise the limiter itself would be the memory-exhaustion vector, since the key is attacker
-// controlled.
+// Esto cuenta por origen. El presupuesto por CUENTA —que es lo que sigue faltando cuando el atacante
+// tiene muchas direcciones— vive en AccountAttemptThrottle, llamado desde AuthController, donde el
+// correo ya está parseado: no hace falta leer el cuerpo dentro de un filtro, que era la razón por la que
+// esta nota decía antes que el asunto quedaba para más adelante.
+//
+// Storage is a Caffeine cache rather than a map so entries expire and the total is capped. Con la clave
+// falsificable eso era además lo único que contenía un segundo ataque: cien mil direcciones inventadas
+// desalojaban los contadores de todo el mundo. Ya no se puede elegir la clave, pero el tope se queda.
 @Component
 public class RateLimitFilter extends OncePerRequestFilter {
 
@@ -44,12 +49,14 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
     private final boolean enabled;
     private final List<Rule> rules;
+    private final ClientIpResolver clientIpResolver;
     private final Cache<String, Window> windows = Caffeine.newBuilder()
             .maximumSize(100_000)
             .expireAfterWrite(Duration.ofHours(1))
             .build();
 
     public RateLimitFilter(
+            ClientIpResolver clientIpResolver,
             @Value("${app.rate-limit.enabled:true}") boolean enabled,
             @Value("${app.rate-limit.login:5}") int loginLimit,
             @Value("${app.rate-limit.register:5}") int registerLimit,
@@ -57,6 +64,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
             @Value("${app.rate-limit.track:20}") int trackLimit,
             @Value("${app.rate-limit.webhook:60}") int webhookLimit,
             @Value("${app.rate-limit.window-seconds:60}") int windowSeconds) {
+        this.clientIpResolver = clientIpResolver;
         this.enabled = enabled;
         Duration window = Duration.ofSeconds(windowSeconds);
         this.rules = List.of(
@@ -86,7 +94,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
             return;
         }
 
-        String key = clientIp(request) + " " + rule.method() + " " + rule.path();
+        String key = clientIpResolver.resolve(request) + " " + rule.method() + " " + rule.path();
         Instant now = Instant.now();
         Window window = windows.asMap().compute(key, (k, existing) ->
                 existing == null || now.isAfter(existing.resetAt())
@@ -98,18 +106,6 @@ public class RateLimitFilter extends OncePerRequestFilter {
             return;
         }
         filterChain.doFilter(request, response);
-    }
-
-    // X-Forwarded-For first: behind a reverse proxy getRemoteAddr() is the proxy's own address, so
-    // every caller would share one bucket. Only the first hop is used; the rest of the chain is
-    // client-supplied and worthless. With no proxy in front, the header is absent and this falls
-    // back to the socket address.
-    private String clientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();
-        }
-        return request.getRemoteAddr();
     }
 
     private void reject(HttpServletResponse response, Duration retryAfter) throws IOException {
