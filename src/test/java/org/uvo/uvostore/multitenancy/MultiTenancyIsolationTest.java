@@ -80,10 +80,14 @@ class MultiTenancyIsolationTest extends IntegrationTestSupport {
 
         // Same token, different store's subdomain — must be rejected (sid-vs-Host cross-check
         // in JwtAuthenticationFilter), not silently authorize against the wrong tenant.
+        // F19: y el código es 401, no 403. El filtro limpia el contexto —un token no puede autenticar
+        // contra la tienda equivocada ni por un instante—, así que contra ESTE host la petición no tiene
+        // credenciales. Para la SPA eso significa volver al login, que es lo correcto en un dominio donde
+        // su sesión no vale.
         mockMvc.perform(get("/api/admin/products")
                         .header("Host", hostHeader(storeB))
                         .header("Authorization", "Bearer " + tokenA))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -156,9 +160,10 @@ class MultiTenancyIsolationTest extends IntegrationTestSupport {
                         .header("Authorization", "Bearer " + tokenA))
                 .andExpect(status().isOk());
 
+        // F19: 401 por lo mismo que el caso del admin de más arriba.
         mockMvc.perform(get("/api/customer/account")
                         .header("Host", hostHeader(storeB))
                         .header("Authorization", "Bearer " + tokenA))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 }

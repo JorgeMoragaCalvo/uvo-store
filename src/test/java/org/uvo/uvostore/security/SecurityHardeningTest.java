@@ -86,12 +86,13 @@ class SecurityHardeningTest extends IntegrationTestSupport {
                 .andExpect(status().isOk());
 
         // Same token, one request later: before A5 this kept working for the rest of the 24h.
-        // 403 rather than 401 because the chain has no AuthenticationEntryPoint — an unauthenticated
-        // request to a protected route is what it is; the point here is that it stopped working.
+        // F19: y responde 401, no 403. Era 403 porque la cadena no declaraba AuthenticationEntryPoint, y
+        // ese código decía "estás dentro pero no puedes" de un token que ya no autentica a nadie — por
+        // eso el panel, que solo cierra sesión ante 401, se quedaba atrapado con el token revocado.
         mockMvc.perform(get("/api/admin/products")
                         .header("Host", hostHeader(store))
                         .header("Authorization", "Bearer " + victimToken))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -109,10 +110,11 @@ class SecurityHardeningTest extends IntegrationTestSupport {
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isNoContent());
 
+        // F19: 401 — el principal detrás del token ya no existe, así que no hay a quién autenticar.
         mockMvc.perform(get("/api/admin/products")
                         .header("Host", hostHeader(store))
                         .header("Authorization", "Bearer " + victimToken))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

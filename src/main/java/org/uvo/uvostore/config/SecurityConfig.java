@@ -10,6 +10,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.uvo.uvostore.security.ApiSecurityErrorHandlers;
 import org.uvo.uvostore.security.JwtAuthenticationFilter;
 import org.uvo.uvostore.security.PlatformApiKeyAuthFilter;
 import org.uvo.uvostore.security.PosApiKeyAuthFilter;
@@ -53,9 +54,19 @@ public class SecurityConfig {
             JwtAuthenticationFilter jwtAuthenticationFilter,
             PosWebhookAuthFilter posWebhookAuthFilter,
             PosApiKeyAuthFilter posApiKeyAuthFilter,
-            PlatformApiKeyAuthFilter platformApiKeyAuthFilter) throws Exception {
+            PlatformApiKeyAuthFilter platformApiKeyAuthFilter,
+            ApiSecurityErrorHandlers errorHandlers) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
+                // F19: sin esto la cadena no tenía punto de entrada declarado y una petición SIN
+                // autenticar a una ruta protegida respondía 403 — el código de "estás dentro pero no
+                // puedes", no el de "vuelve a entrar". El panel solo cierra sesión ante 401, así que un
+                // token caducado dejaba la SPA atrapada mostrando errores sin volver al login.
+                // ExceptionTranslationFilter ya sabe cuál de los dos casos es; solo faltaba decirle qué
+                // responder en cada uno.
+                .exceptionHandling(exceptions -> exceptions
+                        .authenticationEntryPoint(errorHandlers.authenticationEntryPoint())
+                        .accessDeniedHandler(errorHandlers.accessDeniedHandler()))
                 .cors(cors -> cors.configurationSource(corsConfigurationSource))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .httpBasic(AbstractHttpConfigurer::disable)
