@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.uvo.uvostore.entity.pos.PosConnection;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.PosConnectionRepository;
+import org.uvo.uvostore.repository.SyncWebHookLogRepository;
 import org.uvo.uvostore.support.IntegrationTestSupport;
 
 import javax.crypto.Mac;
@@ -13,6 +14,7 @@ import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.util.HexFormat;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -33,6 +35,8 @@ class PosWebhookAuthTest extends IntegrationTestSupport {
 
     @Autowired
     private PosConnectionRepository posConnectionRepository;
+    @Autowired
+    private SyncWebHookLogRepository webhookLogRepository;
 
     // --- webhooks: /api/webhooks/pos/** ------------------------------------------------------------
 
@@ -153,6 +157,104 @@ class PosWebhookAuthTest extends IntegrationTestSupport {
                 .andExpect(jsonPath("$.error").value("POS_CONNECTION_NOT_FOUND"));
     }
 
+    // --- F21: repetición dentro de la ventana de frescura ------------------------------------------
+
+    @Test
+    @DisplayName("El mismo webhook dos veces: la segunda se rechaza como duplicado")
+    void aReplayedWebhookIsRejected() throws Exception {
+        PosConnection connection = createConnection(true);
+        String payload = stockPayload(connection.getCompanyId());
+        String timestamp = String.valueOf(System.currentTimeMillis() / 1000);
+        String signature = hmac(payload + timestamp, WEBHOOK_SECRET);
+
+        mockMvc.perform(signedWebhook(connection, payload, timestamp, signature))
+                .andExpect(status().isOk());
+
+        // Exactamente la misma petición: la firma sigue siendo válida porque el cuerpo y el timestamp no
+        // han cambiado. Eso es todo lo que necesita quien la haya capturado.
+        mockMvc.perform(signedWebhook(connection, payload, timestamp, signature))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error").value("REPLAYED_WEBHOOK"));
+    }
+
+    @Test
+    @DisplayName("Y el reenvío no llega a procesarse: no deja una segunda fila de log")
+    void aReplayedWebhookIsNotProcessedAtAll() throws Exception {
+        PosConnection connection = createConnection(true);
+        String payload = stockPayload(connection.getCompanyId());
+        String timestamp = String.valueOf(System.currentTimeMillis() / 1000);
+        String signature = hmac(payload + timestamp, WEBHOOK_SECRET);
+
+        mockMvc.perform(signedWebhook(connection, payload, timestamp, signature)).andExpect(status().isOk());
+        mockMvc.perform(signedWebhook(connection, payload, timestamp, signature));
+
+        // Rechazar en el filtro es lo que evita el efecto de verdad molesto: el reenvío entraba al
+        // servicio, el UPDATE condicional de F13 no encajaba —el stock ya era el nuevo— y se registraba
+        // una divergencia con su aviso a Sentry que no correspondía a ninguna divergencia real.
+        assertThat(webhookLogRepository.findTop50ByCompanyIdOrderByCreatedAtDesc(connection.getCompanyId()))
+                .as("el reenvío no se procesa, así que no hay segundo registro")
+                .hasSize(1);
+    }
+
+    @Test
+    @DisplayName("Dos eventos legítimos distintos del mismo comercio pasan los dos")
+    void twoDistinctEventsBothPass() throws Exception {
+        PosConnection connection = createConnection(true);
+        String timestamp = String.valueOf(System.currentTimeMillis() / 1000);
+
+        // El guarda no puede degenerar en "un webhook por ventana": lo que distingue a dos eventos es el
+        // cuerpo, y con cuerpos distintos la firma también es distinta.
+        String first = stockPayload(connection.getCompanyId());
+        String second = """
+                {"event":"stock.updated","productId":2,"sku":"SKU-2","companyId":%d,\
+                "warehouseId":1,"oldStock":4,"newStock":3,"stockWeb":3}"""
+                .formatted(connection.getCompanyId());
+
+        mockMvc.perform(signedWebhook(connection, first, timestamp, hmac(first + timestamp, WEBHOOK_SECRET)))
+                .andExpect(status().isOk());
+        mockMvc.perform(signedWebhook(connection, second, timestamp, hmac(second + timestamp, WEBHOOK_SECRET)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("Una firma inválida no se recuerda: no puede bloquear al webhook auténtico")
+    void aRejectedSignatureDoesNotBlockTheGenuineRequest() throws Exception {
+        PosConnection connection = createConnection(true);
+        String payload = stockPayload(connection.getCompanyId());
+        String timestamp = String.valueOf(System.currentTimeMillis() / 1000);
+        String forged = hmac(payload + timestamp, "otro-secreto");
+
+        // Tres intentos con una firma que no vale. Si el registro fuera antes de verificar el HMAC,
+        // cualquiera podría quemar la firma auténtica —o llenar la caché con basura— sin conocer el
+        // secreto.
+        for (int attempt = 0; attempt < 3; attempt++) {
+            mockMvc.perform(signedWebhook(connection, payload, timestamp, forged))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.error").value("INVALID_SIGNATURE"));
+        }
+
+        mockMvc.perform(signedWebhook(connection, payload, timestamp, hmac(payload + timestamp, WEBHOOK_SECRET)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("Fuera de la ventana el motivo sigue siendo la expiración, no el duplicado")
+    void anExpiredReplayIsStillReportedAsExpired() throws Exception {
+        PosConnection connection = createConnection(true);
+        String payload = stockPayload(connection.getCompanyId());
+        String timestamp = String.valueOf(System.currentTimeMillis() / 1000);
+        String signature = hmac(payload + timestamp, WEBHOOK_SECRET);
+
+        mockMvc.perform(signedWebhook(connection, payload, timestamp, signature)).andExpect(status().isOk());
+
+        // La frescura se comprueba antes que el duplicado, y así tiene que seguir: los dos rechazos dicen
+        // cosas distintas y el operador necesita distinguirlos en el log.
+        String oldTimestamp = String.valueOf(System.currentTimeMillis() / 1000 - 600);
+        mockMvc.perform(signedWebhook(connection, payload, oldTimestamp, hmac(payload + oldTimestamp, WEBHOOK_SECRET)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error").value("EXPIRED_WEBHOOK"));
+    }
+
     // --- sincronización: /api/sync/** --------------------------------------------------------------
 
     @Test
@@ -256,6 +358,20 @@ class PosWebhookAuthTest extends IntegrationTestSupport {
                 {"companyId":%d,"externalId":%d,"sku":"POS-SKU-%d","name":"Producto POS",\
                 "price":1990,"stock":5,"active":true}"""
                 .formatted(companyId, nextSeq(), nextSeq());
+    }
+
+    /**
+     * F21. La petición firmada, para poder mandar dos veces exactamente la misma — que es todo el
+     * escenario del hallazgo.
+     */
+    private org.springframework.test.web.servlet.RequestBuilder signedWebhook(
+            PosConnection connection, String payload, String timestamp, String signature) {
+        return post("/api/webhooks/pos/stock-updated")
+                .header("X-Signature", signature)
+                .header("X-Company-ID", String.valueOf(connection.getCompanyId()))
+                .header("X-Timestamp", timestamp)
+                .contentType("application/json")
+                .content(payload);
     }
 
     private String hmac(String data, String secret) {
