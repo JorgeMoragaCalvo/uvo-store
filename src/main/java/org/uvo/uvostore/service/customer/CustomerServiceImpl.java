@@ -9,6 +9,7 @@ import org.uvo.uvostore.entity.customer.Customer;
 import org.uvo.uvostore.entity.customer.enums.AccountStatus;
 import org.uvo.uvostore.repository.CustomerRepository;
 import org.uvo.uvostore.security.TenantContext;
+import org.uvo.uvostore.security.TokenVersionService;
 
 import java.util.NoSuchElementException;
 
@@ -17,10 +18,13 @@ public class CustomerServiceImpl implements CustomerService {
 
     private final CustomerRepository customerRepository;
     private final PasswordEncoder passwordEncoder;
+    private final TokenVersionService tokenVersionService;
 
-    public CustomerServiceImpl(CustomerRepository customerRepository, PasswordEncoder passwordEncoder) {
+    public CustomerServiceImpl(CustomerRepository customerRepository, PasswordEncoder passwordEncoder,
+                                TokenVersionService tokenVersionService) {
         this.customerRepository = customerRepository;
         this.passwordEncoder = passwordEncoder;
+        this.tokenVersionService = tokenVersionService;
     }
 
     @Override
@@ -58,6 +62,23 @@ public class CustomerServiceImpl implements CustomerService {
 
         customer.setPassword(passwordEncoder.encode(command.newPassword()));
         customerRepository.save(customer);
+
+        // F22. La contraseña nueva mata las sesiones viejas, que es justo lo que alguien espera al
+        // cambiarla porque sospecha que le robaron la suya. Sin esto el token robado seguía entrando
+        // hasta caducar solo (24 h), así que el remedio del usuario no remediaba nada.
+        //
+        // Se llama al método que ya existía para esto —y que no tenía ningún llamador— en vez de copiar
+        // por tercera vez el setTokenVersion(+1) + evict que el lado admin hace a mano
+        // (AuthController.adminResetPassword, UserServiceImpl.revokeTokens). Un método de revocación
+        // muerto conviviendo con copias manuales es como esta clase de fallo vuelve a aparecer.
+        //
+        // Va DESPUÉS de validar la contraseña actual a propósito: si fuera antes, cualquiera con el
+        // token podría echar al dueño de su propia sesión probando contraseñas al azar.
+        //
+        // El endpoint sigue respondiendo 204 sin token nuevo, así que quien cambia su contraseña
+        // también cierra su propia sesión — igual que el reset de admin. Cuando exista superficie de
+        // cliente en la SPA, lo amable es emitir allí un token nuevo (después del incremento).
+        tokenVersionService.revokeCustomerTokens(customerId);
     }
 
     @Override
