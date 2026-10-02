@@ -19,21 +19,24 @@ import java.util.Map;
 public class PaymentMethodsReportServiceImpl implements PaymentMethodsReportService {
 
     private final OrderRepository orderRepository;
+    private final ReportRevenue reportRevenue;
 
-    public PaymentMethodsReportServiceImpl(OrderRepository orderRepository) {
+    public PaymentMethodsReportServiceImpl(OrderRepository orderRepository, ReportRevenue reportRevenue) {
         this.orderRepository = orderRepository;
+        this.reportRevenue = reportRevenue;
     }
 
     @Override
     @Transactional(readOnly = true)
     public PaymentMethodsSummaryDto getSummary(Instant start, Instant end, String paymentStatus) {
         List<Order> orders = ordersInRange(start, end, paymentStatus);
-        BigDecimal totalRevenue = sumPaid(orders);
+        BigDecimal totalRevenue = reportRevenue.totals(orders).net();
         long paid = orders.stream().filter(o -> o.getPaymentStatus() == PaymentStatus.PAID).count();
-        long pending = orderRepository.findByStoreIdAndCreatedAtBetween(TenantContext.requireStoreId(), start, end).stream()
-                .filter(o -> o.getPaymentStatus() == PaymentStatus.PENDING).count();
-        long failed = orderRepository.findByStoreIdAndCreatedAtBetween(TenantContext.requireStoreId(), start, end).stream()
-                .filter(o -> o.getPaymentStatus() == PaymentStatus.FAILED).count();
+        // F20: pendientes y fallidas salen de UNA consulta, no de dos más. Este método pedía tres veces
+        // el mismo rango de órdenes para contar tres estados.
+        List<Order> allInRange = ordersInRange(start, end, null);
+        long pending = allInRange.stream().filter(o -> o.getPaymentStatus() == PaymentStatus.PENDING).count();
+        long failed = allInRange.stream().filter(o -> o.getPaymentStatus() == PaymentStatus.FAILED).count();
         return new PaymentMethodsSummaryDto(orders.size(), totalRevenue, paid, pending, failed);
     }
 
@@ -52,7 +55,7 @@ public class PaymentMethodsReportServiceImpl implements PaymentMethodsReportServ
                     long paid = methodOrders.stream().filter(o -> o.getPaymentStatus() == PaymentStatus.PAID).count();
                     long pending = methodOrders.stream().filter(o -> o.getPaymentStatus() == PaymentStatus.PENDING).count();
                     long failed = methodOrders.stream().filter(o -> o.getPaymentStatus() == PaymentStatus.FAILED).count();
-                    BigDecimal revenue = sumPaid(methodOrders);
+                    BigDecimal revenue = reportRevenue.totals(methodOrders).net();
                     BigDecimal avg = paid > 0 ? revenue.divide(BigDecimal.valueOf(paid), 2, RoundingMode.HALF_UP) : BigDecimal.ZERO;
                     double successRate = methodOrders.size() > 0 ? (paid * 100.0) / methodOrders.size() : 0;
                     return new PaymentMethodDetailDto(e.getKey(), methodOrders.size(), revenue, paid, pending, failed, avg, successRate);
@@ -64,7 +67,7 @@ public class PaymentMethodsReportServiceImpl implements PaymentMethodsReportServ
     @Override
     @Transactional(readOnly = true)
     public List<PaymentStatusDistributionDto> getStatusDistribution(Instant start, Instant end) {
-        List<Order> orders = orderRepository.findByStoreIdAndCreatedAtBetween(TenantContext.requireStoreId(), start, end);
+        List<Order> orders = ordersInRange(start, end, null);
         Map<PaymentStatus, List<Order>> byStatus = orders.stream()
                 .collect(java.util.stream.Collectors.groupingBy(Order::getPaymentStatus, LinkedHashMap::new, java.util.stream.Collectors.toList()));
 
@@ -91,17 +94,11 @@ public class PaymentMethodsReportServiceImpl implements PaymentMethodsReportServ
     }
 
     private List<Order> ordersInRange(Instant start, Instant end, String paymentStatus) {
-        List<Order> orders = orderRepository.findByStoreIdAndCreatedAtBetween(TenantContext.requireStoreId(), start, end);
+        List<Order> orders = orderRepository
+                .findByStoreIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(TenantContext.requireStoreId(), start, end);
         if ("paid".equalsIgnoreCase(paymentStatus)) {
             return orders.stream().filter(o -> o.getPaymentStatus() == PaymentStatus.PAID).toList();
         }
         return orders;
-    }
-
-    private BigDecimal sumPaid(List<Order> orders) {
-        return orders.stream()
-                .filter(o -> o.getPaymentStatus() == PaymentStatus.PAID)
-                .map(Order::getTotal)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 }

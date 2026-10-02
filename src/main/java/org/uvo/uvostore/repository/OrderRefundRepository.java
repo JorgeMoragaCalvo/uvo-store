@@ -7,6 +7,7 @@ import org.springframework.stereotype.Repository;
 import org.uvo.uvostore.entity.order.OrderRefund;
 
 import java.math.BigDecimal;
+import java.util.Collection;
 import java.util.List;
 
 @Repository
@@ -30,4 +31,20 @@ public interface OrderRefundRepository extends JpaRepository<OrderRefund, Long> 
               and r.status <> org.uvo.uvostore.entity.order.enums.RefundStatus.FAILED
             """)
     BigDecimal totalRefunded(@Param("orderId") Long orderId);
+
+    /**
+     * F20. Lo mismo para muchas órdenes a la vez: los informes necesitan restar los reembolsos de cada
+     * orden del rango, y preguntarlo de una en una serían tantas consultas como órdenes.
+     *
+     * <p>Misma regla que {@link #totalRefunded}: cuenta PENDING y COMPLETED, deja fuera los FAILED. Solo
+     * devuelve fila para las órdenes que tienen algún reembolso, así que quien lo use trata la ausencia
+     * como cero — ver {@code ReportRevenue}.
+     */
+    @Query("""
+            select r.order.id, sum(r.amount) from OrderRefund r
+            where r.order.id in :orderIds
+              and r.status <> org.uvo.uvostore.entity.order.enums.RefundStatus.FAILED
+            group by r.order.id
+            """)
+    List<Object[]> refundedByOrder(@Param("orderIds") Collection<Long> orderIds);
 }

@@ -133,6 +133,9 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
     long countByShippingMethodRefId(Long shippingMethodId);
 
     // Admin\Reports\* — every report aggregates in-memory over the orders (+ items) in a date range.
-    List<Order> findByCreatedAtBetween(Instant start, Instant end);
-    List<Order> findByStoreIdAndCreatedAtBetween(Long storeId, Instant start, Instant end);
+    //
+    // F20: tope EXCLUSIVO, no el `between` inclusivo de antes. El rango lo arma ReportDateRange a partir
+    // de un día local, y su fin era `23:59:59`: con un between inclusivo, una orden creada a las
+    // 23:59:59,4 —Postgres guarda microsegundos— se caía del informe de ese día y de cualquier otro.
+    List<Order> findByStoreIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(Long storeId, Instant start, Instant end);
 }

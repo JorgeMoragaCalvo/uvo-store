@@ -23,36 +23,38 @@ import java.util.List;
 public class AdminPaymentMethodsReportController {
 
     private final PaymentMethodsReportService paymentMethodsReportService;
+    private final ReportDateRange dateRange;
 
-    public AdminPaymentMethodsReportController(PaymentMethodsReportService paymentMethodsReportService) {
+    public AdminPaymentMethodsReportController(PaymentMethodsReportService paymentMethodsReportService, ReportDateRange dateRange) {
         this.paymentMethodsReportService = paymentMethodsReportService;
+        this.dateRange = dateRange;
     }
 
     @GetMapping("/summary")
     @PreAuthorize("hasAuthority('reports.view')")
     public PaymentMethodsSummaryDto summary(@RequestParam LocalDate startDate, @RequestParam LocalDate endDate,
                                              @RequestParam(defaultValue = "paid") String paymentStatus) {
-        return paymentMethodsReportService.getSummary(ReportDateRange.start(startDate), ReportDateRange.end(endDate), paymentStatus);
+        return paymentMethodsReportService.getSummary(dateRange.start(startDate), dateRange.endExclusive(endDate), paymentStatus);
     }
 
     @GetMapping
     @PreAuthorize("hasAuthority('reports.view')")
     public List<PaymentMethodDetailDto> byMethod(@RequestParam LocalDate startDate, @RequestParam LocalDate endDate,
                                                   @RequestParam(defaultValue = "paid") String paymentStatus) {
-        return paymentMethodsReportService.getByPaymentMethod(ReportDateRange.start(startDate), ReportDateRange.end(endDate), paymentStatus);
+        return paymentMethodsReportService.getByPaymentMethod(dateRange.start(startDate), dateRange.endExclusive(endDate), paymentStatus);
     }
 
     @GetMapping("/status-distribution")
     @PreAuthorize("hasAuthority('reports.view')")
     public List<PaymentStatusDistributionDto> statusDistribution(@RequestParam LocalDate startDate, @RequestParam LocalDate endDate) {
-        return paymentMethodsReportService.getStatusDistribution(ReportDateRange.start(startDate), ReportDateRange.end(endDate));
+        return paymentMethodsReportService.getStatusDistribution(dateRange.start(startDate), dateRange.endExclusive(endDate));
     }
 
     @GetMapping("/export")
     @PreAuthorize("hasAuthority('reports.view')")
     public ResponseEntity<byte[]> export(@RequestParam LocalDate startDate, @RequestParam LocalDate endDate,
                                           @RequestParam(defaultValue = "paid") String paymentStatus) {
-        byte[] csv = paymentMethodsReportService.exportCsv(ReportDateRange.start(startDate), ReportDateRange.end(endDate), paymentStatus);
+        byte[] csv = paymentMethodsReportService.exportCsv(dateRange.start(startDate), dateRange.endExclusive(endDate), paymentStatus);
         String filename = "reporte_metodos_pago_" + startDate + "_" + endDate + ".csv";
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType("text/csv; charset=utf-8"))

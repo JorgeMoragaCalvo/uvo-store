@@ -12,7 +12,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -23,9 +22,13 @@ import java.util.Map;
 public class SalesReportServiceImpl implements SalesReportService {
 
     private final OrderRepository orderRepository;
+    private final ReportRevenue reportRevenue;
+    private final ReportZone reportZone;
 
-    public SalesReportServiceImpl(OrderRepository orderRepository) {
+    public SalesReportServiceImpl(OrderRepository orderRepository, ReportRevenue reportRevenue, ReportZone reportZone) {
         this.orderRepository = orderRepository;
+        this.reportRevenue = reportRevenue;
+        this.reportZone = reportZone;
     }
 
     @Override
@@ -33,14 +36,19 @@ public class SalesReportServiceImpl implements SalesReportService {
     public SalesSummaryDto getSummary(Instant start, Instant end, String paymentStatus) {
         List<Order> orders = ordersInRange(start, end, paymentStatus);
 
-        BigDecimal totalRevenue = sumPaid(orders);
+        // F20: las tres cifras. El bruto es lo que se cobró, y el neto lo que quedó después de los
+        // reembolsos; antes solo se informaba el bruto llamándolo "ingresos totales".
+        ReportRevenue.Totals totals = reportRevenue.totals(orders);
         long totalItems = orders.stream().flatMap(o -> o.getItems().stream()).mapToLong(OrderItem::getQuantity).sum();
         long paid = orders.stream().filter(o -> o.getPaymentStatus() == PaymentStatus.PAID).count();
         long pending = orders.stream().filter(o -> o.getPaymentStatus() == PaymentStatus.PENDING).count();
         long failed = orders.stream().filter(o -> o.getPaymentStatus() == PaymentStatus.FAILED).count();
-        BigDecimal avg = paid > 0 ? totalRevenue.divide(BigDecimal.valueOf(paid), 2, RoundingMode.HALF_UP) : BigDecimal.ZERO;
+        // El ticket promedio sale del neto: es lo que dejó cada venta, no lo que se facturó antes de
+        // devolver parte.
+        BigDecimal avg = paid > 0 ? totals.net().divide(BigDecimal.valueOf(paid), 2, RoundingMode.HALF_UP) : BigDecimal.ZERO;
 
-        return new SalesSummaryDto(orders.size(), totalRevenue, totalItems, avg, paid, pending, failed);
+        return new SalesSummaryDto(orders.size(), totals.net(), totals.gross(), totals.refunded(),
+                totalItems, avg, paid, pending, failed);
     }
 
     @Override
@@ -49,13 +57,15 @@ public class SalesReportServiceImpl implements SalesReportService {
         List<Order> orders = ordersInRange(start, end, paymentStatus);
 
         Map<String, List<Order>> byDay = orders.stream()
-                .collect(java.util.stream.Collectors.groupingBy(o -> dateKey(o.getCreatedAt()), LinkedHashMap::new, java.util.stream.Collectors.toList()));
+                // F20: el día en la zona del informe, no en UTC — ver ReportZone.
+                .collect(java.util.stream.Collectors.groupingBy(o -> reportZone.dateKey(o.getCreatedAt()),
+                        LinkedHashMap::new, java.util.stream.Collectors.toList()));
 
         return byDay.entrySet().stream()
                 .map(e -> new SalesByDayDto(
                         e.getKey(),
                         e.getValue().size(),
-                        sumPaid(e.getValue()),
+                        reportRevenue.totals(e.getValue()).net(),
                         e.getValue().stream().filter(o -> o.getPaymentStatus() == PaymentStatus.PAID).count()
                 ))
                 .sorted(Comparator.comparing(SalesByDayDto::date).reversed())
@@ -65,18 +75,27 @@ public class SalesReportServiceImpl implements SalesReportService {
     @Override
     @Transactional(readOnly = true)
     public List<TopProductDto> getTopProducts(Instant start, Instant end) {
-        List<Order> paidOrders = orderRepository.findByStoreIdAndCreatedAtBetween(TenantContext.requireStoreId(), start, end).stream()
-                .filter(o -> o.getPaymentStatus() == PaymentStatus.PAID)
-                .toList();
+        List<Order> paidOrders = paidOrdersInRange(start, end);
+        Map<Long, BigDecimal> refundsByOrder = reportRevenue.refundedByOrder(paidOrders);
 
         Map<Long, TopProductAcc> acc = new LinkedHashMap<>();
         for (Order order : paidOrders) {
+            // F20: lo que de verdad dejó cada línea. Antes era precio × cantidad, que ignora el descuento
+            // del cupón y los reembolsos, así que este informe no sumaba el de ventas.
+            Map<Long, BigDecimal> netByProduct = reportRevenue.netByItem(
+                    order, refundsByOrder.getOrDefault(order.getId(), BigDecimal.ZERO));
             for (OrderItem item : order.getItems()) {
-                TopProductAcc a = acc.computeIfAbsent(item.getProduct().getId(), id -> new TopProductAcc(item.getProduct().getName()));
+                Long productId = item.getProduct().getId();
+                TopProductAcc a = acc.computeIfAbsent(productId, id -> new TopProductAcc(item.getProduct().getName()));
                 a.quantity += item.getQuantity();
-                a.revenue = a.revenue.add(item.getPrice().multiply(BigDecimal.valueOf(item.getQuantity())));
                 a.orderIds.add(order.getId());
             }
+            netByProduct.forEach((productId, net) -> {
+                TopProductAcc a = acc.get(productId);
+                if (a != null) {
+                    a.revenue = a.revenue.add(net);
+                }
+            });
         }
 
         return acc.entrySet().stream()
@@ -89,15 +108,13 @@ public class SalesReportServiceImpl implements SalesReportService {
     @Override
     @Transactional(readOnly = true)
     public List<PaymentMethodRevenueDto> getSalesByPaymentMethod(Instant start, Instant end) {
-        List<Order> paidOrders = orderRepository.findByStoreIdAndCreatedAtBetween(TenantContext.requireStoreId(), start, end).stream()
-                .filter(o -> o.getPaymentStatus() == PaymentStatus.PAID)
-                .toList();
+        List<Order> paidOrders = paidOrdersInRange(start, end);
 
         Map<String, List<Order>> byMethod = paidOrders.stream()
                 .collect(java.util.stream.Collectors.groupingBy(o -> o.getPaymentMethod() == null ? "No especificado" : o.getPaymentMethod().name()));
 
         return byMethod.entrySet().stream()
-                .map(e -> new PaymentMethodRevenueDto(e.getKey(), e.getValue().size(), sumPaid(e.getValue())))
+                .map(e -> new PaymentMethodRevenueDto(e.getKey(), e.getValue().size(), reportRevenue.totals(e.getValue()).net()))
                 .sorted(Comparator.comparing(PaymentMethodRevenueDto::totalRevenue).reversed())
                 .toList();
     }
@@ -106,7 +123,7 @@ public class SalesReportServiceImpl implements SalesReportService {
     @Transactional(readOnly = true)
     public byte[] exportCsv(Instant start, Instant end, String paymentStatus) {
         List<SalesByDayDto> rows = getSalesByDay(start, end, paymentStatus);
-        CsvBuilder csv = new CsvBuilder().header("Fecha", "Total Órdenes", "Órdenes Pagadas", "Ingresos", "Ticket Promedio");
+        CsvBuilder csv = new CsvBuilder().header("Fecha", "Total Órdenes", "Órdenes Pagadas", "Ingresos netos", "Ticket Promedio");
         for (SalesByDayDto row : rows) {
             BigDecimal avgTicket = row.paidOrders() > 0
                     ? row.revenue().divide(BigDecimal.valueOf(row.paidOrders()), 0, RoundingMode.HALF_UP)
@@ -120,7 +137,8 @@ public class SalesReportServiceImpl implements SalesReportService {
     }
 
     private List<Order> ordersInRange(Instant start, Instant end, String paymentStatus) {
-        List<Order> orders = orderRepository.findByStoreIdAndCreatedAtBetween(TenantContext.requireStoreId(), start, end);
+        List<Order> orders = orderRepository
+                .findByStoreIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(TenantContext.requireStoreId(), start, end);
         if (paymentStatus == null || paymentStatus.isBlank() || "all".equalsIgnoreCase(paymentStatus)) {
             return orders;
         }
@@ -128,15 +146,12 @@ public class SalesReportServiceImpl implements SalesReportService {
         return orders.stream().filter(o -> o.getPaymentStatus() == status).toList();
     }
 
-    private BigDecimal sumPaid(List<Order> orders) {
-        return orders.stream()
+    private List<Order> paidOrdersInRange(Instant start, Instant end) {
+        return orderRepository
+                .findByStoreIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(TenantContext.requireStoreId(), start, end)
+                .stream()
                 .filter(o -> o.getPaymentStatus() == PaymentStatus.PAID)
-                .map(Order::getTotal)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-    }
-
-    private String dateKey(Instant instant) {
-        return instant.atZone(ZoneOffset.UTC).toLocalDate().toString();
+                .toList();
     }
 
     private static final class TopProductAcc {
