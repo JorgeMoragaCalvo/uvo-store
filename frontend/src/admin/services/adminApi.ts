@@ -1,6 +1,7 @@
 import axios from 'axios'
 import type { Page } from '@/types/api'
 import { useAdminAuthStore } from '@/admin/stores/useAdminAuthStore'
+import { handleAdminApiError } from '@/admin/services/handleAdminApiError'
 import type {
   AdminCustomerDetailDto,
   AdminCustomerStatsDto,
@@ -56,16 +57,9 @@ client.interceptors.request.use((config) => {
   return config
 })
 
-client.interceptors.response.use(
-  (response) => response.data,
-  (error) => {
-    if (error.response?.status === 401) {
-      useAdminAuthStore.getState().logout()
-    }
-    const data = error.response?.data
-    return Promise.reject({ message: data?.message ?? error.message, ...data })
-  },
-)
+// F19: la decisión vive en handleAdminApiError, que es una función exportada para poder probarla —
+// aquí dentro, como lambda, no había forma de llegar a ella desde un test.
+client.interceptors.response.use((response) => response.data, handleAdminApiError)
 
 export interface ProductListParams {
   search?: string

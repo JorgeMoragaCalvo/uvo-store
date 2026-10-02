@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -14,10 +15,23 @@ export default function Login() {
   const navigate = useNavigate()
   const location = useLocation()
 
+  const sessionExpired = useAdminAuthStore((state) => state.sessionExpired)
+  const clearSessionExpired = useAdminAuthStore((state) => state.clearSessionExpired)
+
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+
+  // F19: por qué apareció aquí. El 401 cierra la sesión y RequireAdminAuth redirige, pero sin esto el
+  // administrador llega a esta pantalla a mitad de una tarea sin ninguna señal de qué pasó. Se limpia al
+  // mostrarlo para que no reaparezca en el siguiente login.
+  useEffect(() => {
+    if (sessionExpired) {
+      toast.info('Tu sesión expiró. Vuelve a iniciar sesión.')
+      clearSessionExpired()
+    }
+  }, [sessionExpired, clearSessionExpired])
 
   if (token) {
     const redirectTo = (location.state as { from?: Location })?.from?.pathname ?? '/admin'

@@ -11,8 +11,14 @@ export interface AdminUser {
 interface AdminAuthState {
   token: string | null
   user: AdminUser | null
+  // F19: la salida fue por un 401 y no porque el administrador pulsara "cerrar sesión". Login.tsx la
+  // consume una sola vez para explicar por qué apareció ahí. Va en el estado persistido porque la
+  // expulsión y la pantalla de login son dos renders distintos.
+  sessionExpired: boolean
   login: (token: string, user: AdminUser) => void
   logout: () => void
+  markSessionExpired: () => void
+  clearSessionExpired: () => void
 }
 
 // A1: the single place that answers "may this user do X". Note it is a convenience for the UI only
@@ -30,8 +36,13 @@ export const useAdminAuthStore = create<AdminAuthState>()(
     (set) => ({
       token: null,
       user: null,
-      login: (token, user) => set({ token, user }),
+      sessionExpired: false,
+      // Un login correcto borra la marca: si se quedara puesta, el aviso reaparecería la próxima vez
+      // que alguien visitara la pantalla de login.
+      login: (token, user) => set({ token, user, sessionExpired: false }),
       logout: () => set({ token: null, user: null }),
+      markSessionExpired: () => set({ sessionExpired: true }),
+      clearSessionExpired: () => set({ sessionExpired: false }),
     }),
     { name: 'uvostore_admin_auth' },
   ),

@@ -14,10 +14,13 @@ vi.mock('@/admin/services/adminApi', () => ({
   },
 }))
 
+const toastInfo = vi.fn()
+vi.mock('sonner', () => ({ toast: { info: (...args: unknown[]) => toastInfo(...args) } }))
+
 describe('admin Login page', () => {
   beforeEach(() => {
     localStorage.clear()
-    useAdminAuthStore.setState({ token: null, user: null })
+    useAdminAuthStore.setState({ token: null, user: null, sessionExpired: false })
     vi.clearAllMocks()
   })
 
@@ -61,5 +64,32 @@ describe('admin Login page', () => {
 
     expect(await screen.findByText('Credenciales inválidas')).toBeInTheDocument()
     expect(useAdminAuthStore.getState().token).toBeNull()
+  })
+
+  // F19: con el arreglo la expulsión por 401 ocurre de verdad, y llegar aquí a mitad de una tarea sin
+  // ninguna explicación se parece bastante a un fallo de la aplicación.
+  it('avisa de la sesión vencida una sola vez cuando el 401 expulsó al administrador', async () => {
+    useAdminAuthStore.setState({ token: null, user: null, sessionExpired: true })
+
+    render(
+      <MemoryRouter initialEntries={['/admin/login']}>
+        <Login />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => expect(toastInfo).toHaveBeenCalledWith('Tu sesión expiró. Vuelve a iniciar sesión.'))
+    // Consumida: un segundo render no lo repite.
+    expect(useAdminAuthStore.getState().sessionExpired).toBe(false)
+  })
+
+  it('sin la marca no avisa de nada', async () => {
+    render(
+      <MemoryRouter initialEntries={['/admin/login']}>
+        <Login />
+      </MemoryRouter>,
+    )
+
+    await screen.findByLabelText(/correo electrónico/i)
+    expect(toastInfo).not.toHaveBeenCalled()
   })
 })

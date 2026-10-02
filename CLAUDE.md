@@ -37,7 +37,7 @@ cd frontend && npm run preview    # preview a production build
 
 ## Multi-tenancy
 
-- `TenantContext` (ThreadLocal) holds the current request's `Store`. `TenantResolutionFilter` populates it from the `Host` header: exact match on `Store.domain` first (a client's own custom domain), then a `<slug>.<anything>` subdomain match as the fallback every store keeps working under regardless (e.g. `demo.localhost:8080` in dev). `JwtAuthenticationFilter` cross-checks the token's `sid` claim against the resolved tenant — a mismatch clears security context (403), not a silent cross-tenant leak.
+- `TenantContext` (ThreadLocal) holds the current request's `Store`. `TenantResolutionFilter` populates it from the `Host` header: exact match on `Store.domain` first (a client's own custom domain), then a `<slug>.<anything>` subdomain match as the fallback every store keeps working under regardless (e.g. `demo.localhost:8080` in dev). `JwtAuthenticationFilter` cross-checks the token's `sid` claim against the resolved tenant — a mismatch clears the security context (and so answers **401**, F19), not a silent cross-tenant leak.
 - New stores are created via `/api/platform/**` (`PlatformApiKeyAuthFilter`, shared secret in the `X-Platform-Key` header) — an **operator-only** tool (`/plataforma/nueva-tienda` in the frontend), not public self-service signup. The intended flow: a client hands the operator team a nick/domain/admin credentials, the operator creates the store, the client then self-manages everything from their own admin panel.
 - The frontend computes every API client's `baseURL` **at runtime** from `window.location.origin` (`frontend/src/services/api.ts`, `admin/services/adminApi.ts`, `platform/services/platformApi.ts`) — not from a build-time env var — so one deployed frontend build serves any tenant. In dev, Vite's own proxy (`vite.config.ts`) forwards `/api/*` to `VITE_DEV_PROXY_TARGET` (`frontend/.env`, default `http://demo.localhost:8080`) so the browser still sees same-origin requests, matching production. In production this assumes frontend static assets and the API are served from the same origin (a reverse proxy) — that infrastructure doesn't exist yet, see "Known gotchas".
 
@@ -114,8 +114,26 @@ cd frontend && npm run preview    # preview a production build
   password change/reset — evicts the cache entry too, so revocation is immediate in a single
   process. **With more than one instance it would lag by up to the TTL**; there is no multi-instance
   deployment yet. A token with no `tv` claim counts as version 0 (the column default), so the change
-  didn't log anyone out. Note: an invalid/revoked token yields **403**, not 401 — the chain has no
-  `AuthenticationEntryPoint`.
+  didn't log anyone out. An invalid/revoked token yields **401** (see below); it used to yield 403.
+- **401 vs 403 is now defined** (`ApiSecurityErrorHandlers`, F19), and the distinction matters to the SPA,
+  not just to purists. There are three cases:
+  - **No token, expired, revoked, or issued for another store → 401**, with `WWW-Authenticate: Bearer`.
+    The chain had no `exceptionHandling(...)` at all, so Spring Security's default answered **403** to
+    unauthenticated requests — and `adminApi`'s interceptor only logs out on 401, so an expired session
+    left the SPA holding a dead token: `RequireAdminAuth` never fired (there *was* a token) and every
+    screen showed errors with no way back to the login but clearing `localStorage`.
+  - **Authenticated with the wrong role** (a customer token on `/api/admin/**`) **→ 403**, from the new
+    `AccessDeniedHandler`. Same status as before, but now with an `ApiError` body — the default one wrote
+    Boot's error JSON, which has no `message`, so the panel displayed axios's raw
+    "Request failed with status code 403".
+  - **Authenticated admin missing a permission → 403**, unchanged, from `@PreAuthorize` through
+    `GlobalExceptionHandler`. **This is why the SPA must not log out on 403**: a restricted admin opening
+    a section that isn't theirs gets a legitimate 403, and bouncing them to the login would loop.
+  `ExceptionTranslationFilter` already tells the first two apart (`AuthenticationTrustResolver`); the only
+  thing missing was declaring what to answer. `AuthStatusTest` pins all three side by side.
+  Note for anyone writing a handler like this: the `ObjectMapper` bean in this context is **Jackson 3**
+  (`tools.jackson.databind`, Boot 4's default) — the loose `new ObjectMapper()` instances in
+  `MercadoPagoServiceImpl` and friends are Jackson 2 (`com.fasterxml`), which is not injectable here.
 - **Uploads are validated by magic bytes** (`UploadedImageValidator`, A8), not by the client's
   filename or declared content type: JPEG/PNG/GIF/WEBP only, and the stored extension is derived
   from the detected type. It lives in the storage layer, so all six upload endpoints funnel through
