@@ -254,7 +254,34 @@ race.
 
 Both gaps that used to be listed here are now closed. `PosWebhookServiceImpl.handleStockUpdated` no longer overwrites stock blindly: it uses `ProductRepository.setStockIfUnchanged`, conditioned on the `oldStock` the POS says it saw, so a concurrent web sale can't be erased — a mismatch is reported as a divergence (same wording and Sentry alert as `PosOrderNotifier.checkStockDivergence`, which already treats our own decrement as the authority for web stock) instead of written (F13). And marking an order paid from the admin panel now goes through `OrderStatusService.markPaid`, so it publishes `PaymentConfirmedEvent` and does decrement stock (F07).
 
-Still open in the same area: `PosSyncServiceImpl` writes an absolute stock too, but it's the create-or-update of a whole product rather than a reaction to an inventory movement, and it carries no `oldStock` to compare against — coordinating that one is the next step.
+**POS webhooks can't be replayed** (F21). HMAC plus a ±300s freshness window proves a request is authentic
+but not that it's *new*: inside that window a captured request replays fine, since body and timestamp are
+unchanged. `PosWebhookAuthFilter` now remembers what it already served, keyed by `(companyId, signature)` —
+**the signature is itself the event id** the finding asked for (HMAC of body+timestamp with the merchant's
+secret), so no change to the UvoPOS contract was needed. Two things to know:
+- The check runs **after** signature verification, deliberately. Recording first would let anyone burn the
+  genuine signature, or fill the store with garbage, without knowing the secret.
+- The store is a Caffeine cache expiring just past the freshness window — nothing older can be replayed
+  anyway, so there's no table to prune. **A restart inside those 300s loses the guard, and with more than
+  one instance each would remember its own**; same caveat as `TokenVersionService`'s cache, and the move is
+  to a table with `UNIQUE (company_id, signature_hash)` when that day comes.
+
+What a replay actually did, before this, is worth recording because it is not what you'd guess: for
+`stock.updated` F13's conditional UPDATE already refused it (the stock is already the new value) — so no
+double-apply, but a **false divergence alert to Sentry** on every replay. `stock.alert`/`product.created`
+only log. The one that genuinely hurt was `product.updated`, which rewrites price/name/description
+unconditionally.
+
+Still open in the same area, two things:
+- `PosSyncServiceImpl` writes an absolute stock too, but it's the create-or-update of a whole product rather
+  than a reaction to an inventory movement, and it carries no `oldStock` to compare against — coordinating
+  that one is the next step.
+- **`product.updated` overwrites later edits.** A legitimate late or out-of-order webhook silently reverts an
+  admin's price correction — the same shape as the bug F13 fixed for stock, in the branch F13 didn't touch.
+  The replay guard bounds it to replays, not to late deliveries. The obvious fix (compare
+  `product.updatedAt` against `mapping.lastSyncedAt`) is too fragile to bolt on: `markSynced` and the
+  product `save` land milliseconds apart, so that comparison is already true right after a legitimate sync.
+  It needs per-field sync marks, or an `oldValue` in the payload like stock has.
 
 `OpenApiConfig` wires springdoc — API docs at `/swagger-ui.html`, grouped into five surfaces
 (public/admin/customer/pos/platform) with a `bearerAuth` JWT scheme wired to the "Authorize"
