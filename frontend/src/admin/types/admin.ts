@@ -60,7 +60,11 @@ export interface AddressDto {
 
 export interface SalesSummaryDto {
   totalOrders: number
+  // F20: `totalRevenue` es el NETO (bruto menos reembolsos). Antes era el bruto, y un reembolso parcial
+  // no lo bajaba porque la orden sigue PAID.
   totalRevenue: number
+  grossRevenue: number
+  refundedAmount: number
   totalItems: number
   averageOrderValue: number
   paidOrders: number

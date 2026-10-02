@@ -47,9 +47,13 @@ export default function SalesReportTab({ dateRange }: { dateRange: ReportDateRan
     }
   }
 
+  // F20: las tres cifras. "Ingresos netos" es lo que de verdad quedó; el bruto y los reembolsos van
+  // aparte, porque el neto por sí solo no dice si un mes flojo fue por vender poco o por devolver mucho.
   const cards = [
     { label: 'Órdenes totales', value: summary?.totalOrders },
-    { label: 'Ingresos totales', value: summary ? formatCurrency(summary.totalRevenue) : undefined },
+    { label: 'Ingresos netos', value: summary ? formatCurrency(summary.totalRevenue) : undefined },
+    { label: 'Ingresos brutos', value: summary ? formatCurrency(summary.grossRevenue) : undefined },
+    { label: 'Reembolsos', value: summary ? formatCurrency(summary.refundedAmount) : undefined },
     { label: 'Ticket promedio', value: summary ? formatCurrency(summary.averageOrderValue) : undefined },
     { label: 'Órdenes pagadas', value: summary?.paidOrders },
   ]

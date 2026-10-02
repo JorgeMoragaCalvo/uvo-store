@@ -24,42 +24,44 @@ import java.util.List;
 public class AdminSalesReportController {
 
     private final SalesReportService salesReportService;
+    private final ReportDateRange dateRange;
 
-    public AdminSalesReportController(SalesReportService salesReportService) {
+    public AdminSalesReportController(SalesReportService salesReportService, ReportDateRange dateRange) {
         this.salesReportService = salesReportService;
+        this.dateRange = dateRange;
     }
 
     @GetMapping("/summary")
     @PreAuthorize("hasAuthority('reports.view')")
     public SalesSummaryDto summary(@RequestParam LocalDate startDate, @RequestParam LocalDate endDate,
                                     @RequestParam(defaultValue = "all") String paymentStatus) {
-        return salesReportService.getSummary(ReportDateRange.start(startDate), ReportDateRange.end(endDate), paymentStatus);
+        return salesReportService.getSummary(dateRange.start(startDate), dateRange.endExclusive(endDate), paymentStatus);
     }
 
     @GetMapping("/by-day")
     @PreAuthorize("hasAuthority('reports.view')")
     public List<SalesByDayDto> byDay(@RequestParam LocalDate startDate, @RequestParam LocalDate endDate,
                                       @RequestParam(defaultValue = "all") String paymentStatus) {
-        return salesReportService.getSalesByDay(ReportDateRange.start(startDate), ReportDateRange.end(endDate), paymentStatus);
+        return salesReportService.getSalesByDay(dateRange.start(startDate), dateRange.endExclusive(endDate), paymentStatus);
     }
 
     @GetMapping("/top-products")
     @PreAuthorize("hasAuthority('reports.view')")
     public List<TopProductDto> topProducts(@RequestParam LocalDate startDate, @RequestParam LocalDate endDate) {
-        return salesReportService.getTopProducts(ReportDateRange.start(startDate), ReportDateRange.end(endDate));
+        return salesReportService.getTopProducts(dateRange.start(startDate), dateRange.endExclusive(endDate));
     }
 
     @GetMapping("/by-payment-method")
     @PreAuthorize("hasAuthority('reports.view')")
     public List<PaymentMethodRevenueDto> byPaymentMethod(@RequestParam LocalDate startDate, @RequestParam LocalDate endDate) {
-        return salesReportService.getSalesByPaymentMethod(ReportDateRange.start(startDate), ReportDateRange.end(endDate));
+        return salesReportService.getSalesByPaymentMethod(dateRange.start(startDate), dateRange.endExclusive(endDate));
     }
 
     @GetMapping("/export")
     @PreAuthorize("hasAuthority('reports.view')")
     public ResponseEntity<byte[]> export(@RequestParam LocalDate startDate, @RequestParam LocalDate endDate,
                                           @RequestParam(defaultValue = "all") String paymentStatus) {
-        byte[] csv = salesReportService.exportCsv(ReportDateRange.start(startDate), ReportDateRange.end(endDate), paymentStatus);
+        byte[] csv = salesReportService.exportCsv(dateRange.start(startDate), dateRange.endExclusive(endDate), paymentStatus);
         String filename = "reporte_ventas_" + startDate + "_" + endDate + ".csv";
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType("text/csv; charset=utf-8"))

@@ -5,10 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import SalesReportTab from './SalesReportTab'
 import ProductsReportTab from './ProductsReportTab'
 import PaymentMethodsReportTab from './PaymentMethodsReportTab'
-
-function toDateInputValue(date: Date): string {
-  return date.toISOString().slice(0, 10)
-}
+import { toDateInputValue } from '@/utils/date'
 
 // The backend's report endpoints require startDate/endDate (no default range server-side) — an
 // empty range here would omit the params entirely and the request would be rejected, so default

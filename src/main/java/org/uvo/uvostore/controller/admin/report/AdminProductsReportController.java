@@ -25,16 +25,18 @@ import java.util.List;
 public class AdminProductsReportController {
 
     private final ProductsReportService productsReportService;
+    private final ReportDateRange dateRange;
 
-    public AdminProductsReportController(ProductsReportService productsReportService) {
+    public AdminProductsReportController(ProductsReportService productsReportService, ReportDateRange dateRange) {
         this.productsReportService = productsReportService;
+        this.dateRange = dateRange;
     }
 
     @GetMapping("/summary")
     @PreAuthorize("hasAuthority('reports.view')")
     public ProductsSummaryDto summary(@RequestParam LocalDate startDate, @RequestParam LocalDate endDate,
                                        @RequestParam(required = false) Long categoryId, @RequestParam(required = false) String search) {
-        return productsReportService.getSummary(ReportDateRange.start(startDate), ReportDateRange.end(endDate), categoryId, search);
+        return productsReportService.getSummary(dateRange.start(startDate), dateRange.endExclusive(endDate), categoryId, search);
     }
 
     @GetMapping
@@ -46,33 +48,33 @@ public class AdminProductsReportController {
             @RequestParam(defaultValue = "1") int page
     ) {
         return productsReportService.getProductsData(
-                ReportDateRange.start(startDate), ReportDateRange.end(endDate), categoryId, search, sortBy, sortDirection,
+                dateRange.start(startDate), dateRange.endExclusive(endDate), categoryId, search, sortBy, sortDirection,
                 PageRequest.of(Math.max(page - 1, 0), 20));
     }
 
     @GetMapping("/top-by-revenue")
     @PreAuthorize("hasAuthority('reports.view')")
     public List<ProductReportRowDto> topByRevenue(@RequestParam LocalDate startDate, @RequestParam LocalDate endDate) {
-        return productsReportService.getTopByRevenue(ReportDateRange.start(startDate), ReportDateRange.end(endDate));
+        return productsReportService.getTopByRevenue(dateRange.start(startDate), dateRange.endExclusive(endDate));
     }
 
     @GetMapping("/top-by-quantity")
     @PreAuthorize("hasAuthority('reports.view')")
     public List<ProductReportRowDto> topByQuantity(@RequestParam LocalDate startDate, @RequestParam LocalDate endDate) {
-        return productsReportService.getTopByQuantity(ReportDateRange.start(startDate), ReportDateRange.end(endDate));
+        return productsReportService.getTopByQuantity(dateRange.start(startDate), dateRange.endExclusive(endDate));
     }
 
     @GetMapping("/by-category")
     @PreAuthorize("hasAuthority('reports.view')")
     public List<CategoryRevenueDto> byCategory(@RequestParam LocalDate startDate, @RequestParam LocalDate endDate) {
-        return productsReportService.getSalesByCategory(ReportDateRange.start(startDate), ReportDateRange.end(endDate));
+        return productsReportService.getSalesByCategory(dateRange.start(startDate), dateRange.endExclusive(endDate));
     }
 
     @GetMapping("/export")
     @PreAuthorize("hasAuthority('reports.view')")
     public ResponseEntity<byte[]> export(@RequestParam LocalDate startDate, @RequestParam LocalDate endDate,
                                           @RequestParam(required = false) Long categoryId, @RequestParam(required = false) String search) {
-        byte[] csv = productsReportService.exportCsv(ReportDateRange.start(startDate), ReportDateRange.end(endDate), categoryId, search);
+        byte[] csv = productsReportService.exportCsv(dateRange.start(startDate), dateRange.endExclusive(endDate), categoryId, search);
         String filename = "reporte_productos_" + startDate + "_" + endDate + ".csv";
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType("text/csv; charset=utf-8"))

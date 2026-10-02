@@ -28,9 +28,11 @@ import java.util.Set;
 public class ProductsReportServiceImpl implements ProductsReportService {
 
     private final OrderRepository orderRepository;
+    private final ReportRevenue reportRevenue;
 
-    public ProductsReportServiceImpl(OrderRepository orderRepository) {
+    public ProductsReportServiceImpl(OrderRepository orderRepository, ReportRevenue reportRevenue) {
         this.orderRepository = orderRepository;
+        this.reportRevenue = reportRevenue;
     }
 
     @Override
@@ -90,21 +92,34 @@ public class ProductsReportServiceImpl implements ProductsReportService {
     @Transactional(readOnly = true)
     public List<CategoryRevenueDto> getSalesByCategory(Instant start, Instant end) {
         List<Order> paidOrders = paidOrders(start, end);
+        Map<Long, BigDecimal> refundsByOrder = reportRevenue.refundedByOrder(paidOrders);
         Map<Long, CategoryAcc> acc = new LinkedHashMap<>();
         Map<Long, Set<Long>> productsByCategory = new LinkedHashMap<>();
+        Map<Long, Long> categoryOfProduct = new LinkedHashMap<>();
 
         for (Order order : paidOrders) {
+            // F20: ingreso neto por producto —con el descuento del cupón y los reembolsos repartidos— en
+            // vez de precio × cantidad, que daba más que la venta. Viene ya agrupado por producto, así
+            // que las cantidades se cuentan recorriendo líneas y los ingresos recorriendo ese mapa.
+            Map<Long, BigDecimal> netByProduct = reportRevenue.netByItem(
+                    order, refundsByOrder.getOrDefault(order.getId(), BigDecimal.ZERO));
+
             for (OrderItem item : order.getItems()) {
                 Product product = item.getProduct();
-                Category category = product.getCategory();
-                Long categoryId = category != null ? category.getId() : -1L;
-                String categoryName = category != null ? category.getName() : "Sin categoría";
-
-                CategoryAcc a = acc.computeIfAbsent(categoryId, id -> new CategoryAcc(categoryName));
+                Long categoryId = categoryIdOf(product);
+                CategoryAcc a = acc.computeIfAbsent(categoryId, id -> new CategoryAcc(categoryNameOf(product)));
                 a.quantity += item.getQuantity();
-                a.revenue = a.revenue.add(item.getPrice().multiply(BigDecimal.valueOf(item.getQuantity())));
                 productsByCategory.computeIfAbsent(categoryId, id -> new HashSet<>()).add(product.getId());
+                // La categoría del producto, para repartir su ingreso neto más abajo.
+                categoryOfProduct.put(product.getId(), categoryId);
             }
+
+            netByProduct.forEach((productId, net) -> {
+                CategoryAcc a = acc.get(categoryOfProduct.get(productId));
+                if (a != null) {
+                    a.revenue = a.revenue.add(net);
+                }
+            });
         }
 
         return acc.entrySet().stream()
@@ -136,9 +151,14 @@ public class ProductsReportServiceImpl implements ProductsReportService {
     // category/search filters (Laravel does this in the same SQL query) during accumulation.
     private List<ProductReportRowDto> aggregate(Instant start, Instant end, Long categoryId, String search) {
         List<Order> paidOrders = paidOrders(start, end);
+        Map<Long, BigDecimal> refundsByOrder = reportRevenue.refundedByOrder(paidOrders);
         Map<Long, ProductAcc> acc = new LinkedHashMap<>();
 
         for (Order order : paidOrders) {
+            // F20: ver getSalesByCategory. El precio por unidad que se informa aparte sí es el bruto —es
+            // a cuánto se vendió—, pero los ingresos son netos.
+            Map<Long, BigDecimal> netByProduct = reportRevenue.netByItem(
+                    order, refundsByOrder.getOrDefault(order.getId(), BigDecimal.ZERO));
             for (OrderItem item : order.getItems()) {
                 Product product = item.getProduct();
                 if (categoryId != null && (product.getCategory() == null || !categoryId.equals(product.getCategory().getId()))) {
@@ -155,11 +175,17 @@ public class ProductsReportServiceImpl implements ProductsReportService {
 
                 ProductAcc a = acc.computeIfAbsent(product.getId(), id -> new ProductAcc(product));
                 a.quantity += item.getQuantity();
-                a.revenue = a.revenue.add(item.getPrice().multiply(BigDecimal.valueOf(item.getQuantity())));
                 a.orderIds.add(order.getId());
                 a.priceSum = a.priceSum.add(item.getPrice());
                 a.priceCount++;
+                // El ingreso del producto en ESTE pedido se suma una sola vez, aunque el pedido traiga
+                // varias líneas del mismo artículo: netByProduct ya viene agrupado por producto.
+                a.pendingNet.put(order.getId(), netByProduct.getOrDefault(product.getId(), BigDecimal.ZERO));
             }
+        }
+
+        for (ProductAcc a : acc.values()) {
+            a.revenue = a.pendingNet.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
         }
 
         return acc.values().stream()
@@ -172,8 +198,18 @@ public class ProductsReportServiceImpl implements ProductsReportService {
                 .toList();
     }
 
+    private static Long categoryIdOf(Product product) {
+        return product.getCategory() != null ? product.getCategory().getId() : -1L;
+    }
+
+    private static String categoryNameOf(Product product) {
+        return product.getCategory() != null ? product.getCategory().getName() : "Sin categoría";
+    }
+
     private List<Order> paidOrders(Instant start, Instant end) {
-        return orderRepository.findByStoreIdAndCreatedAtBetween(TenantContext.requireStoreId(), start, end).stream()
+        return orderRepository
+                .findByStoreIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(TenantContext.requireStoreId(), start, end)
+                .stream()
                 .filter(o -> o.getPaymentStatus() == PaymentStatus.PAID)
                 .toList();
     }
@@ -185,6 +221,9 @@ public class ProductsReportServiceImpl implements ProductsReportService {
         BigDecimal priceSum = BigDecimal.ZERO;
         int priceCount;
         final Set<Long> orderIds = new HashSet<>();
+        // Ingreso neto de este producto por pedido, para no sumarlo dos veces si el pedido repite el
+        // artículo en varias líneas. Se consolida en `revenue` al terminar de recorrer los pedidos.
+        final Map<Long, BigDecimal> pendingNet = new LinkedHashMap<>();
 
         ProductAcc(Product product) {
             this.product = product;

@@ -194,6 +194,29 @@ invalid depending on the entry point; there is one reader now. A stored value th
 loudly with a Sentry message rather than falling back to 19%, which would invent a tax for a store that
 may be exempt.
 
+**Reports report net money, in Chilean time** (F20). Two classes own the decisions the three report
+services used to make each on their own:
+- `ReportRevenue` — how much an order actually left. Every report summed `Order.total` for `PAID` orders,
+  and **a partial refund keeps the order PAID** on purpose (`RefundService.finish`), so refunded money
+  kept counting as revenue with no symptom at all: the figure was simply higher than reality. It also owns
+  the **per-line split**, because `OrderItem` has no discount column — the coupon lives only on
+  `Order.discountAmount`, so product/category reports showed more than the customer paid. The remainder
+  goes to the last line so the parts sum to the order's net exactly, same rule F06 set for tax.
+  **Refunds are attributed to the order's date, not the refund's** — a November refund of an October sale
+  lowers October.
+- `ReportZone` (`app.reports.timezone`, default `America/Santiago`, invalid value fails startup) — owns
+  **both** the range bounds (`ReportDateRange`, used by all three controllers) and the day label
+  (`dateKey`). Both were UTC, so a Chilean store's "1–31 Oct" report actually ran from Sep 30 21:00 to
+  Oct 31 20:59: end-of-month evening sales fell out of that month and into the next. The upper bound is
+  now **exclusive** (it was `23:59:59` against an inclusive query, which lost sub-second orders). It's a
+  platform property rather than a per-store setting because every store is Chilean today — F17's currency
+  catalogue only admits CLP. When that changes, this bean is where it changes.
+- The three report services had **no tests at all** before this (`report/*Test` is the first net), and
+  they still **aggregate in memory**: all orders in range with their items, and
+  `ProductsReportServiceImpl.getProductsData` paginates with `subList` after loading everything. Slow,
+  not wrong; moving it to SQL aggregates is deliberately left out so a performance rewrite never gets
+  mixed with a change that corrects figures.
+
 **MercadoPago's webhook is signature-verified** (M3). `x-signature` (`ts=…,v1=…`) is checked against
 the HMAC-SHA256 of `id:<data.id>;request-id:<x-request-id>;ts:<ts>;` with the store's `webhookSecret`
 credential, constant-time, **before** the outbound `PaymentClient.get()` — rejecting afterwards would
