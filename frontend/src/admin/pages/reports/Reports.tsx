@@ -5,14 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import SalesReportTab from './SalesReportTab'
 import ProductsReportTab from './ProductsReportTab'
 import PaymentMethodsReportTab from './PaymentMethodsReportTab'
-
-// F20: la fecha LOCAL, no la UTC. `toISOString()` devolvía el día siguiente al abrir la pantalla por la
-// tarde en Chile (UTC-3), así que el rango por defecto proponía como "hasta" un día que aún no llegaba.
-export function toDateInputValue(date: Date): string {
-  const month = `${date.getMonth() + 1}`.padStart(2, '0')
-  const day = `${date.getDate()}`.padStart(2, '0')
-  return `${date.getFullYear()}-${month}-${day}`
-}
+import { toDateInputValue } from '@/utils/date'
 
 // The backend's report endpoints require startDate/endDate (no default range server-side) — an
 // empty range here would omit the params entirely and the request would be rejected, so default
