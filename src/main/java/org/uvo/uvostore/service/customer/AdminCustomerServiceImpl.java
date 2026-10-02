@@ -14,6 +14,7 @@ import org.uvo.uvostore.entity.order.enums.PaymentStatus;
 import org.uvo.uvostore.repository.CustomerRepository;
 import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.security.TenantContext;
+import org.uvo.uvostore.security.TokenVersionService;
 import org.uvo.uvostore.service.order.AdminOrderSummaryDto;
 
 import java.math.BigDecimal;
@@ -29,10 +30,13 @@ public class AdminCustomerServiceImpl implements AdminCustomerService {
 
     private final CustomerRepository customerRepository;
     private final OrderRepository orderRepository;
+    private final TokenVersionService tokenVersionService;
 
-    public AdminCustomerServiceImpl(CustomerRepository customerRepository, OrderRepository orderRepository) {
+    public AdminCustomerServiceImpl(CustomerRepository customerRepository, OrderRepository orderRepository,
+                                     TokenVersionService tokenVersionService) {
         this.customerRepository = customerRepository;
         this.orderRepository = orderRepository;
+        this.tokenVersionService = tokenVersionService;
     }
 
     @Override
@@ -110,6 +114,13 @@ public class AdminCustomerServiceImpl implements AdminCustomerService {
             throw new BusinessException("No se puede eliminar un cliente con órdenes asociadas");
         }
         customerRepository.delete(customer);
+        // F22. No hay versión que incrementar —la fila ya no está, así que currentVersion() responde -1
+        // y ningún token encaja—. Lo que importa es la invalidación: con la versión en caché, el token de
+        // un cliente ya borrado sigue AUTENTICANDO hasta que la entrada expire (60 s), y lo que falla
+        // entonces es la búsqueda de la fila, no la autenticación. Es exactamente el razonamiento de
+        // UserServiceImpl.deleteUser, que ya lo hacía para los admins; esta mitad se había quedado sin
+        // hacer.
+        tokenVersionService.evict(TokenVersionService.CUSTOMER, id);
     }
 
     private Customer findOrThrow(Long id) {

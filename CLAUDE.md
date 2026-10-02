@@ -110,11 +110,25 @@ cd frontend && npm run preview    # preview a production build
   contexts because they need different properties.
 - **JWTs are revocable** (`TokenVersionService`, A5). `users.token_version`/`customers.token_version`
   (V14) is carried in the token's `tv` claim and compared on every authenticated request through a
-  60s Caffeine cache. Bumping the version — deactivating, deleting, re-roling a user, or any
-  password change/reset — evicts the cache entry too, so revocation is immediate in a single
-  process. **With more than one instance it would lag by up to the TTL**; there is no multi-instance
-  deployment yet. A token with no `tv` claim counts as version 0 (the column default), so the change
-  didn't log anyone out. An invalid/revoked token yields **401** (see below); it used to yield 403.
+  60s Caffeine cache. Bumping the version — deactivating, deleting or re-roling a user, and any
+  password change or reset on either side — evicts the cache entry too, so revocation is immediate in a
+  single process. **With more than one instance it would lag by up to the TTL**; there is no
+  multi-instance deployment yet. A token with no `tv` claim counts as version 0 (the column default), so
+  the change didn't log anyone out. An invalid/revoked token yields **401** (see below); it used to yield
+  403.
+  *This bullet used to claim "any password change/reset" and that was aspirational*: until F22 **no
+  customer flow bumped anything**, so a stolen customer token survived its owner changing the password —
+  the one action a victim takes to stop it. `TokenVersionService.revokeCustomerTokens` had existed since
+  A5 with **zero callers** (so had `revokeUserTokens`; the three admin sites all bump inline instead, and
+  `revokeUserTokens` is where that should live if anyone unifies them). `CustomerServiceImpl.updatePassword`
+  now calls it, **after** validating the current password — before, and anyone holding the token could
+  evict the owner by guessing. `AdminCustomerServiceImpl.deleteCustomer` now evicts too, matching what
+  `UserServiceImpl.deleteUser` already did: with the version cached, a deleted customer's token keeps
+  *authenticating* for up to the TTL (what then fails is the row lookup, not the auth — the symptom is a
+  404, not a 401). The endpoint still answers 204 with no new token, so changing your password ends your
+  own session as well; when the SPA grows a customer surface, issue a fresh token there (after the bump).
+  `security/CustomerTokenRevocationTest` is the first coverage of both `/api/customer/account` and the
+  customer half of A5 — `SecurityHardeningTest`'s revocation cases are all admin-side.
 - **401 vs 403 is now defined** (`ApiSecurityErrorHandlers`, F19), and the distinction matters to the SPA,
   not just to purists. There are three cases:
   - **No token, expired, revoked, or issued for another store → 401**, with `WWW-Authenticate: Bearer`.
