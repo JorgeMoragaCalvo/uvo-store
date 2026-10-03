@@ -129,6 +129,29 @@ cd frontend && npm run preview    # preview a production build
   own session as well; when the SPA grows a customer surface, issue a fresh token there (after the bump).
   `security/CustomerTokenRevocationTest` is the first coverage of both `/api/customer/account` and the
   customer half of A5 — `SecurityHardeningTest`'s revocation cases are all admin-side.
+- **Customer addresses: creating one never worked, and `isDefault` was ignored** (F23). Two bugs in one
+  service, and the first was found by the test written for the second:
+  - `createAddress` never set `store`, and `shipping_addresses.store_id` has been `NOT NULL` since V8
+    (multi-tenancy). This service is the **only** writer of that table, so `POST /api/customer/addresses`
+    always answered 500 on a constraint violation — the endpoint had never worked. The store is taken from
+    `customer.getStore()`, not `TenantContext`, so an address can't land in a different store than its
+    owner.
+  - `applyCommonFields` copied the eleven text fields and skipped `isDefault`, while the
+    `if (command.isDefault())` that unsets **the others** was there in both create and update. So the
+    destructive half of the operation ran and the constructive half didn't: asking for "make this the
+    default" **deleted the existing default** and marked nothing, leaving the customer with none. And a
+    `false` on the current default was ignored, so the flag could only ever be turned on, via the separate
+    `POST .../default` endpoint. The root cause is a faithful-but-partial port: `unsetOtherDefaults` ports
+    `ShippingAddress::booted()`'s `saving` hook, which does only the "unset the others" half and worked in
+    Laravel because mass assignment had already set `is_default` from the request. The effect survived the
+    port; its cause didn't.
+  "At most one default per customer" is enforced in the service, not the database — the three paths that
+  write the flag (create, update, `setDefaultAddress`) share one implementation and the tests assert
+  "exactly one". A partial unique index on `(customer_id) WHERE is_default` would make it unbreakable but
+  requires an explicit `flush()` after unsetting, or Hibernate may flush the new default's INSERT first and
+  trip the index even though the end state is valid. Deleting the default promotes nobody, and the first
+  address isn't auto-defaulted — neither did the original. `customer/CustomerAddressTest` is the first
+  coverage of this surface at all.
 - **401 vs 403 is now defined** (`ApiSecurityErrorHandlers`, F19), and the distinction matters to the SPA,
   not just to purists. There are three cases:
   - **No token, expired, revoked, or issued for another store → 401**, with `WWW-Authenticate: Bearer`.
