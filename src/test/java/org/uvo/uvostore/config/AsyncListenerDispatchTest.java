@@ -4,6 +4,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.scheduling.annotation.Async;
 import org.uvo.uvostore.service.order.event.OrderConfirmationEmailListener;
+import org.uvo.uvostore.service.order.event.CustomerInvitationEmailListener;
 import org.uvo.uvostore.service.order.event.OrderPlacedEmailListener;
 import org.uvo.uvostore.service.order.event.OrderPlacedEvent;
 import org.uvo.uvostore.service.order.event.PaymentConfirmedEvent;
@@ -76,6 +77,18 @@ class AsyncListenerDispatchTest {
                 .getAnnotation(Async.class);
 
         assertThat(async).isNotNull();
+        assertThat(async.value()).isEqualTo(AsyncConfig.MAIL_EXECUTOR);
+    }
+
+    @Test
+    @DisplayName("La invitación de cuenta también sale por el executor del correo")
+    void theAccountInvitationRunsOnTheMailExecutor() throws Exception {
+        // F24: es un envío más, y vale el mismo razonamiento que para los otros dos correos — si volviera
+        // al hilo de la petición, un SMTP lento retrasaría la respuesta del checkout.
+        Async async = listenerMethod(CustomerInvitationEmailListener.class, "onOrderPlaced", OrderPlacedEvent.class)
+                .getAnnotation(Async.class);
+
+        assertThat(async).as("la invitación es un correo: fuera del hilo de la petición").isNotNull();
         assertThat(async.value()).isEqualTo(AsyncConfig.MAIL_EXECUTOR);
     }
 
