@@ -41,11 +41,22 @@ public class CustomerAddressServiceImpl implements CustomerAddressService {
 
         ShippingAddress address = new ShippingAddress();
         address.setCustomer(customer);
+        // F23: la tienda, que nadie asignaba. `shipping_addresses.store_id` es NOT NULL desde V8 (el
+        // multi-tenant) y este servicio es el ÚNICO que inserta en esa tabla, así que crear una dirección
+        // terminaba siempre en 500 por violación de la restricción: el endpoint no había funcionado nunca.
+        // Lo descubrió el test de esta misma corrección — el hallazgo da por hecho que crear "responde
+        // isDefault=false", y en realidad no responde.
+        //
+        // Se toma la del cliente y no TenantContext para que la dirección no pueda acabar en una tienda
+        // distinta de la de su dueño, que es la misma regla que ya usan las consultas por tienda.
+        address.setStore(customer.getStore());
         applyCommonFields(address, command);
 
         if (command.isDefault()) {
+            // En crear no hay nada que excluir: la entidad todavía no tiene id.
             unsetOtherDefaults(customerId, null);
         }
+        applyDefaultFlag(address, command);
 
         return toDto(shippingAddressRepository.save(address));
     }
@@ -59,6 +70,7 @@ public class CustomerAddressServiceImpl implements CustomerAddressService {
         if (command.isDefault()) {
             unsetOtherDefaults(customerId, addressId);
         }
+        applyDefaultFlag(address, command);
 
         return toDto(shippingAddressRepository.save(address));
     }
@@ -79,8 +91,37 @@ public class CustomerAddressServiceImpl implements CustomerAddressService {
         return toDto(shippingAddressRepository.save(address));
     }
 
+    /**
+     * F23. La bandera que nunca se aplicaba.
+     *
+     * <p>{@code applyCommonFields} copiaba los once campos de texto y se dejaba este, mientras el
+     * {@code if (command.isDefault())} que desmarca <b>las demás</b> sí estaba en crear y en editar. O sea
+     * que se ejecutaba la mitad destructiva de la operación y no la constructiva: pedir "que esta sea la
+     * predeterminada" <b>borraba la que había</b> y no marcaba la nueva, dejando al cliente sin ninguna.
+     * Y un {@code false} sobre la predeterminada se ignoraba, así que la bandera solo se podía encender
+     * por el endpoint aparte y nunca apagar.
+     *
+     * <p>La causa exacta: {@link #unsetOtherDefaults} porta el hook {@code saving} de
+     * {@code ShippingAddress::booted()} del Laravel original, que hace <b>solo</b> el «desmarca las demás»
+     * — y allí funcionaba porque la asignación en masa ya había puesto {@code is_default} desde la
+     * petición. Al portarlo se copió el efecto y se perdió la causa.
+     *
+     * <p>Va fuera de {@code applyCommonFields} y <b>después</b> de desmarcar las otras, para que se lea en
+     * el mismo sitio que la operación con la que tiene que coordinarse en vez de esconderse entre los
+     * campos de texto.
+     *
+     * <p>Se honra también el {@code false}: si la predeterminada deja de serlo, el cliente se queda sin
+     * ninguna. La invariante es «como máximo una», no «al menos una» — y desoír lo que el cliente manda es
+     * precisamente cómo se llegó a este fallo.
+     */
+    private void applyDefaultFlag(ShippingAddress address, ShippingAddressCommand command) {
+        address.setDefault(command.isDefault());
+    }
+
     // Ports ShippingAddress::booted()'s saving-event auto-default: when an address is (or becomes)
     // the default, every other address of the same customer loses is_default.
+    //
+    // F23: por sí solo esto no basta — hace falta que alguien marque la nueva, que es applyDefaultFlag.
     private void unsetOtherDefaults(Long customerId, Long exceptAddressId) {
         for (ShippingAddress other : shippingAddressRepository.findByCustomerId(customerId)) {
             if (other.isDefault() && !other.getId().equals(exceptAddressId)) {
