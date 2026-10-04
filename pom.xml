@@ -214,6 +214,7 @@
                              its own via @SpringBootTest(properties = ...). -->
                         <app.rate-limit.login>100000</app.rate-limit.login>
                         <app.rate-limit.register>100000</app.rate-limit.register>
+                        <app.rate-limit.accept-invitation>100000</app.rate-limit.accept-invitation>
                         <app.rate-limit.forgot-password>100000</app.rate-limit.forgot-password>
                         <app.rate-limit.track>100000</app.rate-limit.track>
                         <app.rate-limit.webhook>100000</app.rate-limit.webhook>

@@ -152,6 +152,30 @@ cd frontend && npm run preview    # preview a production build
   trip the index even though the end state is valid. Deleting the default promotes nobody, and the first
   address isn't auto-defaulted — neither did the original. `customer/CustomerAddressTest` is the first
   coverage of this surface at all.
+- **A guest buyer can turn that email into an account** (F24). The checkout already generated an
+  `invitationToken`, a timestamp and `INVITED` (`markInvitedIfGuest`) — and that was all: no email went
+  out and no endpoint accepted it, so the email was **burned** in that store (register rejects it because
+  the row exists, login demands `ACTIVE` with a password). Five pieces existed, two were missing:
+  `CustomerRepository.findByInvitationToken` had zero callers and `AccountStatus.INVITED` was written in
+  one place and read in none. Now `CustomerInvitationEmailListener` (its own listener on `OrderPlacedEvent`,
+  same async/AFTER_COMMIT scaffolding as the other mail listeners) sends the link, and
+  `POST /api/customer/auth/accept-invitation` takes token + password, activates, and **consumes the token**.
+  Expiry comes from `invitation_sent_at` + `app.customer-invitation.ttl-days` (30) — no migration, the
+  column was already there. Rate-limited by IP; **not** by account, because what arrives is a token, not
+  an email to key on.
+  Note on the finding's other option ("don't create an INVITED state without a mechanism"): it would not
+  have fixed anything. The lockout comes from `customerRegister`'s `existsByStoreIdAndEmail`, which ignores
+  status and password — dropping INVITED leaves the guest as GUEST and the email just as unusable.
+  And on why registration doesn't simply **claim** a passwordless row: nobody verifies email ownership at
+  guest checkout, so anyone who knew the address could get there first and take the buyer's name and phone.
+  The token in the mailbox is what proves ownership.
+  Still dead in the same family, both out of scope here: the **admin** invitation (`UserServiceImpl.createUser`
+  with `sendInvitation=true` generates a token, sends nothing, and has no accept endpoint — and the admin
+  gets a password set inline anyway, so the token is decoration), and **customer password recovery**
+  (`Customer` has `passwordResetToken`/`passwordResetExpiresAt` and there is no customer forgot-password
+  endpoint, only admin). Also still unused in `CustomerRepository`: `findByEmail`, `existsByEmail`,
+  `countWithOrders`, `countByCreatedAtAfter` — the first two and last two query **without `storeId`**,
+  which is a cross-tenant leak waiting for a careless caller.
 - **401 vs 403 is now defined** (`ApiSecurityErrorHandlers`, F19), and the distinction matters to the SPA,
   not just to purists. There are three cases:
   - **No token, expired, revoked, or issued for another store → 401**, with `WWW-Authenticate: Bearer`.

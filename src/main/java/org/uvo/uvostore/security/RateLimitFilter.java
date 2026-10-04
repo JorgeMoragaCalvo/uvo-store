@@ -60,6 +60,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
             @Value("${app.rate-limit.enabled:true}") boolean enabled,
             @Value("${app.rate-limit.login:5}") int loginLimit,
             @Value("${app.rate-limit.register:5}") int registerLimit,
+            @Value("${app.rate-limit.accept-invitation:5}") int acceptInvitationLimit,
             @Value("${app.rate-limit.forgot-password:3}") int forgotPasswordLimit,
             @Value("${app.rate-limit.track:20}") int trackLimit,
             @Value("${app.rate-limit.webhook:60}") int webhookLimit,
@@ -71,6 +72,10 @@ public class RateLimitFilter extends OncePerRequestFilter {
                 new Rule("POST", "/api/admin/auth/login", loginLimit, window),
                 new Rule("POST", "/api/customer/auth/login", loginLimit, window),
                 new Rule("POST", "/api/customer/auth/register", registerLimit, window),
+                // F24: se puede usar para adivinar tokens de invitación, así que entra en la misma
+                // familia que el login. Sin techo por cuenta (AccountAttemptThrottle): aquí no llega un
+                // correo con el que identificarla, llega un token.
+                new Rule("POST", "/api/customer/auth/accept-invitation", acceptInvitationLimit, window),
                 // Tighter and over a longer window: each hit sends a real email to an address the
                 // caller chooses, so this is the mail-bombing lever.
                 new Rule("POST", "/api/admin/auth/forgot-password", forgotPasswordLimit, window.multipliedBy(5)),

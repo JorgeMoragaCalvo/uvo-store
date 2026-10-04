@@ -45,11 +45,15 @@ public class AuthController {
     private final TokenVersionService tokenVersionService;
     private final AccountAttemptThrottle accountThrottle;
     private final String frontendUrl;
+    // F24: días y no una hora como el reset de contraseña — el reset lo pide el usuario y lo usa en el
+    // momento; la invitación le llega sin haberla pedido, dentro del correo del pedido.
+    private final Duration invitationTtl;
 
     public AuthController(UserRepository userRepository, CustomerRepository customerRepository,
                            PasswordEncoder passwordEncoder, JwtService jwtService, EmailService emailService,
                            TokenVersionService tokenVersionService, AccountAttemptThrottle accountThrottle,
-                           @Value("${app.frontend-url}") String frontendUrl) {
+                           @Value("${app.frontend-url}") String frontendUrl,
+                           @Value("${app.customer-invitation.ttl-days:30}") int invitationTtlDays) {
         this.userRepository = userRepository;
         this.customerRepository = customerRepository;
         this.passwordEncoder = passwordEncoder;
@@ -58,6 +62,7 @@ public class AuthController {
         this.tokenVersionService = tokenVersionService;
         this.accountThrottle = accountThrottle;
         this.frontendUrl = frontendUrl;
+        this.invitationTtl = Duration.ofDays(invitationTtlDays);
     }
 
     @PostMapping("/api/admin/auth/login")
@@ -134,6 +139,49 @@ public class AuthController {
         return ResponseEntity.ok(new AuthResponse(token, saved.getId(), fullName, saved.getEmail(), "CUSTOMER", List.of()));
     }
 
+
+    /**
+     * F24. El invitado convierte su correo en cuenta.
+     *
+     * <p>Sin esto, comprar como invitado dejaba el correo <b>inservible</b> en esa tienda: el checkout
+     * creaba la fila con estado {@code INVITED} y un token que nadie leía, {@code customerRegister} lo
+     * rechazaba por existir y {@code customerLogin} exige {@code ACTIVE} con contraseña. No había forma de
+     * salir de ahí por la API.
+     *
+     * <p>El token llega por correo, y eso es justamente lo que prueba que quien activa la cuenta es el
+     * dueño del buzón. Por eso no se resolvió dejando que el registro reclame la fila sin contraseña:
+     * nadie verifica el correo al comprar como invitado, así que cualquiera que lo conociera podría
+     * adelantarse al dueño y quedarse con sus datos.
+     *
+     * <p>Se busca <b>por token</b> y no por tienda porque el token es único y de un solo uso; la tienda
+     * sale de la fila encontrada, y se comprueba que coincide con la del host para que una invitación no
+     * se pueda canjear desde el dominio de otra tienda.
+     */
+    @PostMapping("/api/customer/auth/accept-invitation")
+    @Transactional
+    public ResponseEntity<AuthResponse> acceptInvitation(@Valid @RequestBody AcceptInvitationRequest request) {
+        Store store = TenantContext.requireCurrent();
+        Customer customer = customerRepository.findByInvitationToken(request.token())
+                .filter(candidate -> candidate.getStore().getId().equals(store.getId()))
+                .filter(candidate -> candidate.getInvitationSentAt() != null
+                        && candidate.getInvitationSentAt().plus(invitationTtl).isAfter(Instant.now()))
+                // Un token inexistente, caducado, de otra tienda o ya usado dicen lo mismo: no hay por qué
+                // contarle a quien prueba tokens en qué se equivocó.
+                .orElseThrow(() -> new BusinessException("La invitación no es válida o ha expirado"));
+
+        customer.setPassword(passwordEncoder.encode(request.password()));
+        customer.setAccountStatus(AccountStatus.ACTIVE);
+        // De un solo uso: el token se consume aquí, así que el mismo enlace no sirve dos veces.
+        customer.setInvitationToken(null);
+        Customer saved = customerRepository.save(customer);
+
+        // Se devuelve la sesión ya iniciada, como en el registro: el invitado acaba de demostrar que
+        // controla el correo y que sabe la contraseña que él mismo acaba de fijar.
+        String token = jwtService.generateToken(saved.getId(), saved.getEmail(), "CUSTOMER", store.getId(),
+                List.of("ROLE_CUSTOMER"), saved.getTokenVersion());
+        String fullName = saved.getFirstName() + " " + saved.getLastName();
+        return ResponseEntity.ok(new AuthResponse(token, saved.getId(), fullName, saved.getEmail(), "CUSTOMER", List.of()));
+    }
 
     @PostMapping("/api/admin/auth/forgot-password")
     @Transactional
