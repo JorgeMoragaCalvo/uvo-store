@@ -76,6 +76,9 @@ public class RateLimitFilter extends OncePerRequestFilter {
                 // familia que el login. Sin techo por cuenta (AccountAttemptThrottle): aquí no llega un
                 // correo con el que identificarla, llega un token.
                 new Rule("POST", "/api/customer/auth/accept-invitation", acceptInvitationLimit, window),
+                // La invitación de administrador, por lo mismo y con más razón: lo que hay al otro lado del
+                // token es el panel.
+                new Rule("POST", "/api/admin/auth/accept-invitation", acceptInvitationLimit, window),
                 // Tighter and over a longer window: each hit sends a real email to an address the
                 // caller chooses, so this is the mail-bombing lever.
                 new Rule("POST", "/api/admin/auth/forgot-password", forgotPasswordLimit, window.multipliedBy(5)),

@@ -20,6 +20,9 @@ interface FormState {
   roleId: string
   active: boolean
   notes: string
+  // Activada por defecto al crear: el camino higienico es el que ocurre salvo que alguien lo desactive a
+  // proposito. Con ella puesta, el nuevo administrador elige su propia clave y nadie mas llega a conocerla.
+  sendInvitation: boolean
 }
 
 const EMPTY_FORM: FormState = {
@@ -30,6 +33,7 @@ const EMPTY_FORM: FormState = {
   roleId: '',
   active: true,
   notes: '',
+  sendInvitation: true,
 }
 
 export default function UserForm() {
@@ -61,12 +65,18 @@ export default function UserForm() {
           roleId: user.roles[0] ? String(user.roles[0].id) : '',
           active: user.active,
           notes: user.notes ?? '',
+          // Editando no hay invitación que mandar: `invites` ya está condicionado a !isEdit, así que esto
+          // es inerte, pero es el valor honesto para una cuenta que ya existe.
+          sendInvitation: false,
         })
         setCurrentAvatar(user.avatar)
       })
       .catch(() => toast.error('No se pudo cargar el usuario'))
       .finally(() => setLoading(false))
   }, [id])
+
+  // Invitar solo tiene sentido al crear: a un administrador que ya existe no se le manda una invitación.
+  const invites = !isEdit && form.sendInvitation
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -76,11 +86,15 @@ export default function UserForm() {
       data.append('name', form.name)
       data.append('email', form.email)
       data.append('phone', form.phone)
-      if (form.password) data.append('password', form.password)
+      // Al invitar no se manda contrasena: la elige el invitado al aceptar.
+      if (form.password && !invites) data.append('password', form.password)
       if (form.roleId) data.append('roleId', form.roleId)
       data.append('active', String(form.active))
       data.append('notes', form.notes)
-      data.append('sendInvitation', 'false')
+      // Antes esto iba FIJO en 'false', asi que `sendInvitation=true` solo era alcanzable llamando a la
+      // API a mano: la funcionalidad existia en el backend y el panel la tenia apagada a fuego, igual que
+      // el `isOnSale='false'` que F11 encontro en el formulario de productos.
+      data.append('sendInvitation', String(invites))
       if (avatar) data.append('avatar', avatar)
 
       if (isEdit) {
@@ -134,16 +148,18 @@ export default function UserForm() {
                 <Label htmlFor="phone">Teléfono</Label>
                 <Input id="phone" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
               </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="password">{isEdit ? 'Nueva contraseña (opcional)' : 'Contraseña'}</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  required={!isEdit}
-                  value={form.password}
-                  onChange={(event) => setForm({ ...form, password: event.target.value })}
-                />
-              </div>
+              {!invites && (
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="password">{isEdit ? 'Nueva contraseña (opcional)' : 'Contraseña'}</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    required={!isEdit}
+                    value={form.password}
+                    onChange={(event) => setForm({ ...form, password: event.target.value })}
+                  />
+                </div>
+              )}
             </div>
             <div className="flex flex-col gap-2">
               <Label>Rol</Label>
@@ -168,6 +184,21 @@ export default function UserForm() {
               <Label htmlFor="active">Activo</Label>
               <Switch id="active" checked={form.active} onCheckedChange={(checked) => setForm({ ...form, active: checked })} />
             </div>
+            {!isEdit && (
+              <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                <div className="flex flex-col">
+                  <Label htmlFor="sendInvitation">Enviar invitación por correo</Label>
+                  <span className="text-xs text-muted-foreground">
+                    Elige su propia contraseña; tú no llegas a conocerla.
+                  </span>
+                </div>
+                <Switch
+                  id="sendInvitation"
+                  checked={form.sendInvitation}
+                  onCheckedChange={(checked) => setForm({ ...form, sendInvitation: checked })}
+                />
+              </div>
+            )}
           </CardContent>
         </Card>
 

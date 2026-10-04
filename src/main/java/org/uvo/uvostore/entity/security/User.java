@@ -60,7 +60,10 @@ public class User {
     @JoinColumn(name = "store_id")
     private Store store;
 
-    @Column(nullable = false)
+    // Nullable (V22): un administrador invitado nace sin contraseña y la elige al aceptar la invitación.
+    // NULL es "todavía no tiene credencial", no "tiene una vacía" — y con NULL no puede entrar, porque
+    // matches(raw, null) devuelve false. Mismo criterio que `customers.password`, nullable desde V2 porque
+    // el invitado del checkout tampoco tiene una.
     private String password;
 
     private String phone;

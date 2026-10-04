@@ -152,6 +152,32 @@ cd frontend && npm run preview    # preview a production build
   trip the index even though the end state is valid. Deleting the default promotes nobody, and the first
   address isn't auto-defaulted — neither did the original. `customer/CustomerAddressTest` is the first
   coverage of this surface at all.
+- **Admins are invited, not handed a password.** Until now the only way to create an administrator was for
+  the creator to **invent that person's password** and pass it along out of band — so the creator knew it
+  forever, and so did whatever channel it travelled through; nothing forced a change, and nothing recorded
+  whether one happened. Not a vulnerability: credential hygiene, on the surface where refunds are issued and
+  gateway credentials are configured.
+  The apparatus was half-built: `users.invitation_token` UNIQUE since V4, `invitation_sent_at`, an
+  `invitation_accepted_at` that **was never written**, `UserRepository.findByInvitationToken` with zero
+  callers, and `createUser`'s `sendInvitation` branch — but no email, no accept endpoint, and
+  `UserForm.tsx` sent `sendInvitation` **hardcoded to `'false'`**, so the flag was only reachable by calling
+  the API by hand. Same shape as F11's `isOnSale='false'`, which is why the form change is part of the fix
+  rather than a nicety.
+  Now: with the switch on (**default when creating**) the account is born with `password = null` and a
+  one-time token, the email goes out from `UserServiceImpl` (failures logged, never rolled back — the admin
+  is created and the token is valid, so a dead SMTP must not undo the work), and
+  `POST /api/admin/auth/accept-invitation` sets the password, clears the token, **writes
+  `invitation_accepted_at`** and returns a session carrying the role's permissions, like login does. TTL 7
+  days (`app.admin-invitation.ttl-days`), shorter than the customer's 30 because this hands over the panel.
+  **V22 drops `users.password`'s NOT NULL** so a credential-less account can exist — NULL means "no
+  credential yet", and such an account cannot log in because the encoder rejects by length before comparing.
+  `customers.password` has been nullable since V2 for the equivalent reason, so this aligns the two halves.
+  Note for anyone touching `createUser`: `passwordEncoder.encode(null)` **does not throw** in Spring
+  Security 7 (`AbstractValidatingPasswordEncoder.encode` returns null), so what used to flag a missing
+  password was only the column's NOT NULL, as a 500. With V22 that net is gone — the explicit check in
+  `createUser` is what now stops a silent 200 creating an admin nobody can ever log into.
+  Still missing in this family: resending an expired invitation from the panel, and customer password
+  recovery (`Customer` has the reset columns and there is no customer forgot-password endpoint).
 - **A guest buyer can turn that email into an account** (F24). The checkout already generated an
   `invitationToken`, a timestamp and `INVITED` (`markInvitedIfGuest`) — and that was all: no email went
   out and no endpoint accepted it, so the email was **burned** in that store (register rejects it because
