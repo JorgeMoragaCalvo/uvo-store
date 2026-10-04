@@ -47,13 +47,17 @@ public class AuthController {
     private final String frontendUrl;
     // F24: días y no una hora como el reset de contraseña — el reset lo pide el usuario y lo usa en el
     // momento; la invitación le llega sin haberla pedido, dentro del correo del pedido.
-    private final Duration invitationTtl;
+    private final Duration customerInvitationTtl;
+    // Más corta que la de cliente: esta entrega acceso al panel, donde se emiten reembolsos y se
+    // configuran credenciales de pasarela.
+    private final Duration adminInvitationTtl;
 
     public AuthController(UserRepository userRepository, CustomerRepository customerRepository,
                            PasswordEncoder passwordEncoder, JwtService jwtService, EmailService emailService,
                            TokenVersionService tokenVersionService, AccountAttemptThrottle accountThrottle,
                            @Value("${app.frontend-url}") String frontendUrl,
-                           @Value("${app.customer-invitation.ttl-days:30}") int invitationTtlDays) {
+                           @Value("${app.customer-invitation.ttl-days:30}") int customerInvitationTtlDays,
+                           @Value("${app.admin-invitation.ttl-days:7}") int adminInvitationTtlDays) {
         this.userRepository = userRepository;
         this.customerRepository = customerRepository;
         this.passwordEncoder = passwordEncoder;
@@ -62,7 +66,8 @@ public class AuthController {
         this.tokenVersionService = tokenVersionService;
         this.accountThrottle = accountThrottle;
         this.frontendUrl = frontendUrl;
-        this.invitationTtl = Duration.ofDays(invitationTtlDays);
+        this.customerInvitationTtl = Duration.ofDays(customerInvitationTtlDays);
+        this.adminInvitationTtl = Duration.ofDays(adminInvitationTtlDays);
     }
 
     @PostMapping("/api/admin/auth/login")
@@ -164,7 +169,7 @@ public class AuthController {
         Customer customer = customerRepository.findByInvitationToken(request.token())
                 .filter(candidate -> candidate.getStore().getId().equals(store.getId()))
                 .filter(candidate -> candidate.getInvitationSentAt() != null
-                        && candidate.getInvitationSentAt().plus(invitationTtl).isAfter(Instant.now()))
+                        && candidate.getInvitationSentAt().plus(customerInvitationTtl).isAfter(Instant.now()))
                 // Un token inexistente, caducado, de otra tienda o ya usado dicen lo mismo: no hay por qué
                 // contarle a quien prueba tokens en qué se equivocó.
                 .orElseThrow(() -> new BusinessException("La invitación no es válida o ha expirado"));
@@ -181,6 +186,45 @@ public class AuthController {
                 List.of("ROLE_CUSTOMER"), saved.getTokenVersion());
         String fullName = saved.getFirstName() + " " + saved.getLastName();
         return ResponseEntity.ok(new AuthResponse(token, saved.getId(), fullName, saved.getEmail(), "CUSTOMER", List.of()));
+    }
+
+    /**
+     * El administrador invitado elige su contraseña y entra.
+     *
+     * <p>Es la mitad que faltaba de un ciclo que por lo demás ya funcionaba: se podía recuperar una
+     * contraseña olvidada, pero no se podía haber tenido nunca una que solo tú conocieras. Hasta ahora dar
+     * de alta a un administrador obligaba a quien lo creaba a <b>inventarle la clave</b> y pasársela por
+     * fuera, así que el creador la conocía para siempre — y también el canal por el que viajó.
+     *
+     * <p>Gemelo del {@code accept-invitation} de cliente (F24), con dos diferencias: la vigencia es más
+     * corta porque esto entrega acceso al panel, y la respuesta lleva los permisos del rol igual que el
+     * login, porque el panel los necesita para dibujar el menú (A1).
+     */
+    @PostMapping("/api/admin/auth/accept-invitation")
+    @Transactional
+    public ResponseEntity<AuthResponse> adminAcceptInvitation(@Valid @RequestBody AcceptInvitationRequest request) {
+        Store store = TenantContext.requireCurrent();
+        User user = userRepository.findByInvitationToken(request.token())
+                .filter(candidate -> candidate.getStore().getId().equals(store.getId()))
+                .filter(candidate -> candidate.getInvitationSentAt() != null
+                        && candidate.getInvitationSentAt().plus(adminInvitationTtl).isAfter(Instant.now()))
+                // Inexistente, caducado, de otra tienda o ya usado dicen lo mismo: a quien prueba tokens no
+                // se le cuenta en qué se equivocó.
+                .orElseThrow(() -> new BusinessException("La invitación no es válida o ha expirado"));
+
+        user.setPassword(passwordEncoder.encode(request.password()));
+        // De un solo uso.
+        user.setInvitationToken(null);
+        // La columna existía desde V4 y no se escribía nunca. Ahora responde a "¿este administrador llegó
+        // a poner una clave suya?", que es justo lo que no se podía saber.
+        user.setInvitationAcceptedAt(Instant.now());
+        User saved = userRepository.save(user);
+
+        List<String> authorities = adminAuthorities(saved);
+        String token = jwtService.generateToken(saved.getId(), saved.getEmail(), "ADMIN", store.getId(),
+                authorities, saved.getTokenVersion());
+        List<String> permissions = authorities.stream().filter(a -> !a.startsWith("ROLE_")).toList();
+        return ResponseEntity.ok(new AuthResponse(token, saved.getId(), saved.getName(), saved.getEmail(), "ADMIN", permissions));
     }
 
     @PostMapping("/api/admin/auth/forgot-password")

@@ -1,0 +1,12 @@
+-- Invitación de administradores: un usuario invitado nace SIN contraseña y la elige él al aceptar, así que
+-- `password` deja de ser obligatoria. NULL significa exactamente "esta cuenta todavía no tiene credencial":
+-- existe, tiene roles y permisos, y no puede entrar (adminLogin acaba en matches(raw, null), que es false).
+--
+-- Antes la única forma de crear un administrador era que quien lo creaba le inventara la clave y se la
+-- pasara por fuera — de modo que el creador la conocía para siempre. Esta columna era lo que lo obligaba.
+--
+-- `customers.password` ya es nullable desde V2 por el motivo equivalente (el invitado del checkout no tiene
+-- contraseña), así que esto alinea las dos mitades del sistema en vez de inventar una regla nueva.
+--
+-- Solo relaja la restricción: ninguna fila existente deja de ser válida.
+ALTER TABLE users ALTER COLUMN password DROP NOT NULL;
