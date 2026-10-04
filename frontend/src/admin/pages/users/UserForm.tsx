@@ -65,6 +65,9 @@ export default function UserForm() {
           roleId: user.roles[0] ? String(user.roles[0].id) : '',
           active: user.active,
           notes: user.notes ?? '',
+          // Editando no hay invitación que mandar: `invites` ya está condicionado a !isEdit, así que esto
+          // es inerte, pero es el valor honesto para una cuenta que ya existe.
+          sendInvitation: false,
         })
         setCurrentAvatar(user.avatar)
       })
