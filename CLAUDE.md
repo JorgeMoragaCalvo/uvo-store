@@ -18,14 +18,22 @@ payments/etc. are new work that has no Laravel equivalent).
 The storefront reproduces the real customer-facing flow (home, shop, product detail, cart, checkout with Stripe/Webpay/MercadoPago/manual payment, order tracking, legal pages). 
 The admin panel (`frontend/src/admin/`) covers products, categories, orders, coupons, customers, users/roles, shipping (zones/methods/rates, with Chilexpress/Correos de Chile carrier integration), payment gateway config, banners, store/general settings, and sales/product/payment reports with charts and CSV export. Customer account/address management exists on the **backend** (JWT, `/api/customer/**`) but deliberately has **no storefront UI yet** — there's nowhere for a customer to log in from, only the backend contract is ready.
 
+Two robustness audits have been run against this code and **both are closed** — see "How to read the
+`C5`/`A1`/`F19` references" under Architecture, which is also the key to finding IDs cited
+throughout this file and in the code comments. The hardening they produced is the bulk of what the
+Architecture section documents, so prefer reading *why* a constraint exists there over inferring it
+from the code.
+
 ## Commands
 
 ```
 ./mvnw spring-boot:run          # run the app (reads .env automatically, see below)
-./mvnw clean install            # build + run tests
+./mvnw clean verify             # build + full test suite + JaCoCo report
 ./mvnw test                     # run tests only
 ./mvnw test -Dtest=ClassName    # run a single test class
 ```
+On Windows use `mvnw.cmd`. Add `-o` (offline) once the local repository is warm — the suite boots a
+Spring context per test class, and dependency resolution is the slowest part of a cold run.
 
 ```
 cd frontend && npm run dev        # Vite dev server (http://localhost:5173), proxies /api/* to VITE_DEV_PROXY_TARGET
@@ -33,6 +41,7 @@ cd frontend && npm run build      # tsc -b && vite build
 cd frontend && npm run lint       # eslint .
 cd frontend && npm run test       # vitest run (npm run test:watch for watch mode)
 cd frontend && npm run preview    # preview a production build
+cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`, see "Known gotchas"
 ```
 
 ## Multi-tenancy
@@ -92,7 +101,7 @@ cd frontend && npm run preview    # preview a production build
   front. **Do not "fix" this with `server.forward-headers-strategy=framework`**: Spring's
   `ForwardedHeaderFilter` does overwrite `getRemoteAddr()` from that header but has no trusted-proxy
   notion at all, so it would spread the hole instead of closing it. Startup logs which mode is active —
-  behind an unconfigured proxy every client shares one bucket and login cuts off at 5 attempts total.
+  behind an unconfigured proxy every client shares one bucket, and login cuts off at 5 attempts total.
 - **Per-account throttling** (`AccountAttemptThrottle`, F18) on admin login, customer login and admin
   forgot-password, because per-IP is blind to an attacker spread across many addresses. Same Caffeine
   pattern, but called from `AuthController` where the email is already parsed — no body reading in a
@@ -138,7 +147,7 @@ cd frontend && npm run preview    # preview a production build
     owner.
   - `applyCommonFields` copied the eleven text fields and skipped `isDefault`, while the
     `if (command.isDefault())` that unsets **the others** was there in both create and update. So the
-    destructive half of the operation ran and the constructive half didn't: asking for "make this the
+    destructive half of the operation ran, and the constructive half didn't: asking for "make this the
     default" **deleted the existing default** and marked nothing, leaving the customer with none. And a
     `false` on the current default was ignored, so the flag could only ever be turned on, via the separate
     `POST .../default` endpoint. The root cause is a faithful-but-partial port: `unsetOtherDefaults` ports
@@ -153,13 +162,13 @@ cd frontend && npm run preview    # preview a production build
   address isn't auto-defaulted — neither did the original. `customer/CustomerAddressTest` is the first
   coverage of this surface at all.
 - **Admins are invited, not handed a password.** Until now the only way to create an administrator was for
-  the creator to **invent that person's password** and pass it along out of band — so the creator knew it
-  forever, and so did whatever channel it travelled through; nothing forced a change, and nothing recorded
+  the creator to **invent that person's password** and pass it along out of a band — so the creator knew it
+  forever, and so did whatever channel it traveled through; nothing forced a change, and nothing recorded
   whether one happened. Not a vulnerability: credential hygiene, on the surface where refunds are issued and
   gateway credentials are configured.
   The apparatus was half-built: `users.invitation_token` UNIQUE since V4, `invitation_sent_at`, an
   `invitation_accepted_at` that **was never written**, `UserRepository.findByInvitationToken` with zero
-  callers, and `createUser`'s `sendInvitation` branch — but no email, no accept endpoint, and
+  callers, and `createUser`'s `sendInvitation` branch — but no email, no acceptance endpoint, and
   `UserForm.tsx` sent `sendInvitation` **hardcoded to `'false'`**, so the flag was only reachable by calling
   the API by hand. Same shape as F11's `isOnSale='false'`, which is why the form change is part of the fix
   rather than a nicety.
@@ -176,8 +185,14 @@ cd frontend && npm run preview    # preview a production build
   Security 7 (`AbstractValidatingPasswordEncoder.encode` returns null), so what used to flag a missing
   password was only the column's NOT NULL, as a 500. With V22 that net is gone — the explicit check in
   `createUser` is what now stops a silent 200 creating an admin nobody can ever log into.
-  Still missing in this family: resending an expired invitation from the panel, and customer password
-  recovery (`Customer` has the reset columns and there is no customer forgot-password endpoint).
+  **The landing page does not exist yet.** The email links to `/admin/aceptar-invitacion?token=…` and
+  `router.tsx` has no such route — the invited admin gets a 404, and the only way to finish the flow today
+  is to POST the token and password by hand. The backend contract, the panel switch and the email are
+  done; the one screen that consumes them is not. Same for the customer half (`/cuenta/activar`, F24),
+  which has the additional problem that there's no storefront account UI to land in at all.
+  Also still missing: **resending an expired invitation from the panel** — if the TTL runs out, the only
+  way back is to delete the user and create them again — and customer password recovery (see the F24
+  bullet below).
 - **A guest buyer can turn that email into an account** (F24). The checkout already generated an
   `invitationToken`, a timestamp and `INVITED` (`markInvitedIfGuest`) — and that was all: no email went
   out and no endpoint accepted it, so the email was **burned** in that store (register rejects it because
@@ -188,19 +203,21 @@ cd frontend && npm run preview    # preview a production build
   `POST /api/customer/auth/accept-invitation` takes token + password, activates, and **consumes the token**.
   Expiry comes from `invitation_sent_at` + `app.customer-invitation.ttl-days` (30) — no migration, the
   column was already there. Rate-limited by IP; **not** by account, because what arrives is a token, not
-  an email to key on.
+  an email to key on. As with the admin half, **the `/cuenta/activar` the email points at doesn't exist**
+  — and here it can't until the storefront grows an account surface, so this endpoint stays contract-only
+  for now.
   Note on the finding's other option ("don't create an INVITED state without a mechanism"): it would not
   have fixed anything. The lockout comes from `customerRegister`'s `existsByStoreIdAndEmail`, which ignores
-  status and password — dropping INVITED leaves the guest as GUEST and the email just as unusable.
+  status and password — dropping INVITED leaves the guest as GUEST, and the email is just as unusable.
   And on why registration doesn't simply **claim** a passwordless row: nobody verifies email ownership at
   guest checkout, so anyone who knew the address could get there first and take the buyer's name and phone.
   The token in the mailbox is what proves ownership.
-  Still dead in the same family, both out of scope here: the **admin** invitation (`UserServiceImpl.createUser`
-  with `sendInvitation=true` generates a token, sends nothing, and has no accept endpoint — and the admin
-  gets a password set inline anyway, so the token is decoration), and **customer password recovery**
-  (`Customer` has `passwordResetToken`/`passwordResetExpiresAt` and there is no customer forgot-password
-  endpoint, only admin). Also still unused in `CustomerRepository`: `findByEmail`, `existsByEmail`,
-  `countWithOrders`, `countByCreatedAtAfter` — the first two and last two query **without `storeId`**,
+  The **admin** invitation was the other half of the same dead apparatus and was out of scope here; it is
+  now implemented — see the "Admins are invited" bullet above. **Customer password recovery is still
+  dead**: `Customer` has `passwordResetToken`/`passwordResetExpiresAt` and there is no customer
+  forgot-password endpoint, only the admin one. Also still unused in `CustomerRepository`:
+  `findByEmail`, `existsByEmail`,
+  `countWithOrders`, `countByCreatedAtAfter` — the first two and last two queries **without `storeId`**,
   which is a cross-tenant leak waiting for a careless caller.
 - **401 vs 403 is now defined** (`ApiSecurityErrorHandlers`, F19), and the distinction matters to the SPA,
   not just to purists. There are three cases:
@@ -230,6 +247,40 @@ cd frontend && npm run preview    # preview a production build
   is now correctly rejected.
 
 ## Architecture
+
+### How to read the `C5` / `A1` / `M7` / `B6` / `G4` / `F19` references
+
+Most of what follows explains *why* the code is the way it is by citing the finding that forced it.
+There have been **three** review rounds, and their IDs are not interchangeable:
+
+| labels you'll see in code | round | document | status |
+|---|---|---|---|
+| `C1`–`C5`, `A1`–`A8`, `M1`–`M10`, `B5`–`B8`, `R1`, `G1`–`G6` (no hyphen) | first robustness audit plus its annex — `R1` async/mail executor, `G1`/`G2` scheduled jobs, `G4` refunds, `G5` store status | **not in this repo**; `docs/analisis-critico-2026-09.md:7` lists them as already-existing | closed |
+| `F01`–`F24` | independent audit, numbered straight through (severity only in its table) | `docs/auditoria-independiente-2026-09.md` | **closed** |
+| `C-1`, `A-1`, `M-1`… (**hyphenated**) | `docs/analisis-critico-2026-09.md`, a separate review with its own numbering | that document | — |
+
+**The hyphenated IDs do not map onto the code labels.** `A-1` in `analisis-critico` is the rate
+limiter; `A1` in the code is admin permissions. No comment or line in this file uses the hyphenated
+form — if you see `A1`, it's always the first audit's label.
+
+**A reference in a comment or in this file is not an open task — it's the record of why an
+invariant exists.** Before removing or simplifying anything marked that way, find the test that
+pins it: nearly every finding left one that fails when the fix is undone.
+
+Three things worth knowing about the `F01`–`F24` round:
+- Several findings were **misjudged by the audit itself**. `F18` was filed Medium and is High (the
+  rate limiter it describes could be bypassed by anyone who sent a header). `F17` was understated.
+  `F21`'s described damage had largely been closed already by `F13`. And **`F24`'s first prescribed
+  remedy would not have fixed the problem it describes** — the note on that bullet explains why.
+  Where a bullet in this file states a judgement, that's the one that was actually applied.
+- **`docs/audit.md` is a truncated duplicate** of the independent audit — it stops after `F01`.
+  The complete list is in `docs/auditoria-independiente-2026-09.md`.
+- The **admin-panel invitation** ("Admins are invited", under Local environment) is **not** an audit
+  finding. It's later work, born from a gap noted while closing `F24`.
+
+Note on layout, because it's not obvious: the **per-finding bullets live under "Local environment"**
+above (they grew out of that list) while the **longer prose blocks are in "Backend" below**. Both
+cite the same IDs; there's no significance to which section a finding landed in.
 
 ### Backend (Spring Boot)
 Base package `org.uvo.uvostore`, entry point `UvoStoreApplication`.
@@ -264,7 +315,7 @@ Closed by F17: `PaymentServiceImpl` still sends `setUnitAmount(order.getTotal())
 is only right for a zero-decimal currency, and the amount check uses the same convention — so a wrong
 currency would have been a wrong charge that *passed* the check, since the comparison is blind to the
 unit. The currency is no longer free text: `SettingValues.SUPPORTED_CURRENCIES` is the one place that
-says which currencies exist (today: CLP only), the `currency` setting is validated against it on write,
+says which currencies exist (today: CLP only), the `currency` setting is validated against it on writing,
 and `Money`'s scale-0 constant plus MercadoPago/Webpay's hardcoded `"CLP"` are documented as moving with
 that catalogue. Supporting a second currency means changing all four together, not just the setting.
 
@@ -274,7 +325,7 @@ check them: `tax_rate=abc` left quoting and checkout answering 400 with BigDecim
 and a 400 doesn't reach Sentry, so the store stopped selling with nobody alerted. Worse were the valid
 numbers: a negative rate charged *below* the product price silently, and `-100` with tax-inclusive
 prices divided by zero. `SettingValues` is now the single place that decides what a valid money setting
-is, **both on write and on read** — validating the PUT doesn't heal stores that already stored garbage.
+is, **both on writing and on read** — validating the PUT doesn't heal stores that already stored garbage.
 Two parsers had also drifted apart (`Double.parseDouble` when pricing vs `new BigDecimal` in
 `/cart/calculate` and `/checkout/config`, which disagree on `" 19 "`), so the same setting was valid or
 invalid depending on the entry point; there is one reader now. A stored value that won't parse fails
@@ -288,7 +339,7 @@ services used to make each on their own:
   kept counting as revenue with no symptom at all: the figure was simply higher than reality. It also owns
   the **per-line split**, because `OrderItem` has no discount column — the coupon lives only on
   `Order.discountAmount`, so product/category reports showed more than the customer paid. The remainder
-  goes to the last line so the parts sum to the order's net exactly, same rule F06 set for tax.
+  goes to the last line, so the parts sum to the order's net exactly the same rule F06 set for tax.
   **Refunds are attributed to the order's date, not the refund's** — a November refund of an October sale
   lowers October.
 - `ReportZone` (`app.reports.timezone`, default `America/Santiago`, invalid value fails startup) — owns
@@ -301,19 +352,19 @@ services used to make each on their own:
 - The three report services had **no tests at all** before this (`report/*Test` is the first net), and
   they still **aggregate in memory**: all orders in range with their items, and
   `ProductsReportServiceImpl.getProductsData` paginates with `subList` after loading everything. Slow,
-  not wrong; moving it to SQL aggregates is deliberately left out so a performance rewrite never gets
+  not wrong; moving it to SQL aggregates is deliberately left out, so a performance rewrite never gets
   mixed with a change that corrects figures.
 
 **MercadoPago's webhook is signature-verified** (M3). `x-signature` (`ts=…,v1=…`) is checked against
 the HMAC-SHA256 of `id:<data.id>;request-id:<x-request-id>;ts:<ts>;` with the store's `webhookSecret`
-credential, constant-time, **before** the outbound `PaymentClient.get()` — rejecting afterwards would
+credential, constant-time, **before** the outbound `PaymentClient.get()` — rejecting afterward would
 still let anyone burn the merchant's API quota, which is the finding. Enabling MercadoPago without
 that secret is refused at configuration time (`AdminPaymentGatewayServiceImpl`), so verification is
 never silently off; a store with no secret answers 401 like any bad signature rather than revealing
 it isn't configured. The endpoint is also rate-limited (`app.rate-limit.webhook`).
 
 **Every /api/admin endpoint is permission-checked** (A1). `@EnableMethodSecurity` was already on but
-unused; now all **107 endpoints across 19 controllers** carry `@PreAuthorize("hasAuthority('...')")` —
+unused; now all **109 endpoints across 19 controllers** carry `@PreAuthorize("hasAuthority('...')")` —
 `GET` needs `dominio.view`, everything else `dominio.manage`. The catalogue is 23 permissions seeded
 globally by `V15` (`Permission` has no `store_id`; `Role` does, `UNIQUE(store_id, name, guard_name)`).
 `AuthController.adminAuthorities()` already put permission names in the JWT, so the annotations
@@ -321,7 +372,9 @@ needed no plumbing. **No role means no permissions**, so V15 also creates an "Ad
 store and assigns it to every existing admin — without that backfill, enforcing the annotations locks
 everyone out of their own panel. For the same reason `IntegrationTestSupport.createAdmin` now grants
 a full-access role, and `createAdminWithPermissions(store, prefix, "products.view")` builds a
-restricted one. Three of the 19 controllers live in `controller/settings/**`, not
+restricted one. Those 19 are the guarded admin subset, not every controller in the project (there
+are 37 `@RestController` classes in total — the rest are public storefront, customer, POS, platform
+and auth surfaces, each with its own filter). Three of the 19 live in `controller/settings/**`, not
 `controller/admin/**` — easy to miss when adding endpoints. On the frontend, `NAV_ITEMS` entries and
 admin routes declare a `permission` (`handle.permission` in `router.tsx`), checked once in
 `AdminLayout` via `useMatches()`; that's cosmetic only, the server is the enforcement.
@@ -347,13 +400,13 @@ unchanged. `PosWebhookAuthFilter` now remembers what it already served, keyed by
 **the signature is itself the event id** the finding asked for (HMAC of body+timestamp with the merchant's
 secret), so no change to the UvoPOS contract was needed. Two things to know:
 - The check runs **after** signature verification, deliberately. Recording first would let anyone burn the
-  genuine signature, or fill the store with garbage, without knowing the secret.
+  genuine signature or fill the store with garbage, without knowing the secret.
 - The store is a Caffeine cache expiring just past the freshness window — nothing older can be replayed
   anyway, so there's no table to prune. **A restart inside those 300s loses the guard, and with more than
-  one instance each would remember its own**; same caveat as `TokenVersionService`'s cache, and the move is
+  one instance each would remember its own**; the same issue as `TokenVersionService`'s cache, and the move is
   to a table with `UNIQUE (company_id, signature_hash)` when that day comes.
 
-What a replay actually did, before this, is worth recording because it is not what you'd guess: for
+What a replay actually did before this is worth recording because it is not what you'd guess: for
 `stock.updated` F13's conditional UPDATE already refused it (the stock is already the new value) — so no
 double-apply, but a **false divergence alert to Sentry** on every replay. `stock.alert`/`product.created`
 only log. The one that genuinely hurt was `product.updated`, which rewrites price/name/description
@@ -399,7 +452,15 @@ fetch join over a collection with pagination makes Hibernate page in memory. `@O
 is the other trap — it can't be proxied, so it costs one SELECT per row no matter what `fetch` says.
 `ProductListingQueryCountTest` fails if any of this is undone.
 
-**Database**: PostgreSQL via Flyway, schema in `src/main/resources/db/migration/` (currently up to V17, well past the original catalog/settings migrations — multi-tenancy, store domains, password reset, token versions, the permission catalog, the listing indexes and the enum CHECK constraints are all later migrations). `spring.jpa.hibernate.ddl-auto=validate`, so any entity change must be paired with a new Flyway migration (never edit an already-applied one — add `V18__...sql` etc.).
+**Database**: PostgreSQL via Flyway, schema in `src/main/resources/db/migration/` — **22 migrations,
+currently up to `V22__user_invitation_password.sql`**, well past the original catalog/settings ones.
+Everything from V8 on is hardening or new capability rather than the original port: V8 stores, V11
+store domains, V12 password reset, V13 stock/coupon integrity, V14 token versions, V15 the
+permission catalogue, V16 the listing indexes, V17 TIMESTAMPTZ + the enum CHECK constraints, V18
+store status, V19 order refunds, V20 `order_items.stock_applied`, V21 refund intent, V22 nullable
+`users.password` (admin invitations). `spring.jpa.hibernate.ddl-auto=validate`, so any entity change
+must be paired with a new Flyway migration — **never edit an already-applied one**, add the next
+number (`V23__...sql`).
 
 **Enum columns** (B6): every column that stores an enum name carries a `CHECK` listing its values
 (V17). Adding a constant to an enum therefore needs a migration too — otherwise the new value is
@@ -429,7 +490,8 @@ its `setEnabled(false)` registration there too.
 
 **Coverage**: `./mvnw verify` writes a JaCoCo report to `target/site/jacoco/index.html`. There is no
 enforced threshold yet — the baseline is 63.7% of lines (2026-09-07), with `service.report` the
-thinnest area at 9.2%.
+thinnest area at 9.2%. **Both figures predate the F01–F24 round**, which roughly quintupled the
+suite and gave `service.report` its first tests at all (F20); re-measure before quoting them.
 
 ### Public storefront API (`/api/v1/**`, no auth)
 Mirrors what the React `frontend/` consumes: `products` (search/filter incl. `featured`,
@@ -445,15 +507,22 @@ consuming this API.
 
 ### Auth
 - `POST /api/admin/auth/login`, `POST /api/customer/auth/{login,register}` — JWT.
-  `/api/admin/auth/forgot-password` + `/reset-password` and the customer equivalent fields exist
-  for password recovery (email sending is graceful-degrade — see `EmailService` below).
+  `/api/admin/auth/forgot-password` + `/reset-password` for admin password recovery (email sending
+  is graceful-degrade — see `EmailService` below). The customer side has the columns and **no
+  endpoint**: there is no customer forgot-password.
+- `POST /api/admin/auth/accept-invitation` and `POST /api/customer/auth/accept-invitation` — token +
+  chosen password, both one-time, both returning a logged-in session. Same shape, different TTLs
+  (`app.admin-invitation.ttl-days` 7, `app.customer-invitation.ttl-days` 30) and different origins:
+  the admin's is created by `UserServiceImpl.createUser`, the customer's by a guest checkout. Both
+  are IP-rate-limited; neither is account-throttled, because what arrives is a token, not an email
+  to key on. See the invitation bullets above.
 - `/api/admin/**` (`ROLE_ADMIN`) and `/api/customer/**` (`ROLE_CUSTOMER`) are guarded; `/api/v1/**` is fully public.
 - `/api/platform/**` (store onboarding) uses `X-Platform-Key`, not JWT — see "Multi-tenancy".
 - POS integration (`/api/sync/**`, `/api/webhooks/pos/**`) uses its own HMAC/API-key filters, separate from JWT.
 
 ### External integrations — all "off until configured"
 Every external integration in this codebase follows the same pattern: a blank/missing env var leaves it inactive (log-and-skip, never throw), so the app runs fully in dev/CI without any of these configured.
-Applies to: `EmailService` (SMTP, `spring.mail.*` — used for password reset and order confirmation emails), Stripe/Webpay/MercadoPago (`PaymentGatewayConfig` per store, plus shared Webpay parent commerce code in `application.properties`), Chilexpress/Correos de Chile
+Applies to: `EmailService` (SMTP, `spring.mail.*` — password reset, order confirmation, and the customer and admin invitations), Stripe/Webpay/MercadoPago (`PaymentGatewayConfig` per store, plus shared Webpay parent commerce code in `application.properties`), Chilexpress/Correos de Chile
 shipping quotes, S3 file storage (`app.storage.driver=s3`), and Sentry (`SENTRY_DSN`/ `VITE_SENTRY_DSN`). **Webpay/MercadoPago/Stripe are fully wired (backend + checkout UI) but have never been tested against real sandbox credentials** — don't assume they work end-to-end without that verification.
 
 **Shipping is priced from region + commune, and the checkout refuses an address it can't reach**
@@ -527,12 +596,32 @@ login (`/admin/login`) is separate and fully functional.
     Spring 7 now rejects at startup — both need
     `@Transactional(propagation = Propagation.REQUIRES_NEW)`. If you add another `AFTER_COMMIT`
     listener that also needs a transaction, use the same pattern.
-- **Testing**: 73 backend tests (JUnit + `IntegrationTestSupport`, one Spring-managed transaction
-  per test, auto-rolled-back — `AFTER_COMMIT` listeners never fire under this setup, which is
-  intentional) and 83 frontend tests (Vitest + React Testing Library, `npm run test`), both wired
-  into CI (`.github/workflows/ci.yml`) and the release workflow
-  (`.github/workflows/release.yml`, triggered by pushing a `vX.Y.Z` tag — builds artifacts and
-  publishes a GitHub Release with auto-generated notes).
+- **Testing**: **414 backend `@Test` methods across 75 classes** (JUnit + `IntegrationTestSupport`,
+  one Spring-managed transaction per test, auto-rolled-back — `AFTER_COMMIT` listeners never fire
+  under this setup, which is intentional) and **125 frontend tests across 27 files** (Vitest +
+  React Testing Library, `npm run test`), both wired into CI (`.github/workflows/ci.yml`) and the
+  release workflow (`.github/workflows/release.yml`, triggered by pushing a `vX.Y.Z` tag — builds
+  artifacts and publishes a GitHub Release with auto-generated notes). Most of that growth is the
+  audit rounds: nearly every `C`/`A`/`M`/`B`/`F` finding left a test that fails when its fix is
+  undone, so a red suite after a refactor is usually an invariant being removed, not a flaky test.
+  Three recurring devices worth knowing before writing a new one:
+  - **`disableShipping(store)` before any checkout.** A fresh store covers no shipping zone, so
+    checkout legitimately answers 409 (A7). Tests that don't care about delivery call this.
+  - **Package-visible builder methods to assert outbound payloads** without SMTP or network:
+    `MercadoPagoServiceImpl.buildPreferenceRequest`, `PaymentServiceImpl.buildSessionParams`,
+    `CustomerInvitationEmailListener.body`, `UserServiceImpl.invitationBody`. That's why those
+    tests live in the service's own package.
+  - **Tokens are read from the database, not a mailbox.** There is no SMTP in tests and
+    `EmailServiceImpl` logs and skips, so `PasswordResetTest`, `CustomerInvitationTest` and
+    `AdminInvitationTest` all query the row. When a test needs to age a timestamp the service
+    itself just wrote, it does so with a native `UPDATE` — and **`flush()` before `clear()`**, or
+    `clear()` discards the endpoint's own pending writes and the row reads as if nothing happened.
+- **`npx tsc --noEmit` in `frontend/` passes unconditionally and proves nothing.** `tsconfig.json`
+  has `"files": []` and only `references`, so `--noEmit` compiles zero files and always exits 0 —
+  it will happily stay silent on a type error that breaks the build. **The real check is
+  `npx tsc -b`** (what `npm run build` runs). Run the full trio before calling frontend work done:
+  `npx tsc -b`, `npm run lint`, `npm run test`. Skipping lint is how a
+  `react-refresh/only-export-components` error shipped once — `tsc` and Vitest were both green.
 - **No deployment infrastructure exists yet** (no Docker, no reverse proxy, no SSL) — paused
   pending a hosting decision. Client custom domains and same-origin frontend+API in production
   both depend on that piece landing eventually.

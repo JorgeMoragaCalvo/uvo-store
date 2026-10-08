@@ -112,6 +112,9 @@ frontend/src/
 
 ## API documentation
 
+For production readiness, outstanding launch requirements, and operational acceptance criteria, see
+[Plan de profesionalización y puesta en producción](PLAN_PRODUCCION.md).
+
 Swagger UI is served at `/swagger-ui.html`, the OpenAPI spec at `/v3/api-docs`. Both are public.
 Endpoints are grouped by audience (public, admin, customer, pos, platform), and the admin/customer
 groups are wired to a bearer-JWT scheme so the "Authorize" button works.
