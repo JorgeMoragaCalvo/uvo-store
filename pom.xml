@@ -223,6 +223,14 @@
                              tienda, así que una clase con muchos logins del mismo admin lo tocaría
                              incluso sin compartir IP. AccountThrottleTest pone el suyo pequeño. -->
                         <app.rate-limit.account-attempts>100000</app.rate-limit.account-attempts>
+                        <!-- PROD-04: el mismo host que usa IntegrationTestSupport.hostHeader(store),
+                             `<slug>.localhost`, para que lo que se afirma sobre un enlace coincida con el
+                             Host por el que esa tienda es alcanzable en los tests. Sin puerto en las
+                             plantillas: MockMvc no escucha en ninguno y añadirlo solo haría ruido en los
+                             asertos. -->
+                        <app.public-url.platform-domain>localhost</app.public-url.platform-domain>
+                        <app.public-url.storefront>http://{host}</app.public-url.storefront>
+                        <app.public-url.api>http://{host}</app.public-url.api>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>

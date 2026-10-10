@@ -12,7 +12,9 @@ import org.uvo.uvostore.repository.PermissionRepository;
 import org.uvo.uvostore.repository.RoleRepository;
 import org.uvo.uvostore.repository.StoreRepository;
 import org.uvo.uvostore.repository.UserRepository;
+import org.uvo.uvostore.service.url.StorePublicUrlResolver;
 
+import java.time.Instant;
 import java.util.HashSet;
 import java.util.NoSuchElementException;
 import java.util.Set;
@@ -35,15 +37,17 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
     private final RoleRepository roleRepository;
     private final PermissionRepository permissionRepository;
     private final PasswordEncoder passwordEncoder;
+    private final StorePublicUrlResolver publicUrls;
 
     public StoreOnboardingServiceImpl(StoreRepository storeRepository, UserRepository userRepository,
                                       RoleRepository roleRepository, PermissionRepository permissionRepository,
-                                      PasswordEncoder passwordEncoder) {
+                                      PasswordEncoder passwordEncoder, StorePublicUrlResolver publicUrls) {
         this.storeRepository = storeRepository;
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.permissionRepository = permissionRepository;
         this.passwordEncoder = passwordEncoder;
+        this.publicUrls = publicUrls;
     }
 
     @Override
@@ -92,7 +96,39 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
             throw new BusinessException("Ese dominio ya está en uso");
         }
 
+        // PROD-04. Un dominio distinto es un dominio sin comprobar: si la verificación se heredara, el
+        // primer correo saldría con un enlace a un dominio cuyo DNS puede no apuntar aquí todavía. Volver
+        // al subdominio de plataforma mientras tanto es el estado seguro, y funciona siempre.
+        if (!java.util.Objects.equals(normalized, store.getDomain())) {
+            store.setDomainVerifiedAt(null);
+        }
         store.setDomain(normalized);
+        Store saved = storeRepository.save(store);
+        User admin = saved.getOwnerUserId() == null ? null : userRepository.findById(saved.getOwnerUserId()).orElse(null);
+        return toResponse(saved, admin);
+    }
+
+    /**
+     * PROD-04. Deja constancia de que el dominio propio de la tienda ya apunta aquí, que es lo que habilita
+     * su uso en los enlaces que salen (correos, retornos de pasarela, webhooks).
+     *
+     * <p><b>No sondea DNS ni pide el certificado</b>: registra la comprobación que hizo el operador. Hacerlo
+     * desde aquí exigiría salir a la red desde la petición y aún así no diría gran cosa —la resolución
+     * depende de desde dónde se pregunte, y el proxy inverso todavía no existe (PROD-03)—. Automatizarlo
+     * cuando haya staging es una mejora, no un requisito: lo que hacía falta era que existiera el estado.
+     *
+     * @param verified false deshace la verificación, para cuando un dominio deja de funcionar y hay que
+     *        devolver los enlaces al subdominio sin perder el dominio configurado.
+     */
+    @Override
+    @Transactional
+    public StoreOnboardingResponse setDomainVerified(Long storeId, boolean verified) {
+        Store store = storeRepository.findById(storeId)
+                .orElseThrow(() -> new NoSuchElementException("Store " + storeId + " not found"));
+        if (verified && (store.getDomain() == null || store.getDomain().isBlank())) {
+            throw new BusinessException("Esta tienda no tiene dominio propio que verificar");
+        }
+        store.setDomainVerifiedAt(verified ? Instant.now() : null);
         Store saved = storeRepository.save(store);
         User admin = saved.getOwnerUserId() == null ? null : userRepository.findById(saved.getOwnerUserId()).orElse(null);
         return toResponse(saved, admin);
@@ -131,7 +167,10 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
     private StoreOnboardingResponse toResponse(Store store, User admin) {
         return new StoreOnboardingResponse(
                 store.getId(), store.getName(), store.getSlug(), store.getDomain(),
-                admin == null ? null : admin.getId(), admin == null ? null : admin.getEmail()
+                admin == null ? null : admin.getId(), admin == null ? null : admin.getEmail(),
+                store.getDomainVerifiedAt(),
+                publicUrls.storefrontOrigin(store),
+                publicUrls.storefrontUrl(store, "/admin/login")
         );
     }
 }

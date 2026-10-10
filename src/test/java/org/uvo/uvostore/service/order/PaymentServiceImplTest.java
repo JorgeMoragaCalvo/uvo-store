@@ -16,6 +16,7 @@ import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.repository.SettingRepository;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.settings.SecretCrypto;
+import org.uvo.uvostore.support.TestPublicUrls;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -34,6 +35,8 @@ class PaymentServiceImplTest {
     private final OrderStatusService orderStatusService = mock(OrderStatusService.class);
 
     private PaymentServiceImpl paymentService;
+    // PROD-04: la orden necesita tienda, porque de ella sale el origen de las URLs de retorno.
+    private Store store;
 
     @BeforeEach
     void setUp() {
@@ -44,9 +47,9 @@ class PaymentServiceImplTest {
 
         paymentService = new PaymentServiceImpl(
                 orderRepository, settingRepository, orderStatusService,
-                "sk_test_fallback", "whsec_fallback", "clp", "http://localhost:5173", 5000, 20000);
+                "sk_test_fallback", "whsec_fallback", "clp", TestPublicUrls.resolver(), 5000, 20000);
 
-        Store store = Store.builder().id(1L).name("Tienda de prueba").slug("test").status(StoreStatus.ACTIVE).build();
+        store = Store.builder().id(1L).name("Tienda de prueba").slug("test").status(StoreStatus.ACTIVE).build();
         TenantContext.set(store);
         when(settingRepository.findByStoreIdAndSettingKey(1L, "currency")).thenReturn(java.util.Optional.empty());
         when(settingRepository.findByStoreIdAndSettingKey(1L, "stripe_secret_key")).thenReturn(java.util.Optional.empty());
@@ -68,6 +71,7 @@ class PaymentServiceImplTest {
 
         return Order.builder()
                 .id(1L)
+                .store(store)
                 .orderNumber("ORD-TEST-1")
                 .customerEmail("cliente@test.local")
                 .customerFirstName("Ana")
@@ -91,7 +95,7 @@ class PaymentServiceImplTest {
                 new BigDecimal("7818.74"),
                 new BigDecimal("44854.87"));
 
-        SessionCreateParams params = paymentService.buildSessionParams(order, null, null);
+        SessionCreateParams params = paymentService.buildSessionParams(order);
 
         assertEquals(1, params.getLineItems().size(), "should be a single line item, not items+shipping+tax");
         SessionCreateParams.LineItem lineItem = params.getLineItems().get(0);
@@ -105,10 +109,25 @@ class PaymentServiceImplTest {
     void chargesExactlyTheOrderTotalWithNoDiscountAndTaxExclusivePricing() {
         Order order = orderWith(new BigDecimal("10000.00"), BigDecimal.ZERO, new BigDecimal("1900.00"), new BigDecimal("11900.00"));
 
-        SessionCreateParams params = paymentService.buildSessionParams(order, null, null);
+        SessionCreateParams params = paymentService.buildSessionParams(order);
 
         long chargedAmount = params.getLineItems().get(0).getPriceData().getUnitAmount();
         assertEquals(11900L, chargedAmount);
+    }
+
+    @Test
+    void theReturnUrlsComeFromTheOrdersOwnStore() {
+        // PROD-04. Dos cosas a la vez. Una: el host es el de la tienda de la orden y no una URL global,
+        // así que el comprador vuelve a la tienda donde compró. Y dos: ya no hay forma de que lo decida
+        // quien llama — era un redirect abierto dentro de un flujo de pago, porque successUrl venía en el
+        // cuerpo de /api/v1/create-checkout-session y se pasaba a Stripe sin validar, de modo que una
+        // página de pago real podía dejar al pagador en un dominio ajeno después de cobrarle.
+        Order order = orderWith(new BigDecimal("1000.00"), BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal("1000.00"));
+
+        SessionCreateParams params = paymentService.buildSessionParams(order);
+
+        assertEquals("http://test.localhost/order-success?session_id={CHECKOUT_SESSION_ID}", params.getSuccessUrl());
+        assertEquals("http://test.localhost/checkout?canceled=1", params.getCancelUrl());
     }
 
     @Test
@@ -119,7 +138,7 @@ class PaymentServiceImplTest {
         com.stripe.Stripe.apiKey = null;
 
         Order order = orderWith(new BigDecimal("1000.00"), BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal("1000.00"));
-        paymentService.buildSessionParams(order, null, null);
+        paymentService.buildSessionParams(order);
 
         assertEquals(null, com.stripe.Stripe.apiKey);
     }

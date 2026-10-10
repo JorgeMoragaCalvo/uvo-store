@@ -82,19 +82,19 @@ export const useCheckoutStore = create<CheckoutState>((set, get) => ({
 
       const confirmation = await api.checkout.createOrder(payload)
 
+      // PROD-04: las tres pasarelas van sin URLs de retorno. Las resuelve el backend desde la tienda de
+      // la orden (StorePublicUrlResolver), que es el único que sabe cuál es su dominio público verificado
+      // y cuál es el origen de la API — y no el navegador, cuyo window.location.origin era además una
+      // entrada sin validar que llegaba tal cual a Stripe y a MercadoPago.
       if (paymentMethod === 'stripe') {
-        const successUrl = `${window.location.origin}/order-success?session_id={CHECKOUT_SESSION_ID}`
-        const cancelUrl = `${window.location.origin}/checkout?canceled=1`
-        const session = await api.payment.createCheckoutSession(confirmation.orderId, successUrl, cancelUrl)
+        const session = await api.payment.createCheckoutSession(confirmation.orderId)
         set({ loading: false })
         return { success: true, redirectUrl: session.url }
       }
 
       if (paymentMethod === 'webpay') {
-        // No returnUrl override: the backend defaults it to its OWN host's /api/v1/webpay/return
-        // (WebpayController#defaultReturnUrl) — Transbank must redirect back to the API that can
-        // commit the transaction server-side, not to the frontend's origin, which is a different
-        // host in most deployments (as it already is here in dev).
+        // Transbank tiene que volver a la API que puede confirmar la transacción en el servidor, no al
+        // origen del frontend, que en la mayoría de los despliegues es otro host (como aquí en desarrollo).
         const result = await api.webpay.create(confirmation.orderId)
         set({ loading: false })
         // Webpay Plus needs an actual form POST (token_ws field), not a GET redirect — see
@@ -103,10 +103,7 @@ export const useCheckoutStore = create<CheckoutState>((set, get) => ({
       }
 
       if (paymentMethod === 'mercadopago') {
-        const successUrl = `${window.location.origin}/order-success?order=${confirmation.orderNumber}`
-        const failureUrl = `${window.location.origin}/checkout?error=mercadopago`
-        const pendingUrl = `${window.location.origin}/checkout?pending=1`
-        const preference = await api.mercadopago.createPreference(confirmation.orderId, successUrl, failureUrl, pendingUrl)
+        const preference = await api.mercadopago.createPreference(confirmation.orderId)
         set({ loading: false })
         return { success: true, redirectUrl: preference.initPoint }
       }

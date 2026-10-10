@@ -1,7 +1,12 @@
 package org.uvo.uvostore.service.payment;
 
 public interface WebpayService {
-    WebpayCreateResult createTransaction(Long orderId, String returnUrl);
+    /**
+     * PROD-04. El {@code return_url} que se registra en Transbank lo resuelve la implementación desde la
+     * tienda de la orden, y ya no se recibe de fuera: antes venía del cliente, y lo que se armaba si no
+     * venía era la URL global de plataforma más una ruta de la SPA que no existe.
+     */
+    WebpayCreateResult createTransaction(Long orderId);
     WebpayCommitResult commitTransaction(String token);
 
     /**

@@ -48,6 +48,13 @@ public class Store {
     @Column(unique = true)
     private String domain;
 
+    // PROD-04. Cuándo se comprobó que `domain` apunta de verdad aquí (DNS y TLS). NULL = sin verificar.
+    // Solo gobierna la construcción de enlaces de salida (StorePublicUrlResolver), nunca la resolución de
+    // entrada: StoreHostResolver acepta el dominio igual, porque si no no habría forma de comprobarlo
+    // antes de marcarlo. Cambiar el dominio lo vuelve a poner en NULL (StoreOnboardingServiceImpl).
+    @Column(name = "domain_verified_at")
+    private Instant domainVerifiedAt;
+
     @Column(name = "owner_user_id")
     private Long ownerUserId;
 

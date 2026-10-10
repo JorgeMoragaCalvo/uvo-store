@@ -64,6 +64,45 @@ class CustomerInvitationEmailListenerTest extends IntegrationTestSupport {
         assertThat(body).contains("/cuenta/activar?token=");
         assertThat(body).contains(order.getOrderNumber());
         assertThat(body).contains("un solo uso");
+        // PROD-04: y lleva al storefront de SU tienda, no a una URL de plataforma única.
+        assertThat(body).contains("http://" + hostHeader(store) + "/cuenta/activar?token=");
+    }
+
+    @Test
+    @DisplayName("PROD-04: dos tiendas, dos enlaces — y la tienda sale del pedido, no del contexto")
+    void eachStoreGetsItsOwnLink() throws Exception {
+        // Antes los dos cuerpos eran idénticos salvo el token, porque el host venía de app.frontend-url.
+        // Y la tienda se toma de la orden a propósito: este oyente corre en un hilo del pool de correo
+        // después del commit, donde no hay ni petición ni TenantContext.
+        Fixture first = guestOrder("inv-host-a");
+        Fixture second = guestOrder("inv-host-b");
+
+        String firstBody = listener.body(first.customer, first.order);
+        String secondBody = listener.body(second.customer, second.order);
+
+        assertThat(firstBody).contains("http://" + hostHeader(first.store) + "/cuenta/activar");
+        assertThat(secondBody).contains("http://" + hostHeader(second.store) + "/cuenta/activar");
+        assertThat(hostHeader(first.store)).isNotEqualTo(hostHeader(second.store));
+        assertThat(firstBody).doesNotContain(hostHeader(second.store));
+    }
+
+    private record Fixture(Store store, Customer customer, Order order) {
+    }
+
+    private Fixture guestOrder(String prefix) throws Exception {
+        Store store = createStore(prefix);
+        disableShipping(store);
+        Product product = createProduct(store, createCategory(store, "Cat"), "Producto", BigDecimal.valueOf(10000));
+        String email = prefix + "-" + nextSeq() + "@test.local";
+
+        mockMvc.perform(checkout(store, product, email)).andExpect(status().isOk());
+        Customer guest = customerRepository.findByStoreIdAndEmail(store.getId(), email).orElseThrow();
+        Order order = entityManager.createQuery(
+                        "select o from Order o where o.customer.id = :id", Order.class)
+                .setParameter("id", guest.getId())
+                .setMaxResults(1)
+                .getSingleResult();
+        return new Fixture(store, guest, order);
     }
 
     private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder checkout(

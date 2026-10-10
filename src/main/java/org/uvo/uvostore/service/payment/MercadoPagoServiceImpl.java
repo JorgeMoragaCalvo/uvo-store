@@ -25,10 +25,12 @@ import org.uvo.uvostore.entity.order.Order;
 import org.uvo.uvostore.entity.order.enums.PaymentStatus;
 import org.uvo.uvostore.entity.payment.PaymentGatewayConfig;
 import org.uvo.uvostore.entity.payment.enums.PaymentGatewayType;
+import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.repository.PaymentGatewayConfigRepository;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.order.OrderStatusService;
+import org.uvo.uvostore.service.url.StorePublicUrlResolver;
 
 import java.math.RoundingMode;
 import java.util.List;
@@ -55,7 +57,7 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
     private final OrderRepository orderRepository;
     private final PaymentGatewayConfigRepository configRepository;
     private final OrderStatusService orderStatusService;
-    private final String frontendUrl;
+    private final StorePublicUrlResolver publicUrls;
     private final int gatewayConnectTimeoutMs;
     private final int gatewayReadTimeoutMs;
 
@@ -64,14 +66,14 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
             PaymentGatewayConfigRepository configRepository,
             OrderStatusService orderStatusService,
             MercadoPagoWebhookSignature webhookSignature,
-            @Value("${app.frontend-url}") String frontendUrl,
+            StorePublicUrlResolver publicUrls,
             @Value("${app.gateway.connect-timeout-ms:5000}") int gatewayConnectTimeoutMs,
             @Value("${app.gateway.read-timeout-ms:20000}") int gatewayReadTimeoutMs) {
         this.orderRepository = orderRepository;
         this.configRepository = configRepository;
         this.orderStatusService = orderStatusService;
         this.webhookSignature = webhookSignature;
-        this.frontendUrl = frontendUrl;
+        this.publicUrls = publicUrls;
         this.gatewayConnectTimeoutMs = gatewayConnectTimeoutMs;
         this.gatewayReadTimeoutMs = gatewayReadTimeoutMs;
     }
@@ -104,8 +106,7 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
 
     @Override
     @Transactional
-    public MercadoPagoPreferenceResult createPreference(
-            Long orderId, String successUrl, String failureUrl, String pendingUrl, String notificationUrl) {
+    public MercadoPagoPreferenceResult createPreference(Long orderId) {
         Long storeId = TenantContext.requireStoreId();
         Order order = orderRepository.findById(orderId)
                 .filter(o -> o.getStore().getId().equals(storeId))
@@ -117,7 +118,7 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
 
         String accessToken = requireAccessToken(storeId);
 
-        PreferenceRequest request = buildPreferenceRequest(order, successUrl, failureUrl, pendingUrl, notificationUrl);
+        PreferenceRequest request = buildPreferenceRequest(order);
 
         Preference preference;
         try {
@@ -153,8 +154,7 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
     // Era exactamente el mismo fallo que ya se corrigió en Stripe (PaymentServiceImpl:93-97);
     // MercadoPago era la única de las tres pasarelas que seguía reconstruyendo el importe — Webpay
     // cobra order.getTotal() desde siempre (WebpayServiceImpl:75).
-    PreferenceRequest buildPreferenceRequest(Order order, String successUrl, String failureUrl,
-                                             String pendingUrl, String notificationUrl) {
+    PreferenceRequest buildPreferenceRequest(Order order) {
         PreferenceItemRequest totalItem = PreferenceItemRequest.builder()
                 .title("Pedido " + order.getOrderNumber())
                 .description(order.getItems().size() + " producto(s)")
@@ -167,14 +167,22 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
                 .currencyId("CLP")
                 .build();
 
+        // PROD-04. Las cuatro URLs salen de la tienda de la orden:
+        //   * la de notificación tiene que seguir siendo el host de ESTA tienda para que
+        //     TenantResolutionFilter sepa con qué credenciales verificar el pago, pero ya no se arma desde
+        //     la petición: tras un proxy que termina TLS, getScheme() da "http" y getServerPort() el
+        //     puerto del upstream, así que en MercadoPago quedaba registrada una URL de la red interna;
+        //   * las tres de retorno ya no se reciben del cliente, que era un redirect abierto en un flujo
+        //     de pago real — se pasaban a la pasarela sin validar.
+        Store store = order.getStore();
         return PreferenceRequest.builder()
                 .items(List.of(totalItem))
                 .externalReference(order.getOrderNumber())
-                .notificationUrl(notificationUrl)
+                .notificationUrl(publicUrls.apiUrl(store, "/api/v1/mercadopago/webhook"))
                 .backUrls(PreferenceBackUrlsRequest.builder()
-                        .success(successUrl != null ? successUrl : frontendUrl + "/order-success?order=" + order.getOrderNumber())
-                        .failure(failureUrl != null ? failureUrl : frontendUrl + "/checkout?error=mercadopago")
-                        .pending(pendingUrl != null ? pendingUrl : frontendUrl + "/checkout?pending=1")
+                        .success(publicUrls.storefrontUrl(store, "/order-success?order=" + order.getOrderNumber()))
+                        .failure(publicUrls.storefrontUrl(store, "/checkout?error=mercadopago"))
+                        .pending(publicUrls.storefrontUrl(store, "/checkout?pending=1"))
                         .build())
                 .autoReturn("approved")
                 .build();

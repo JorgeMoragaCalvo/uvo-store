@@ -39,5 +39,47 @@ class AdminInvitationEmailTest extends IntegrationTestSupport {
         // alta.
         assertThat(body).contains("la eliges tú");
         assertThat(body).contains("un solo uso");
+        // PROD-04: al panel de SU tienda.
+        assertThat(body).contains("http://" + hostHeader(store) + "/admin/aceptar-invitacion?token=");
+    }
+
+    @Test
+    @DisplayName("PROD-04: dos tiendas, dos paneles distintos en el enlace")
+    void eachStoreGetsItsOwnPanelLink() {
+        // Con la URL global, invitar a un administrador de la tienda B le mandaba al panel de la tienda A,
+        // donde su token no vale nada: adminAcceptInvitation resuelve el tenant por el Host.
+        Store first = createStore("adm-inv-host-a");
+        Store second = createStore("adm-inv-host-b");
+        User firstUser = createAdmin(first, "adm-inv-host-a");
+        User secondUser = createAdmin(second, "adm-inv-host-b");
+        firstUser.setInvitationToken("token-a");
+        secondUser.setInvitationToken("token-b");
+
+        String firstBody = userService.invitationBody(firstUser, first);
+        String secondBody = userService.invitationBody(secondUser, second);
+
+        assertThat(firstBody).contains("http://" + hostHeader(first) + "/admin/aceptar-invitacion");
+        assertThat(secondBody).contains("http://" + hostHeader(second) + "/admin/aceptar-invitacion");
+        assertThat(firstBody).doesNotContain(hostHeader(second));
+    }
+
+    @Test
+    @DisplayName("PROD-04: un dominio propio verificado manda el enlace a ese dominio; sin verificar, no")
+    void aVerifiedCustomDomainIsUsedInTheLink() {
+        Store store = createStore("adm-inv-dominio");
+        User user = createAdmin(store, "adm-inv-dominio");
+        user.setInvitationToken("token-de-dominio");
+        store.setDomain("tienda-" + nextSeq() + ".example");
+
+        // Sin verificar: el dominio está escrito pero su DNS puede no apuntar aquí todavía, y un correo
+        // con ese enlace sería un correo inservible que nadie puede reenviar.
+        assertThat(userService.invitationBody(user, store))
+                .contains("http://" + hostHeader(store) + "/admin/aceptar-invitacion")
+                .doesNotContain(store.getDomain());
+
+        store.setDomainVerifiedAt(java.time.Instant.now());
+
+        assertThat(userService.invitationBody(user, store))
+                .contains("http://" + store.getDomain() + "/admin/aceptar-invitacion");
     }
 }

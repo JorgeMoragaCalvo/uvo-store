@@ -3,7 +3,6 @@ package org.uvo.uvostore.service.order.event;
 import io.sentry.Sentry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
@@ -16,6 +15,7 @@ import org.uvo.uvostore.entity.order.Order;
 import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.notification.EmailService;
+import org.uvo.uvostore.service.url.StorePublicUrlResolver;
 
 import java.util.NoSuchElementException;
 
@@ -43,13 +43,13 @@ public class CustomerInvitationEmailListener {
 
     private final OrderRepository orderRepository;
     private final EmailService emailService;
-    private final String frontendUrl;
+    private final StorePublicUrlResolver publicUrls;
 
     public CustomerInvitationEmailListener(OrderRepository orderRepository, EmailService emailService,
-                                            @Value("${app.frontend-url}") String frontendUrl) {
+                                            StorePublicUrlResolver publicUrls) {
         this.orderRepository = orderRepository;
         this.emailService = emailService;
-        this.frontendUrl = frontendUrl;
+        this.publicUrls = publicUrls;
     }
 
     @Async(AsyncConfig.MAIL_EXECUTOR)
@@ -85,7 +85,9 @@ public class CustomerInvitationEmailListener {
                 + "Compraste en " + order.getStore().getName() + " sin tener cuenta (pedido "
                 + order.getOrderNumber() + "). Si quieres crear una con este correo y revisar tus datos, "
                 + "elige una contraseña aquí:\n\n"
-                + frontendUrl + "/cuenta/activar?token=" + customer.getInvitationToken() + "\n\n"
+                // PROD-04: la tienda sale de la orden, no de la petición ni de TenantContext — esto corre
+                // en un hilo del pool de correo después del commit, donde no hay ninguna de las dos.
+                + publicUrls.storefrontUrl(order.getStore(), "/cuenta/activar?token=" + customer.getInvitationToken()) + "\n\n"
                 + "El enlace es de un solo uso. Si no quieres cuenta, puedes ignorar este correo: tu pedido "
                 + "sigue su curso igual.";
     }

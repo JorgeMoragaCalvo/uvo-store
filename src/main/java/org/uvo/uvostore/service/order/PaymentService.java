@@ -1,7 +1,12 @@
 package org.uvo.uvostore.service.order;
 
 public interface PaymentService {
-    CheckoutSessionResult createCheckoutSession(Long orderId, String successUrl, String cancelUrl);
+    /**
+     * PROD-04. Las URLs de retorno las construye la implementación desde la tienda de la orden. Antes se
+     * recibían del cliente sin validar y se pasaban tal cual a Stripe, que es un redirect abierto dentro
+     * de un flujo de pago real.
+     */
+    CheckoutSessionResult createCheckoutSession(Long orderId);
     PaymentVerificationResult verifyPayment(String sessionId);
     void handleWebhook(String payload, String signatureHeader);
 

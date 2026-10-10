@@ -115,11 +115,9 @@ describe('useCheckoutStore.processCheckout', () => {
     const result = await useCheckoutStore.getState().processCheckout()
 
     expect(result).toEqual({ success: true, redirectUrl: 'https://stripe.test/pay' })
-    expect(api.payment.createCheckoutSession).toHaveBeenCalledWith(
-      confirmation.orderId,
-      expect.stringContaining('/order-success?session_id='),
-      expect.stringContaining('/checkout?canceled=1'),
-    )
+    // PROD-04: solo el id del pedido. Las URLs de retorno las construye el backend desde la tienda de la
+    // orden; mandarlas desde aquí era un redirect abierto, porque llegaban a Stripe sin validar.
+    expect(api.payment.createCheckoutSession).toHaveBeenCalledWith(confirmation.orderId)
     // Stripe redirects away from the SPA, so the cart is cleared server-side on payment confirmation, not here.
     expect(clearCart).not.toHaveBeenCalled()
   })
@@ -132,7 +130,7 @@ describe('useCheckoutStore.processCheckout', () => {
     const result = await useCheckoutStore.getState().processCheckout()
 
     expect(result).toEqual({ success: true, webpayForm: { url: 'https://webpay.test/init', token: 'tok_123' } })
-    // No returnUrl override — the backend must default it to its own host, not the frontend's.
+    // El backend arma el returnUrl con el origen de la API de esa tienda, no con el del frontend.
     expect(api.webpay.create).toHaveBeenCalledWith(confirmation.orderId)
   })
 
@@ -147,12 +145,8 @@ describe('useCheckoutStore.processCheckout', () => {
     const result = await useCheckoutStore.getState().processCheckout()
 
     expect(result).toEqual({ success: true, redirectUrl: 'https://mercadopago.test/checkout' })
-    expect(api.mercadopago.createPreference).toHaveBeenCalledWith(
-      confirmation.orderId,
-      expect.stringContaining(`/order-success?order=${confirmation.orderNumber}`),
-      expect.stringContaining('/checkout?error=mercadopago'),
-      expect.stringContaining('/checkout?pending=1'),
-    )
+    // PROD-04: ídem — las tres URLs de retorno las decide el servidor.
+    expect(api.mercadopago.createPreference).toHaveBeenCalledWith(confirmation.orderId)
   })
 
   it('sets an error and does not clear the cart when order creation fails', async () => {

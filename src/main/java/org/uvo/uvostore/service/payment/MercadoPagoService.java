@@ -1,8 +1,12 @@
 package org.uvo.uvostore.service.payment;
 
 public interface MercadoPagoService {
-    MercadoPagoPreferenceResult createPreference(
-            Long orderId, String successUrl, String failureUrl, String pendingUrl, String notificationUrl);
+    /**
+     * PROD-04. Las cuatro URLs —la de notificación y las tres de retorno— las construye la implementación
+     * desde la tienda de la orden. La de notificación se armaba antes desde la petición en curso (y por
+     * tanto describía el tramo interno tras el proxy) y las de retorno llegaban del cliente sin validar.
+     */
+    MercadoPagoPreferenceResult createPreference(Long orderId);
 
     // Raw webhook body — MercadoPago's notification only tells us a payment id changed; we
     // re-fetch the payment from their API (authenticated with our own access token) rather than

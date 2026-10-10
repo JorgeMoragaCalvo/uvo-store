@@ -25,11 +25,12 @@ public class MercadoPagoController {
         this.mercadoPagoService = mercadoPagoService;
     }
 
+    // PROD-04. Ni la URL de notificación ni las de retorno se deciden aquí: las resuelve el servicio desde
+    // la tienda de la orden. Antes la primera se armaba con el scheme/host/puerto de esta petición y las
+    // otras tres llegaban en el cuerpo sin validar.
     @PostMapping("/create-preference")
-    public MercadoPagoPreferenceResult createPreference(@Valid @RequestBody MercadoPagoCreateRequest request, HttpServletRequest httpRequest) {
-        String notificationUrl = defaultWebhookUrl(httpRequest);
-        return mercadoPagoService.createPreference(
-                request.orderId(), request.successUrl(), request.failureUrl(), request.pendingUrl(), notificationUrl);
+    public MercadoPagoPreferenceResult createPreference(@Valid @RequestBody MercadoPagoCreateRequest request) {
+        return mercadoPagoService.createPreference(request.orderId());
     }
 
     // MercadoPago POSTs a small JSON body here whenever a payment's status changes — must stay on
@@ -47,11 +48,5 @@ public class MercadoPagoController {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
-    }
-
-    private String defaultWebhookUrl(HttpServletRequest request) {
-        return request.getScheme() + "://" + request.getServerName()
-                + (request.getServerPort() == 80 || request.getServerPort() == 443 ? "" : ":" + request.getServerPort())
-                + "/api/v1/mercadopago/webhook";
     }
 }

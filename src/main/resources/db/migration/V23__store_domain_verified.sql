@@ -1,0 +1,18 @@
+-- PROD-04. Un dominio propio solo se usa para construir enlaces cuando alguien comprobó que de verdad
+-- apunta aquí. NULL significa exactamente "todavía no verificado": la tienda sigue siendo alcanzable por
+-- ese dominio, pero los correos y los retornos de pasarela usan su subdominio de plataforma.
+--
+-- La asimetría es deliberada y va en los dos sentidos:
+--   * de ENTRADA (StoreHostResolver, TenantResolutionFilter) el dominio se acepta verificado o no, porque
+--     si no se aceptara nunca se podría comprobar que funciona antes de marcarlo;
+--   * de SALIDA (StorePublicUrlResolver) solo se usa si está verificado, porque un correo con un enlace a
+--     un dominio cuyo DNS o TLS aún no están puestos es un correo inservible — y hoy no hay pantalla para
+--     reenviar una invitación.
+--
+-- TIMESTAMPTZ y no TIMESTAMP, por B5/B7: el resto de las fechas del esquema lo son y Hibernate escribe en
+-- UTC. Y una fecha en vez de un booleano porque la pregunta operativa es "¿cuándo se comprobó?", que es la
+-- que sirve en una incidencia de dominio.
+--
+-- Solo añade una columna nullable: ninguna fila existente deja de ser válida, y todas quedan sin verificar,
+-- que es el estado honesto para un dominio que nadie revisó.
+ALTER TABLE stores ADD COLUMN domain_verified_at TIMESTAMPTZ;
