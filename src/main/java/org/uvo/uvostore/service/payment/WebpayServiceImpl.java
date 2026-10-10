@@ -18,6 +18,7 @@ import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.repository.PaymentGatewayConfigRepository;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.order.OrderStatusService;
+import org.uvo.uvostore.service.url.StorePublicUrlResolver;
 
 import java.util.NoSuchElementException;
 
@@ -34,7 +35,7 @@ public class WebpayServiceImpl implements WebpayService {
     private final String parentCommerceCode;
     private final String apiKey;
     private final boolean production;
-    private final String frontendUrl;
+    private final StorePublicUrlResolver publicUrls;
     private final int gatewayReadTimeoutMs;
 
     public WebpayServiceImpl(
@@ -44,7 +45,7 @@ public class WebpayServiceImpl implements WebpayService {
             @Value("${webpay.parent-commerce-code}") String parentCommerceCode,
             @Value("${webpay.api-key}") String apiKey,
             @Value("${webpay.environment}") String environment,
-            @Value("${app.frontend-url}") String frontendUrl,
+            StorePublicUrlResolver publicUrls,
             @Value("${app.gateway.read-timeout-ms:20000}") int gatewayReadTimeoutMs) {
         this.gatewayReadTimeoutMs = gatewayReadTimeoutMs;
         this.orderRepository = orderRepository;
@@ -53,12 +54,12 @@ public class WebpayServiceImpl implements WebpayService {
         this.parentCommerceCode = parentCommerceCode;
         this.apiKey = apiKey;
         this.production = "production".equalsIgnoreCase(environment);
-        this.frontendUrl = frontendUrl;
+        this.publicUrls = publicUrls;
     }
 
     @Override
     @Transactional
-    public WebpayCreateResult createTransaction(Long orderId, String returnUrl) {
+    public WebpayCreateResult createTransaction(Long orderId) {
         Long storeId = TenantContext.requireStoreId();
         Order order = orderRepository.findById(orderId)
                 .filter(o -> o.getStore().getId().equals(storeId))
@@ -76,12 +77,20 @@ public class WebpayServiceImpl implements WebpayService {
         MallTransactionCreateDetails details = MallTransactionCreateDetails.build(
                 amount, childCommerceCode, order.getOrderNumber());
 
+        // PROD-04. Transbank devuelve el navegador a ESTE endpoint del backend de la tienda, que es quien
+        // confirma la transacción; de ahí se redirige a la SPA. Se arma desde la tienda de la orden y no
+        // desde la petición: tras un proxy que termina TLS, request.getScheme() es el del tramo interno
+        // (http) y el puerto es el del upstream, así que lo que quedaba registrado en Transbank describía
+        // la red privada. El respaldo anterior era peor: la URL global más "/checkout/webpay/return", que
+        // no es ninguna ruta de la SPA.
+        String returnUrl = publicUrls.apiUrl(order.getStore(), "/api/v1/webpay/return");
+
         WebpayPlusMallTransactionCreateResponse response;
         try {
             response = transaction().create(
                     order.getOrderNumber(),
                     order.getOrderNumber(),
-                    returnUrl != null ? returnUrl : frontendUrl + "/checkout/webpay/return",
+                    returnUrl,
                     details);
         } catch (Exception e) {
             throw new IllegalStateException("Error al crear transacción Webpay: " + e.getMessage(), e);

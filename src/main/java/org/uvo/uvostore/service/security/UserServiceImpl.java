@@ -17,6 +17,7 @@ import org.uvo.uvostore.security.TokenVersionService;
 import org.uvo.uvostore.service.BusinessException;
 import org.uvo.uvostore.service.catalog.FileStorageService;
 import org.uvo.uvostore.service.notification.EmailService;
+import org.uvo.uvostore.service.url.StorePublicUrlResolver;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -36,7 +37,7 @@ public class UserServiceImpl implements UserService {
     private final FileStorageService fileStorageService;
     private final TokenVersionService tokenVersionService;
     private final EmailService emailService;
-    private final String frontendUrl;
+    private final StorePublicUrlResolver publicUrls;
     // Más corta que los 30 días de la invitación de cliente (F24): esto entrega acceso al panel, donde se
     // emiten reembolsos y se configuran credenciales de pasarela.
     private final Duration invitationTtl;
@@ -44,7 +45,7 @@ public class UserServiceImpl implements UserService {
     public UserServiceImpl(UserRepository userRepository, RoleRepository roleRepository,
                             PasswordEncoder passwordEncoder, FileStorageService fileStorageService,
                             TokenVersionService tokenVersionService, EmailService emailService,
-                            @Value("${app.frontend-url}") String frontendUrl,
+                            StorePublicUrlResolver publicUrls,
                             @Value("${app.admin-invitation.ttl-days:7}") int invitationTtlDays) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
@@ -52,7 +53,7 @@ public class UserServiceImpl implements UserService {
         this.fileStorageService = fileStorageService;
         this.tokenVersionService = tokenVersionService;
         this.emailService = emailService;
-        this.frontendUrl = frontendUrl;
+        this.publicUrls = publicUrls;
         this.invitationTtl = Duration.ofDays(invitationTtlDays);
     }
 
@@ -136,7 +137,10 @@ public class UserServiceImpl implements UserService {
         return "Hola " + user.getName() + ",\n\n"
                 + "Te dieron acceso al panel de administración de " + store.getName() + ". "
                 + "Elige tu contraseña aquí para entrar:\n\n"
-                + frontendUrl + "/admin/aceptar-invitacion?token=" + user.getInvitationToken() + "\n\n"
+                // PROD-04: el panel de SU tienda. Con la URL global, invitar a un administrador de la
+                // tienda B le mandaba al panel de la tienda A, donde su token no vale nada porque el
+                // endpoint de aceptación resuelve el tenant por el Host.
+                + publicUrls.storefrontUrl(store, "/admin/aceptar-invitacion?token=" + user.getInvitationToken()) + "\n\n"
                 + "El enlace es de un solo uso y caduca en " + invitationTtl.toDays() + " días. "
                 + "Nadie más conoce tu contraseña: la eliges tú.";
     }

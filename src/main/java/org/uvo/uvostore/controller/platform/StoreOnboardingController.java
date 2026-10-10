@@ -38,4 +38,14 @@ public class StoreOnboardingController {
     public StoreOnboardingResponse updateDomain(@PathVariable Long id, @Valid @RequestBody UpdateStoreDomainRequest request) {
         return storeOnboardingService.updateDomain(id, request.domain());
     }
+
+    // PROD-04. El dominio propio de una tienda no se usa en los enlaces que salen hasta que alguien
+    // comprueba que apunta aquí; esto registra esa comprobación. Es operación de plataforma, igual que el
+    // alta, y por eso vive detrás de X-Platform-Key y no del panel del cliente: el cliente no controla
+    // su propio DNS desde aquí.
+    @PutMapping("/{id}/domain/verified")
+    public StoreOnboardingResponse setDomainVerified(@PathVariable Long id,
+                                                      @Valid @RequestBody SetDomainVerifiedRequest request) {
+        return storeOnboardingService.setDomainVerified(id, request.verified());
+    }
 }

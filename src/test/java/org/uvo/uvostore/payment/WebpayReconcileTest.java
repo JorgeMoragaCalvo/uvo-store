@@ -11,6 +11,7 @@ import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.repository.PaymentGatewayConfigRepository;
 import org.uvo.uvostore.security.TenantContext;
+import org.uvo.uvostore.support.TestPublicUrls;
 import org.uvo.uvostore.service.order.OrderStatusService;
 import org.uvo.uvostore.service.payment.WebpayServiceImpl;
 
@@ -44,7 +45,7 @@ class WebpayReconcileTest {
 
     private final WebpayServiceImpl service = new WebpayServiceImpl(
             orderRepository, configRepository, orderStatusService,
-            "597055555535", "api-key", "integration", "http://localhost:5173", 20000) {
+            "597055555535", "api-key", "integration", TestPublicUrls.resolver(), 20000) {
         @Override
         protected WebpayPlus.MallTransaction transaction() {
             return transbank;

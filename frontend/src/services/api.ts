@@ -77,26 +77,20 @@ export const api = {
     getConfig: (): Promise<CheckoutConfig> => client.get('/checkout/config'),
     createOrder: (payload: CheckoutRequestPayload): Promise<OrderConfirmation> => client.post('/checkout', payload),
   },
+  // PROD-04: ninguno de los tres manda URLs de retorno. Las construye el backend desde la tienda de la
+  // orden, que es quien sabe cuál es su dominio público — y aceptarlas del cliente era dejar que quien
+  // llamara eligiera dónde acaba el pagador después de pagar.
   payment: {
-    createCheckoutSession: (
-      orderId: number,
-      successUrl: string,
-      cancelUrl: string,
-    ): Promise<CheckoutSessionResult> => client.post('/create-checkout-session', { orderId, successUrl, cancelUrl }),
+    createCheckoutSession: (orderId: number): Promise<CheckoutSessionResult> =>
+      client.post('/create-checkout-session', { orderId }),
     verify: (sessionId: string): Promise<PaymentVerificationResult> => client.post('/verify-payment', { sessionId }),
   },
   webpay: {
-    create: (orderId: number, returnUrl?: string): Promise<WebpayCreateResult> =>
-      client.post('/webpay/create', { orderId, returnUrl }),
+    create: (orderId: number): Promise<WebpayCreateResult> => client.post('/webpay/create', { orderId }),
   },
   mercadopago: {
-    createPreference: (
-      orderId: number,
-      successUrl?: string,
-      failureUrl?: string,
-      pendingUrl?: string,
-    ): Promise<MercadoPagoPreferenceResult> =>
-      client.post('/mercadopago/create-preference', { orderId, successUrl, failureUrl, pendingUrl }),
+    createPreference: (orderId: number): Promise<MercadoPagoPreferenceResult> =>
+      client.post('/mercadopago/create-preference', { orderId }),
   },
   storeSettings: {
     get: (): Promise<PublicStoreSettings> => client.get('/store-settings'),

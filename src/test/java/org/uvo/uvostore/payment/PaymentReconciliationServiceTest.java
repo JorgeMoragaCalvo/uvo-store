@@ -128,7 +128,7 @@ class PaymentReconciliationServiceTest {
         // Confirmar aquí una transacción que el cliente abandonó le cobraría. La conciliación existe
         // para averiguar qué pasó, no para hacer que pase.
         verify(webpayService, never()).commitTransaction(anyString());
-        verify(webpayService, never()).createTransaction(any(), anyString());
+        verify(webpayService, never()).createTransaction(any());
     }
 
     @Test

@@ -27,7 +27,7 @@ public class PaymentController {
 
     @PostMapping("/create-checkout-session")
     public CheckoutSessionResult createCheckoutSession(@Valid @RequestBody CreateCheckoutSessionRequest request) {
-        return paymentService.createCheckoutSession(request.orderId(), request.successUrl(), request.cancelUrl());
+        return paymentService.createCheckoutSession(request.orderId());
     }
 
     @PostMapping("/verify-payment")

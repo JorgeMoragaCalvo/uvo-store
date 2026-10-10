@@ -10,7 +10,10 @@ import org.uvo.uvostore.entity.order.Order;
 import org.uvo.uvostore.entity.order.OrderItem;
 import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.repository.PaymentGatewayConfigRepository;
+import org.uvo.uvostore.entity.tenant.Store;
+import org.uvo.uvostore.entity.tenant.enums.StoreStatus;
 import org.uvo.uvostore.service.order.OrderStatusService;
+import org.uvo.uvostore.support.TestPublicUrls;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -43,7 +46,11 @@ class MercadoPagoPreferenceTest {
             mock(PaymentGatewayConfigRepository.class),
             mock(OrderStatusService.class),
             mock(MercadoPagoWebhookSignature.class),
-            "http://localhost:5173", 5000, 20000);
+            TestPublicUrls.resolver(), 5000, 20000);
+
+    // PROD-04: la orden tiene que llevar tienda, porque de ella salen las cuatro URLs de la preferencia.
+    private static final Store STORE = Store.builder()
+            .id(1L).name("Tienda de prueba").slug("test").status(StoreStatus.ACTIVE).build();
 
     @Test
     @DisplayName("Con IVA incluido en el precio y un cupón, se cobra el total y no 11.934 pesos de más")
@@ -81,7 +88,7 @@ class MercadoPagoPreferenceTest {
                 item(order, new BigDecimal("10000.00")),
                 item(order, new BigDecimal("10000.00"))));
 
-        PreferenceRequest request = service.buildPreferenceRequest(order, null, null, null, null);
+        PreferenceRequest request = service.buildPreferenceRequest(order);
 
         assertThat(request.getItems())
                 .as("una línea por el total, no ítems + envío + IVA")
@@ -100,12 +107,31 @@ class MercadoPagoPreferenceTest {
         Order order = orderWith(new BigDecimal("10000.00"), BigDecimal.ZERO,
                 new BigDecimal("1900.00"), new BigDecimal("11900.00"));
 
-        assertThat(service.buildPreferenceRequest(order, null, null, null, null).getExternalReference())
+        assertThat(service.buildPreferenceRequest(order).getExternalReference())
                 .isEqualTo(order.getOrderNumber());
     }
 
+    @Test
+    @DisplayName("PROD-04: las cuatro URLs salen de la tienda de la orden")
+    void allFourUrlsComeFromTheOrdersOwnStore() {
+        // La de notificación se armaba desde la petición en curso (scheme/host/puerto), así que tras un
+        // proxy que termina TLS quedaba registrada en MercadoPago una URL del tramo interno — http y con
+        // el puerto del upstream. Las tres de retorno llegaban del cliente sin validar, igual que en
+        // Stripe: un redirect abierto dentro de un flujo de pago.
+        Order order = orderWith(new BigDecimal("10000.00"), BigDecimal.ZERO,
+                new BigDecimal("1900.00"), new BigDecimal("11900.00"));
+
+        PreferenceRequest request = service.buildPreferenceRequest(order);
+
+        assertThat(request.getNotificationUrl()).isEqualTo("http://test.localhost/api/v1/mercadopago/webhook");
+        assertThat(request.getBackUrls().getSuccess())
+                .isEqualTo("http://test.localhost/order-success?order=" + order.getOrderNumber());
+        assertThat(request.getBackUrls().getFailure()).isEqualTo("http://test.localhost/checkout?error=mercadopago");
+        assertThat(request.getBackUrls().getPending()).isEqualTo("http://test.localhost/checkout?pending=1");
+    }
+
     private long chargedAmountOf(Order order) {
-        PreferenceRequest request = service.buildPreferenceRequest(order, null, null, null, null);
+        PreferenceRequest request = service.buildPreferenceRequest(order);
         long charged = 0;
         for (PreferenceItemRequest item : request.getItems()) {
             charged += item.getUnitPrice().setScale(0, RoundingMode.HALF_UP).longValueExact() * item.getQuantity();
@@ -116,6 +142,7 @@ class MercadoPagoPreferenceTest {
     private Order orderWith(BigDecimal subtotal, BigDecimal discountAmount, BigDecimal taxAmount, BigDecimal total) {
         Order order = Order.builder()
                 .id(1L)
+                .store(STORE)
                 .orderNumber("ORD-TEST-1")
                 .customerEmail("cliente@test.local")
                 .subtotal(subtotal)

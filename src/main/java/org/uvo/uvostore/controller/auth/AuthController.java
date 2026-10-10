@@ -22,6 +22,7 @@ import org.uvo.uvostore.security.JwtService;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.security.TokenVersionService;
 import org.uvo.uvostore.service.notification.EmailService;
+import org.uvo.uvostore.service.url.StorePublicUrlResolver;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -44,7 +45,7 @@ public class AuthController {
     private final EmailService emailService;
     private final TokenVersionService tokenVersionService;
     private final AccountAttemptThrottle accountThrottle;
-    private final String frontendUrl;
+    private final StorePublicUrlResolver publicUrls;
     // F24: días y no una hora como el reset de contraseña — el reset lo pide el usuario y lo usa en el
     // momento; la invitación le llega sin haberla pedido, dentro del correo del pedido.
     private final Duration customerInvitationTtl;
@@ -55,7 +56,7 @@ public class AuthController {
     public AuthController(UserRepository userRepository, CustomerRepository customerRepository,
                            PasswordEncoder passwordEncoder, JwtService jwtService, EmailService emailService,
                            TokenVersionService tokenVersionService, AccountAttemptThrottle accountThrottle,
-                           @Value("${app.frontend-url}") String frontendUrl,
+                           StorePublicUrlResolver publicUrls,
                            @Value("${app.customer-invitation.ttl-days:30}") int customerInvitationTtlDays,
                            @Value("${app.admin-invitation.ttl-days:7}") int adminInvitationTtlDays) {
         this.userRepository = userRepository;
@@ -65,7 +66,7 @@ public class AuthController {
         this.emailService = emailService;
         this.tokenVersionService = tokenVersionService;
         this.accountThrottle = accountThrottle;
-        this.frontendUrl = frontendUrl;
+        this.publicUrls = publicUrls;
         this.customerInvitationTtl = Duration.ofDays(customerInvitationTtlDays);
         this.adminInvitationTtl = Duration.ofDays(adminInvitationTtlDays);
     }
@@ -245,13 +246,25 @@ public class AuthController {
             user.setPasswordResetExpiresAt(Instant.now().plus(PASSWORD_RESET_TTL));
             userRepository.save(user);
 
-            String link = frontendUrl + "/admin/reset-password?token=" + token;
-            emailService.send(user.getEmail(), "Recupera tu contraseña",
-                    "Recibimos una solicitud para restablecer tu contraseña.\n\n"
-                            + "Ingresa al siguiente enlace para elegir una nueva (válido por 1 hora):\n" + link
-                            + "\n\nSi no fuiste tú, puedes ignorar este correo.");
+            emailService.send(user.getEmail(), "Recupera tu contraseña", resetPasswordBody(store, token));
         });
         return ResponseEntity.ok().build();
+    }
+
+    /**
+     * PROD-04. El enlace sale del origen de ESTA tienda. Antes era la URL global de plataforma, así que el
+     * administrador de cualquier tienda recibía un enlace al panel de otra — y el token, que sí es suyo, no
+     * habría servido allí: {@code adminResetPassword} resuelve el tenant por el {@code Host}.
+     *
+     * <p>Visible en el paquete para poder afirmar sobre el cuerpo sin enviar nada, igual que
+     * {@code UserServiceImpl.invitationBody} y {@code CustomerInvitationEmailListener.body}: en los tests no
+     * hay SMTP y {@code EmailServiceImpl} registra y omite el envío.
+     */
+    String resetPasswordBody(Store store, String token) {
+        String link = publicUrls.storefrontUrl(store, "/admin/reset-password?token=" + token);
+        return "Recibimos una solicitud para restablecer tu contraseña.\n\n"
+                + "Ingresa al siguiente enlace para elegir una nueva (válido por 1 hora):\n" + link
+                + "\n\nSi no fuiste tú, puedes ignorar este correo.";
     }
 
     @PostMapping("/api/admin/auth/reset-password")

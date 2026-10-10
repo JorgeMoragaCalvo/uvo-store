@@ -77,17 +77,33 @@ export default function NewStore() {
             </div>
             {created.domain && (
               <div>
-                <span className="text-muted-foreground">Dominio propio (una vez que el DNS del cliente apunte a la plataforma): </span>
+                <span className="text-muted-foreground">Dominio propio: </span>
                 <span className="font-medium">{created.domain}</span>
+                {!created.domainVerifiedAt && (
+                  <span className="text-muted-foreground"> — sin verificar todavía</span>
+                )}
               </div>
             )}
             <div>
               <span className="text-muted-foreground">Usuario: </span>
               <span className="font-medium">{created.adminEmail}</span>
             </div>
-            <p className="text-xs text-muted-foreground">
-              El cliente entra a /admin/login en ese subdominio o dominio para configurar su tienda.
-            </p>
+            {/* PROD-04: las direcciones concretas, compuestas por el backend. Antes había que armarlas
+                de memoria a partir del nick. */}
+            <div>
+              <span className="text-muted-foreground">Tienda: </span>
+              <span className="font-medium break-all">{created.storefrontUrl}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Panel: </span>
+              <span className="font-medium break-all">{created.adminUrl}</span>
+            </div>
+            {created.domain && !created.domainVerifiedAt && (
+              <p className="text-xs text-muted-foreground">
+                Mientras el dominio propio no esté verificado, estas direcciones y los enlaces de los
+                correos usan el subdominio de la plataforma, que funciona siempre.
+              </p>
+            )}
             <Button className="mt-2" onClick={() => setCreated(null)}>
               Crear otra tienda
             </Button>

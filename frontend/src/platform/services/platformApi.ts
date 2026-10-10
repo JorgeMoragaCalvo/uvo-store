@@ -16,6 +16,12 @@ export interface StoreOnboardingResponse {
   domain: string | null
   adminUserId: number
   adminEmail: string
+  // PROD-04. `domainVerifiedAt` en null significa que el dominio propio está configurado pero todavía no
+  // comprobado, y por tanto que los enlaces que salen (correos, retornos de pasarela) usan el subdominio.
+  // Las dos URLs las compone el backend: son las direcciones que hay que entregarle al cliente.
+  domainVerifiedAt: string | null
+  storefrontUrl: string
+  adminUrl: string
 }
 
 const client = axios.create({

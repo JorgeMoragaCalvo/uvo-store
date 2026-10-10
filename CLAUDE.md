@@ -24,6 +24,13 @@ throughout this file and in the code comments. The hardening they produced is th
 Architecture section documents, so prefer reading *why* a constraint exists there over inferring it
 from the code.
 
+**The active roadmap is `PLAN_PRODUCCION.md`** — what still has to be true before this runs for real
+customers, as `PROD-01`…`PROD-30` with acceptance criteria. Read §5.1 (launch blockers) and §13
+(phases) before starting anything; the dependency chain is `01 → 02/03/08 → 04/05/09/10 →
+11/12/14 → 16`. Most of the remaining P0s are infrastructure and evidence rather than code: no
+deployment infrastructure exists yet (see "Known gotchas"), and the payment gateways have never been
+exercised against real sandbox credentials.
+
 ## Commands
 
 ```
@@ -48,6 +55,40 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
 
 - `TenantContext` (ThreadLocal) holds the current request's `Store`. `TenantResolutionFilter` populates it from the `Host` header: exact match on `Store.domain` first (a client's own custom domain), then a `<slug>.<anything>` subdomain match as the fallback every store keeps working under regardless (e.g. `demo.localhost:8080` in dev). `JwtAuthenticationFilter` cross-checks the token's `sid` claim against the resolved tenant — a mismatch clears the security context (and so answers **401**, F19), not a silent cross-tenant leak.
 - New stores are created via `/api/platform/**` (`PlatformApiKeyAuthFilter`, shared secret in the `X-Platform-Key` header) — an **operator-only** tool (`/plataforma/nueva-tienda` in the frontend), not public self-service signup. The intended flow: a client hands the operator team a nick/domain/admin credentials, the operator creates the store, the client then self-manages everything from their own admin panel.
+- **Anything the backend builds that points at a store goes through `StorePublicUrlResolver`**
+  (`service/url/`, PROD-04) — the inverse of `StoreHostResolver`: that one turns a hostname into a
+  `Store`, this one turns a `Store` into its public origin. It **takes the store as an argument and
+  never reads `TenantContext` or the request**, which is what lets it work in `AFTER_COMMIT`
+  listeners and scheduled jobs (they take the store from the order or the user). Three properties
+  configure it: `app.public-url.platform-domain` plus the `app.public-url.storefront` /
+  `app.public-url.api` templates, where `{host}` is substituted. Two origins because in dev the
+  storefront is Vite on 5173 and the API is the backend on 8080; in production both are the same
+  https origin behind the proxy. Invalid templates **fail startup** (no `{host}`, not absolute, or
+  carrying a path), same policy as `app.reports.timezone`.
+  It replaced `app.frontend-url`, a **single global URL injected in seven classes** — the three
+  emails with links (admin password reset, admin invitation, customer activation), Webpay's
+  post-return redirect, and the Stripe/MercadoPago/Webpay fallbacks. Every store's buyer landed on
+  one configured host, and Webpay's case wasn't even overridable. **The property is deleted, not
+  deprecated**, so a forgotten `@Value("${app.frontend-url}")` fails the context instead of quietly
+  resolving to the wrong tenant. Two related changes went with it:
+  - `return_url` (Webpay) and `notification_url` (MercadoPago) used to be built from the live
+    request's `getScheme()`/`getServerName()`/`getServerPort()`, so behind a TLS-terminating proxy
+    the gateway got a URL describing the internal hop (`http`, upstream port). **Don't "fix" that
+    class of problem with `server.forward-headers-strategy`** — see the `ClientIpResolver` note
+    under rate limiting. `LocalFileStorageService.publicUrl` still builds image URLs this way and
+    is the one known remaining case (deferred to PROD-05/09).
+  - **The SPA no longer sends return URLs at all.** `successUrl`/`cancelUrl`/`failureUrl`/
+    `pendingUrl`/`returnUrl` are gone from the three `*Request` records: they were passed to Stripe
+    and MercadoPago unvalidated, which is an open redirect inside a real payment flow. An old SPA
+    build that still sends them keeps working — Jackson drops unknown properties
+    (`url/LegacyReturnUrlFieldsTest` pins that, because frontend and backend deploy separately).
+- **A custom domain is only used in outgoing links once it's verified** (`stores.domain_verified_at`,
+  V23). The asymmetry is deliberate: **inbound** resolution accepts the domain from the moment it's
+  written (otherwise you could never test it before marking it), **outbound** link building requires
+  the verification, because an email linking to a domain whose DNS isn't pointed here yet is a dead
+  email and there's no resend screen. `PUT /api/platform/stores/{id}/domain/verified` records the
+  operator's check — **it does not probe DNS**; automating that waits on PROD-03. Changing the
+  domain clears the flag, so a new domain never inherits it.
 - The frontend computes every API client's `baseURL` **at runtime** from `window.location.origin` (`frontend/src/services/api.ts`, `admin/services/adminApi.ts`, `platform/services/platformApi.ts`) — not from a build-time env var — so one deployed frontend build serves any tenant. In dev, Vite's own proxy (`vite.config.ts`) forwards `/api/*` to `VITE_DEV_PROXY_TARGET` (`frontend/.env`, default `http://demo.localhost:8080`) so the browser still sees same-origin requests, matching production. In production this assumes frontend static assets and the API are served from the same origin (a reverse proxy) — that infrastructure doesn't exist yet, see "Known gotchas".
 
 ## Local environment
@@ -185,7 +226,7 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
   Security 7 (`AbstractValidatingPasswordEncoder.encode` returns null), so what used to flag a missing
   password was only the column's NOT NULL, as a 500. With V22 that net is gone — the explicit check in
   `createUser` is what now stops a silent 200 creating an admin nobody can ever log into.
-  **The landing page does not exist yet.** The email links to `/admin/aceptar-invitacion?token=…` and
+  **The landing page does not exist yet** (that's PROD-06). The email links to `/admin/aceptar-invitacion?token=…` and
   `router.tsx` has no such route — the invited admin gets a 404, and the only way to finish the flow today
   is to POST the token and password by hand. The backend contract, the panel switch and the email are
   done; the one screen that consumes them is not. Same for the customer half (`/cuenta/activar`, F24),
@@ -253,11 +294,12 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
 Most of what follows explains *why* the code is the way it is by citing the finding that forced it.
 There have been **three** review rounds, and their IDs are not interchangeable:
 
-| labels you'll see in code | round | document | status |
-|---|---|---|---|
-| `C1`–`C5`, `A1`–`A8`, `M1`–`M10`, `B5`–`B8`, `R1`, `G1`–`G6` (no hyphen) | first robustness audit plus its annex — `R1` async/mail executor, `G1`/`G2` scheduled jobs, `G4` refunds, `G5` store status | **not in this repo**; `docs/analisis-critico-2026-09.md:7` lists them as already-existing | closed |
-| `F01`–`F24` | independent audit, numbered straight through (severity only in its table) | `docs/auditoria-independiente-2026-09.md` | **closed** |
-| `C-1`, `A-1`, `M-1`… (**hyphenated**) | `docs/analisis-critico-2026-09.md`, a separate review with its own numbering | that document | — |
+| labels you'll see in code                                                | round                                                                                                                       | document                                                                                  | status      |
+|--------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------|-------------|
+| `C1`–`C5`, `A1`–`A8`, `M1`–`M10`, `B5`–`B8`, `R1`, `G1`–`G6` (no hyphen) | first robustness audit plus its annex — `R1` async/mail executor, `G1`/`G2` scheduled jobs, `G4` refunds, `G5` store status | **not in this repo**; `docs/analisis-critico-2026-09.md:7` lists them as already-existing | closed      |
+| `F01`–`F24`                                                              | independent audit, numbered straight through (severity only in its table)                                                   | `docs/auditoria-independiente-2026-09.md`                                                 | **closed**  |
+| `PROD-01`–`PROD-30`                                                      | **not an audit** — the production readiness backlog, P0/P1/P2                                                               | `PLAN_PRODUCCION.md` §5                                                                   | in progress |
+| `C-1`, `A-1`, `M-1`… (**hyphenated**)                                    | `docs/analisis-critico-2026-09.md`, a separate review with its own numbering                                                | that document                                                                             | —           |
 
 **The hyphenated IDs do not map onto the code labels.** `A-1` in `analisis-critico` is the rate
 limiter; `A1` in the code is admin permissions. No comment or line in this file uses the hyphenated
@@ -452,15 +494,15 @@ fetch join over a collection with pagination makes Hibernate page in memory. `@O
 is the other trap — it can't be proxied, so it costs one SELECT per row no matter what `fetch` says.
 `ProductListingQueryCountTest` fails if any of this is undone.
 
-**Database**: PostgreSQL via Flyway, schema in `src/main/resources/db/migration/` — **22 migrations,
-currently up to `V22__user_invitation_password.sql`**, well past the original catalog/settings ones.
+**Database**: PostgreSQL via Flyway, schema in `src/main/resources/db/migration/` — **23 migrations,
+currently up to `V23__store_domain_verified.sql`**, well past the original catalog/settings ones.
 Everything from V8 on is hardening or new capability rather than the original port: V8 stores, V11
 store domains, V12 password reset, V13 stock/coupon integrity, V14 token versions, V15 the
 permission catalogue, V16 the listing indexes, V17 TIMESTAMPTZ + the enum CHECK constraints, V18
 store status, V19 order refunds, V20 `order_items.stock_applied`, V21 refund intent, V22 nullable
-`users.password` (admin invitations). `spring.jpa.hibernate.ddl-auto=validate`, so any entity change
-must be paired with a new Flyway migration — **never edit an already-applied one**, add the next
-number (`V23__...sql`).
+`users.password` (admin invitations), V23 `stores.domain_verified_at` (PROD-04).
+`spring.jpa.hibernate.ddl-auto=validate`, so any entity change must be paired with a new Flyway
+migration — **never edit an already-applied one**, add the next number (`V24__...sql`).
 
 **Enum columns** (B6): every column that stores an enum name carries a `CHECK` listing its values
 (V17). Adding a constant to an enum therefore needs a migration too — otherwise the new value is
@@ -596,7 +638,7 @@ login (`/admin/login`) is separate and fully functional.
     Spring 7 now rejects at startup — both need
     `@Transactional(propagation = Propagation.REQUIRES_NEW)`. If you add another `AFTER_COMMIT`
     listener that also needs a transaction, use the same pattern.
-- **Testing**: **414 backend `@Test` methods across 75 classes** (JUnit + `IntegrationTestSupport`,
+- **Testing**: **441 backend `@Test` methods across 80 classes** (JUnit + `IntegrationTestSupport`,
   one Spring-managed transaction per test, auto-rolled-back — `AFTER_COMMIT` listeners never fire
   under this setup, which is intentional) and **125 frontend tests across 27 files** (Vitest +
   React Testing Library, `npm run test`), both wired into CI (`.github/workflows/ci.yml`) and the
@@ -616,6 +658,13 @@ login (`/admin/login`) is separate and fully functional.
     `AdminInvitationTest` all query the row. When a test needs to age a timestamp the service
     itself just wrote, it does so with a native `UPDATE` — and **`flush()` before `clear()`**, or
     `clear()` discards the endpoint's own pending writes and the row reads as if nothing happened.
+- **`./mvnw test-compile` without `clean` can report BUILD SUCCESS over stale classes.** After a
+  signature change in `src/main`, the incremental compiler happily left the old `target/test-classes`
+  in place and said nothing; `./mvnw -o clean test-compile` then reported 13 real errors. When you've
+  changed a method signature or a constructor, **don't trust an incremental green** — use `clean`.
+- **`frontend/src/pages/Checkout.test.tsx` can time out (~15 s) in a loaded full-suite run** and
+  passes on its own. It's the heaviest test file in the suite; a single failure there with a
+  duration near the timeout is that, not a regression — re-run before chasing it.
 - **`npx tsc --noEmit` in `frontend/` passes unconditionally and proves nothing.** `tsconfig.json`
   has `"files": []` and only `references`, so `--noEmit` compiles zero files and always exits 0 —
   it will happily stay silent on a type error that breaks the build. **The real check is

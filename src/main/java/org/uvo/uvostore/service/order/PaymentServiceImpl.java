@@ -21,6 +21,7 @@ import org.uvo.uvostore.entity.order.enums.PaymentStatus;
 import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.repository.SettingRepository;
 import org.uvo.uvostore.security.TenantContext;
+import org.uvo.uvostore.service.url.StorePublicUrlResolver;
 
 import java.util.NoSuchElementException;
 import java.util.Optional;
@@ -41,7 +42,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final String fallbackSecretKey;
     private final String fallbackWebhookSecret;
     private final String defaultCurrency;
-    private final String frontendUrl;
+    private final StorePublicUrlResolver publicUrls;
     private final int gatewayConnectTimeoutMs;
     private final int gatewayReadTimeoutMs;
 
@@ -52,7 +53,7 @@ public class PaymentServiceImpl implements PaymentService {
             @Value("${stripe.secret-key}") String fallbackSecretKey,
             @Value("${stripe.webhook-secret}") String fallbackWebhookSecret,
             @Value("${stripe.default-currency}") String defaultCurrency,
-            @Value("${app.frontend-url}") String frontendUrl,
+            StorePublicUrlResolver publicUrls,
             @Value("${app.gateway.connect-timeout-ms:5000}") int gatewayConnectTimeoutMs,
             @Value("${app.gateway.read-timeout-ms:20000}") int gatewayReadTimeoutMs) {
         this.gatewayConnectTimeoutMs = gatewayConnectTimeoutMs;
@@ -63,12 +64,12 @@ public class PaymentServiceImpl implements PaymentService {
         this.fallbackSecretKey = fallbackSecretKey;
         this.fallbackWebhookSecret = fallbackWebhookSecret;
         this.defaultCurrency = defaultCurrency;
-        this.frontendUrl = frontendUrl;
+        this.publicUrls = publicUrls;
     }
 
     @Override
     @Transactional
-    public CheckoutSessionResult createCheckoutSession(Long orderId, String successUrl, String cancelUrl) {
+    public CheckoutSessionResult createCheckoutSession(Long orderId) {
         Order order = orderRepository.findById(orderId)
                 .filter(o -> o.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("Order " + orderId + " not found"));
@@ -77,7 +78,7 @@ public class PaymentServiceImpl implements PaymentService {
             throw new BusinessException("Esta orden ya fue procesada");
         }
 
-        SessionCreateParams params = buildSessionParams(order, successUrl, cancelUrl);
+        SessionCreateParams params = buildSessionParams(order);
 
         try {
             Session session = Session.create(params, requestOptions());
@@ -91,7 +92,7 @@ public class PaymentServiceImpl implements PaymentService {
 
     // Package-visible so tests can assert the built params (line items, total) without making a
     // real Stripe API call.
-    SessionCreateParams buildSessionParams(Order order, String successUrl, String cancelUrl) {
+    SessionCreateParams buildSessionParams(Order order) {
         // F17: `unit_amount` va en la unidad mínima de la divisa, y abajo se envía el total tal cual.
         // Eso solo es correcto para una divisa sin fracción: con `currency = usd` los mismos 11888
         // habrían cobrado 118,88 dólares, y stripeAmount() más abajo compara 11888 contra 11888 y lo
@@ -119,8 +120,14 @@ public class PaymentServiceImpl implements PaymentService {
         return SessionCreateParams.builder()
                 .addPaymentMethodType(SessionCreateParams.PaymentMethodType.CARD)
                 .setMode(SessionCreateParams.Mode.PAYMENT)
-                .setSuccessUrl(successUrl != null ? successUrl : frontendUrl + "/order/success?session_id={CHECKOUT_SESSION_ID}")
-                .setCancelUrl(cancelUrl != null ? cancelUrl : frontendUrl + "/checkout?canceled=1")
+                // PROD-04. Las dos salen del storefront de la tienda de la orden y ya no se reciben del
+                // cliente. Lo que había era un redirect abierto en un flujo de pago: un POST a
+                // /api/v1/create-checkout-session con successUrl de otro dominio producía una página de
+                // pago real de Stripe que, tras cobrar, dejaba al pagador donde dijera quien llamó. Y el
+                // respaldo tampoco servía: "/order/success" no es ninguna ruta de la SPA, que tiene
+                // "/order-success".
+                .setSuccessUrl(publicUrls.storefrontUrl(order.getStore(), "/order-success?session_id={CHECKOUT_SESSION_ID}"))
+                .setCancelUrl(publicUrls.storefrontUrl(order.getStore(), "/checkout?canceled=1"))
                 .setClientReferenceId(order.getOrderNumber())
                 .putMetadata("order_id", String.valueOf(order.getId()))
                 .putMetadata("order_number", order.getOrderNumber())
