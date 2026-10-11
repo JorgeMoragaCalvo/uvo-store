@@ -226,14 +226,40 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
   Security 7 (`AbstractValidatingPasswordEncoder.encode` returns null), so what used to flag a missing
   password was only the column's NOT NULL, as a 500. With V22 that net is gone — the explicit check in
   `createUser` is what now stops a silent 200 creating an admin nobody can ever log into.
-  **The landing page does not exist yet** (that's PROD-06). The email links to `/admin/aceptar-invitacion?token=…` and
-  `router.tsx` has no such route — the invited admin gets a 404, and the only way to finish the flow today
-  is to POST the token and password by hand. The backend contract, the panel switch and the email are
-  done; the one screen that consumes them is not. Same for the customer half (`/cuenta/activar`, F24),
-  which has the additional problem that there's no storefront account UI to land in at all.
-  Also still missing: **resending an expired invitation from the panel** — if the TTL runs out, the only
-  way back is to delete the user and create them again — and customer password recovery (see the F24
-  bullet below).
+  **PROD-06 closed the rest of the loop.** Three things it added, and one hole it found:
+  - **The landing page** (`admin/pages/AcceptInvitation.tsx`, route `/admin/aceptar-invitacion`, public
+    and outside `AdminLayout` like the other three). Until it existed the email linked to a 404 and the
+    only way to finish was POSTing the token by hand. On success it logs straight into the panel with the
+    permissions the endpoint returns, rather than bouncing to the login: the invitee just proved mailbox
+    control and chose the password, so retyping it protects nothing. **The two bad endings say different
+    things and neither clears the typed password** — the server deliberately can't tell an invalid token
+    from an expired, used or deactivated one, so that branch says "ask for a resend", while a failed
+    request (no `status` on the rejection — the `adminApi` interceptor spreads the `ApiError` body, which
+    carries one) says the connection failed and keeps the form intact.
+  - **Resend from the panel**, `POST /api/admin/users/{id}/resend-invitation` (`users.manage`, same
+    permission as creating — it's the same capability). It **issues a new token, so the previous link
+    dies**; the frequency limit is a minimum interval measured against `invitation_sent_at`
+    (`app.admin-invitation.resend-cooldown-minutes`, 5) rather than a Caffeine window, so it's per
+    invitee, survives a restart, and the message can say how many minutes are left. Resending an
+    **expired** invitation is the main use case, not an edge one: before this the only way back was
+    deleting the user and recreating them, which changes their id and loses their notes. `UserDto` grew
+    `invitationPending` and `invitationExpiresAt` (never the token) so the list can show the state.
+  - **`AdminInvitationPolicy`** now owns the TTL and the cooldown. `ttl-days` was already being read in
+    two places and the panel needed a third — three separate reads of one property is how the email
+    promising seven days, the endpoint accepting five and the screen drawing something else come about.
+  - **The hole**: `adminAcceptInvitation` didn't check `active`, and neither does
+    `JwtAuthenticationFilter` — the login is the only place that ever did. So a **deactivated** admin
+    with a pending invitation accepted it and walked away with a valid session; the `tokenVersion` bump
+    from deactivating doesn't help, because acceptance mints a fresh token at the current version. One
+    `.filter(User::isActive)` closes it, checked there rather than at the three sites that deactivate.
+    The token deliberately survives, so reactivating someone revives their invitation.
+  Also aligned: **a password reset now consumes a pending invitation**. An invitee who never accepted can
+  set a password through "forgot password" — both paths prove the same mailbox, so it's not a shortcut —
+  but it used to leave a live invitation link for days afterwards and `invitation_accepted_at` null, which
+  made the one column that answers "did they ever set their own password?" lie.
+  Still missing in this family: the **customer** half (`/cuenta/activar`, F24) has no screen either, and
+  can't until the storefront grows an account surface (PROD-07), plus customer password recovery (see the
+  F24 bullet below).
 - **A guest buyer can turn that email into an account** (F24). The checkout already generated an
   `invitationToken`, a timestamp and `INVITED` (`markInvitedIfGuest`) — and that was all: no email went
   out and no endpoint accepted it, so the email was **burned** in that store (register rejects it because
@@ -406,7 +432,7 @@ never silently off; a store with no secret answers 401 like any bad signature ra
 it isn't configured. The endpoint is also rate-limited (`app.rate-limit.webhook`).
 
 **Every /api/admin endpoint is permission-checked** (A1). `@EnableMethodSecurity` was already on but
-unused; now all **109 endpoints across 19 controllers** carry `@PreAuthorize("hasAuthority('...')")` —
+unused; now all **110 endpoints across 19 controllers** carry `@PreAuthorize("hasAuthority('...')")` —
 `GET` needs `dominio.view`, everything else `dominio.manage`. The catalogue is 23 permissions seeded
 globally by `V15` (`Permission` has no `store_id`; `Role` does, `UNIQUE(store_id, name, guard_name)`).
 `AuthController.adminAuthorities()` already put permission names in the JWT, so the annotations
@@ -557,7 +583,9 @@ consuming this API.
   (`app.admin-invitation.ttl-days` 7, `app.customer-invitation.ttl-days` 30) and different origins:
   the admin's is created by `UserServiceImpl.createUser`, the customer's by a guest checkout. Both
   are IP-rate-limited; neither is account-throttled, because what arrives is a token, not an email
-  to key on. See the invitation bullets above.
+  to key on. The admin one also requires the account to be **active** (PROD-06) and is the only one
+  with a screen (`/admin/aceptar-invitacion`); resending is `POST /api/admin/users/{id}/resend-invitation`
+  (`users.manage`). See the invitation bullets above.
 - `/api/admin/**` (`ROLE_ADMIN`) and `/api/customer/**` (`ROLE_CUSTOMER`) are guarded; `/api/v1/**` is fully public.
 - `/api/platform/**` (store onboarding) uses `X-Platform-Key`, not JWT — see "Multi-tenancy".
 - POS integration (`/api/sync/**`, `/api/webhooks/pos/**`) uses its own HMAC/API-key filters, separate from JWT.
@@ -638,9 +666,9 @@ login (`/admin/login`) is separate and fully functional.
     Spring 7 now rejects at startup — both need
     `@Transactional(propagation = Propagation.REQUIRES_NEW)`. If you add another `AFTER_COMMIT`
     listener that also needs a transaction, use the same pattern.
-- **Testing**: **441 backend `@Test` methods across 80 classes** (JUnit + `IntegrationTestSupport`,
+- **Testing**: **452 backend `@Test` methods across 81 classes** (JUnit + `IntegrationTestSupport`,
   one Spring-managed transaction per test, auto-rolled-back — `AFTER_COMMIT` listeners never fire
-  under this setup, which is intentional) and **125 frontend tests across 27 files** (Vitest +
+  under this setup, which is intentional) and **135 frontend tests across 29 files** (Vitest +
   React Testing Library, `npm run test`), both wired into CI (`.github/workflows/ci.yml`) and the
   release workflow (`.github/workflows/release.yml`, triggered by pushing a `vX.Y.Z` tag — builds
   artifacts and publishes a GitHub Release with auto-generated notes). Most of that growth is the

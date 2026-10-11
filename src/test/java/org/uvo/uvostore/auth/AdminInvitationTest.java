@@ -186,6 +186,90 @@ class AdminInvitationTest extends IntegrationTestSupport {
         mockMvc.perform(login(f.store, email, "clave-directa-123")).andExpect(status().isOk());
     }
 
+    @Test
+    @DisplayName("PROD-06: una cuenta desactivada no entra por su invitación pendiente")
+    void aDeactivatedAccountCannotAcceptItsInvitation() throws Exception {
+        Fixture f = fixture("inv-admin-inactivo");
+        User invited = invite(f);
+
+        // Era un agujero real: este endpoint no miraba `active` y JwtAuthenticationFilter tampoco —el
+        // login es el único sitio que lo comprobaba—, así que un administrador desactivado aceptaba y se
+        // iba con una sesión válida. El bump de tokenVersion de la desactivación no ayuda: la aceptación
+        // emite un token nuevo con la versión ya actualizada.
+        mockMvc.perform(post("/api/admin/users/" + invited.getId() + "/toggle-status")
+                        .header("Host", hostHeader(f.store))
+                        .header("Authorization", "Bearer " + f.token))
+                .andExpect(status().isOk());
+        entityManager.flush();
+        entityManager.clear();
+
+        mockMvc.perform(accept(f.store, invited.getInvitationToken(), CHOSEN_PASSWORD))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("La invitación no es válida o ha expirado"));
+
+        // Y sigue sin poder entrar: no se le fijó contraseña de camino.
+        mockMvc.perform(login(f.store, invited.getEmail(), CHOSEN_PASSWORD)).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("PROD-06: los permisos de la sesión son los del momento de aceptar, no los de invitar")
+    void thePermissionsAreTheCurrentOnesNotThoseFromTheInvitation() throws Exception {
+        Fixture f = fixture("inv-admin-rol");
+        User invited = invite(f);
+
+        // Se le quitan los roles entre la invitación y la aceptación. Si la sesión devolviera permisos
+        // congelados del alta, el invitado entraría con acceso que ya se le había retirado.
+        //
+        // Se cambia por el repositorio y no por el endpoint a propósito: lo que se quiere acreditar es que
+        // `adminAcceptInvitation` lee los roles al aceptar, no cómo se editan — y pasar por el formulario
+        // metería su validación de multipart en un test que no va de eso.
+        invited.setRoles(new java.util.HashSet<>());
+        userRepository.save(invited);
+        entityManager.flush();
+        entityManager.clear();
+
+        mockMvc.perform(accept(f.store, invited.getInvitationToken(), CHOSEN_PASSWORD))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.permissions").isEmpty());
+    }
+
+    @Test
+    @DisplayName("PROD-06: fijar contraseña por recuperación consume la invitación pendiente")
+    void aPasswordResetConsumesThePendingInvitation() throws Exception {
+        Fixture f = fixture("inv-admin-reset");
+        User invited = invite(f);
+        String invitationToken = invited.getInvitationToken();
+
+        // Un invitado que nunca aceptó puede llegar por aquí: las dos vías prueban control del mismo
+        // buzón, así que no es un atajo. Lo que no debe quedar es un enlace de invitación vivo durante
+        // días después de que su dueño ya entró.
+        mockMvc.perform(post("/api/admin/auth/forgot-password")
+                        .header("Host", hostHeader(f.store))
+                        .contentType("application/json")
+                        .content("{\"email\":\"" + invited.getEmail() + "\"}"))
+                .andExpect(status().isOk());
+        entityManager.flush();
+        entityManager.clear();
+        String resetToken = userRepository.findById(invited.getId()).orElseThrow().getPasswordResetToken();
+
+        mockMvc.perform(post("/api/admin/auth/reset-password")
+                        .header("Host", hostHeader(f.store))
+                        .contentType("application/json")
+                        .content("{\"token\":\"" + resetToken + "\",\"password\":\"" + CHOSEN_PASSWORD + "\"}"))
+                .andExpect(status().isOk());
+        entityManager.flush();
+        entityManager.clear();
+
+        User active = userRepository.findById(invited.getId()).orElseThrow();
+        assertThat(active.getInvitationToken()).as("el enlace de la invitación ya no sirve").isNull();
+        // La columna que responde "¿llegó a poner una clave suya?" no debe mentir por haber llegado por
+        // el otro camino.
+        assertThat(active.getInvitationAcceptedAt()).isNotNull();
+
+        mockMvc.perform(accept(f.store, invitationToken, "otra-clave-valida-123"))
+                .andExpect(status().isBadRequest());
+    }
+
     // --- fixtures ----------------------------------------------------------------------------------
 
     private record Fixture(Store store, String token, Long roleId) {

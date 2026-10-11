@@ -9,6 +9,7 @@ interface AdminUsersState {
   fetchList: (params: UserListParams) => Promise<void>
   remove: (id: number) => Promise<void>
   toggleStatus: (id: number) => Promise<void>
+  resendInvitation: (id: number) => Promise<void>
 }
 
 export const useAdminUsersStore = create<AdminUsersState>((set, get) => ({
@@ -33,6 +34,15 @@ export const useAdminUsersStore = create<AdminUsersState>((set, get) => ({
   },
   toggleStatus: async (id) => {
     const updated = await adminApi.users.toggleStatus(id)
+    const data = get().data
+    if (data) {
+      set({ data: { ...data, content: data.content.map((user) => (user.id === id ? updated : user)) } })
+    }
+  },
+  // PROD-06: se guarda la fila que devuelve el servidor porque trae el `invitationSentAt` nuevo, y de él
+  // depende cuándo se puede volver a reenviar.
+  resendInvitation: async (id) => {
+    const updated = await adminApi.users.resendInvitation(id)
     const data = get().data
     if (data) {
       set({ data: { ...data, content: data.content.map((user) => (user.id === id ? updated : user)) } })

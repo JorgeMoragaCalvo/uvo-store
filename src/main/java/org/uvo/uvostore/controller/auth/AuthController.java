@@ -22,6 +22,7 @@ import org.uvo.uvostore.security.JwtService;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.security.TokenVersionService;
 import org.uvo.uvostore.service.notification.EmailService;
+import org.uvo.uvostore.service.security.AdminInvitationPolicy;
 import org.uvo.uvostore.service.url.StorePublicUrlResolver;
 
 import java.time.Duration;
@@ -49,16 +50,16 @@ public class AuthController {
     // F24: días y no una hora como el reset de contraseña — el reset lo pide el usuario y lo usa en el
     // momento; la invitación le llega sin haberla pedido, dentro del correo del pedido.
     private final Duration customerInvitationTtl;
-    // Más corta que la de cliente: esta entrega acceso al panel, donde se emiten reembolsos y se
-    // configuran credenciales de pasarela.
-    private final Duration adminInvitationTtl;
+    // PROD-06: la vigencia de la invitación de administrador ya no se lee aquí. La decide
+    // AdminInvitationPolicy, que es también quien la escribe en el correo y quien acota el reenvío — tres
+    // lecturas separadas de la misma propiedad es como acaban discrepando.
+    private final AdminInvitationPolicy adminInvitationPolicy;
 
     public AuthController(UserRepository userRepository, CustomerRepository customerRepository,
                            PasswordEncoder passwordEncoder, JwtService jwtService, EmailService emailService,
                            TokenVersionService tokenVersionService, AccountAttemptThrottle accountThrottle,
-                           StorePublicUrlResolver publicUrls,
-                           @Value("${app.customer-invitation.ttl-days:30}") int customerInvitationTtlDays,
-                           @Value("${app.admin-invitation.ttl-days:7}") int adminInvitationTtlDays) {
+                           StorePublicUrlResolver publicUrls, AdminInvitationPolicy adminInvitationPolicy,
+                           @Value("${app.customer-invitation.ttl-days:30}") int customerInvitationTtlDays) {
         this.userRepository = userRepository;
         this.customerRepository = customerRepository;
         this.passwordEncoder = passwordEncoder;
@@ -68,7 +69,7 @@ public class AuthController {
         this.accountThrottle = accountThrottle;
         this.publicUrls = publicUrls;
         this.customerInvitationTtl = Duration.ofDays(customerInvitationTtlDays);
-        this.adminInvitationTtl = Duration.ofDays(adminInvitationTtlDays);
+        this.adminInvitationPolicy = adminInvitationPolicy;
     }
 
     @PostMapping("/api/admin/auth/login")
@@ -207,10 +208,20 @@ public class AuthController {
         Store store = TenantContext.requireCurrent();
         User user = userRepository.findByInvitationToken(request.token())
                 .filter(candidate -> candidate.getStore().getId().equals(store.getId()))
-                .filter(candidate -> candidate.getInvitationSentAt() != null
-                        && candidate.getInvitationSentAt().plus(adminInvitationTtl).isAfter(Instant.now()))
-                // Inexistente, caducado, de otra tienda o ya usado dicen lo mismo: a quien prueba tokens no
-                // se le cuenta en qué se equivocó.
+                .filter(adminInvitationPolicy::isWithinTtl)
+                // PROD-06. Una cuenta desactivada no se activa por aquí. Era un agujero real: este endpoint
+                // no miraba `active` y JwtAuthenticationFilter tampoco —el login es el único sitio que lo
+                // comprobaba—, así que un administrador desactivado con invitación pendiente la aceptaba y
+                // se iba con una sesión válida. El bump de tokenVersion que hace la desactivación no
+                // ayudaba: la aceptación emite un token nuevo con la versión ya actualizada.
+                //
+                // Se comprueba AQUÍ y no en los tres sitios que desactivan (toggleActive, deactivateUser,
+                // y el alta con active=false) porque es un punto en vez de tres. Y el token sobrevive a
+                // propósito: reactivar a alguien revive su invitación sin tener que reenviarla, que es lo
+                // que se quiere cuando la desactivación fue temporal.
+                .filter(User::isActive)
+                // Inexistente, caducado, de otra tienda, ya usado o de una cuenta desactivada dicen lo
+                // mismo: a quien prueba tokens no se le cuenta en qué se equivocó.
                 .orElseThrow(() -> new BusinessException("La invitación no es válida o ha expirado"));
 
         user.setPassword(passwordEncoder.encode(request.password()));
@@ -278,6 +289,17 @@ public class AuthController {
         user.setPassword(passwordEncoder.encode(request.password()));
         user.setPasswordResetToken(null);
         user.setPasswordResetExpiresAt(null);
+        // PROD-06. Si la cuenta tenía una invitación pendiente, esto la cierra: un invitado que nunca
+        // aceptó puede llegar hasta aquí por "olvidé mi contraseña" —las dos vías prueban control del
+        // mismo buzón, así que no es un atajo— y entonces quedaban dos cosas mal: un enlace de invitación
+        // válido durante días después de que su dueño ya entró, y `invitation_accepted_at` en null, que
+        // hace mentir a la única columna que responde "¿llegó a poner una clave suya?".
+        if (user.getInvitationToken() != null) {
+            user.setInvitationToken(null);
+            if (user.getInvitationAcceptedAt() == null) {
+                user.setInvitationAcceptedAt(Instant.now());
+            }
+        }
         // A5: a password reset is exactly the case where old sessions must die — whoever prompted
         // the reset may be locking someone else out of the account.
         user.setTokenVersion(user.getTokenVersion() + 1);

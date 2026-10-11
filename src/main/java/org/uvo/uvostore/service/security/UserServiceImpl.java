@@ -38,15 +38,14 @@ public class UserServiceImpl implements UserService {
     private final TokenVersionService tokenVersionService;
     private final EmailService emailService;
     private final StorePublicUrlResolver publicUrls;
-    // Más corta que los 30 días de la invitación de cliente (F24): esto entrega acceso al panel, donde se
-    // emiten reembolsos y se configuran credenciales de pasarela.
-    private final Duration invitationTtl;
+    // PROD-06. La vigencia de la invitación y el intervalo entre reenvíos los decide un solo sitio: antes
+    // ttl-days se leía aquí y en AuthController por separado.
+    private final AdminInvitationPolicy invitationPolicy;
 
     public UserServiceImpl(UserRepository userRepository, RoleRepository roleRepository,
                             PasswordEncoder passwordEncoder, FileStorageService fileStorageService,
                             TokenVersionService tokenVersionService, EmailService emailService,
-                            StorePublicUrlResolver publicUrls,
-                            @Value("${app.admin-invitation.ttl-days:7}") int invitationTtlDays) {
+                            StorePublicUrlResolver publicUrls, AdminInvitationPolicy invitationPolicy) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
@@ -54,7 +53,7 @@ public class UserServiceImpl implements UserService {
         this.tokenVersionService = tokenVersionService;
         this.emailService = emailService;
         this.publicUrls = publicUrls;
-        this.invitationTtl = Duration.ofDays(invitationTtlDays);
+        this.invitationPolicy = invitationPolicy;
     }
 
     @Override
@@ -75,8 +74,7 @@ public class UserServiceImpl implements UserService {
             // (AbstractValidatingPasswordEncoder: `!StringUtils.hasLength(encodedPassword)` → false), así
             // que no hay ventana en la que la cuenta valga sin activarse.
             user.setPassword(null);
-            user.setInvitationToken(UUID.randomUUID().toString().replace("-", "") + UUID.randomUUID().toString().replace("-", ""));
-            user.setInvitationSentAt(Instant.now());
+            issueInvitation(user);
         } else {
             // Sin invitación hace falta contraseña, y se exige AQUÍ — antes no se exigía en ninguna parte,
             // pese a lo que afirma el comentario de UserRequest ("Presence on create is enforced in
@@ -111,6 +109,62 @@ public class UserServiceImpl implements UserService {
     }
 
     /**
+     * PROD-06. Vuelve a enviar la invitación, con un token nuevo.
+     *
+     * <p>Hasta ahora, si los 7 días se agotaban, la única salida era <b>borrar al usuario y crearlo otra
+     * vez</b> — lo que le cambia el id, pierde sus notas y deja huérfano cualquier rastro que lo
+     * referenciara. Reenviar una invitación caducada es justamente el caso de uso principal, no una
+     * excepción.
+     *
+     * <p>El token anterior <b>deja de valer</b>: se genera uno nuevo, y como la búsqueda es por
+     * {@code invitationToken}, el enlace viejo ya no encuentra nada. Es lo que pide el criterio
+     * («invalidación del anterior») y también lo correcto: si alguien reenvía porque sospecha que el
+     * primer correo acabó donde no debía, dejar los dos vivos no arreglaría nada.
+     *
+     * <p>Tres cosas lo rechazan: que la cuenta ya tenga contraseña (no hay nada que invitar; quien la
+     * perdió usa «olvidé mi contraseña»), que esté desactivada (mandar un enlace a una cuenta en la que
+     * {@code adminAcceptInvitation} no deja entrar sería mentirle al invitado), y que no haya pasado el
+     * intervalo mínimo.
+     */
+    @Override
+    @Transactional
+    public User resendInvitation(Long id) {
+        Store store = TenantContext.requireCurrent();
+        User user = userRepository.findById(id)
+                .filter(u -> u.getStore().getId().equals(store.getId()))
+                .orElseThrow(() -> new NoSuchElementException("User " + id + " not found"));
+
+        if (user.getPassword() != null || user.getInvitationAcceptedAt() != null) {
+            throw new BusinessException("Esta cuenta ya tiene contraseña: usa la recuperación de contraseña");
+        }
+        if (!user.isActive()) {
+            throw new BusinessException("La cuenta está desactivada: actívala antes de reenviar la invitación");
+        }
+        Duration remaining = invitationPolicy.resendCooldownRemaining(user);
+        if (remaining != null) {
+            long minutesLeft = Math.max(1, remaining.toMinutes() + 1);
+            throw new BusinessException("La invitación se envió hace poco: espera "
+                    + minutesLeft + (minutesLeft == 1 ? " minuto" : " minutos") + " antes de reenviarla");
+        }
+
+        issueInvitation(user);
+        User saved = userRepository.save(user);
+        sendInvitationEmail(saved, store);
+        return saved;
+    }
+
+    /**
+     * Un token de un solo uso y la fecha desde la que cuenta su vigencia.
+     *
+     * <p>Dos UUID sin guiones: 64 caracteres, porque esto viaja en una URL y es lo único que separa a un
+     * desconocido del panel. Reescribirlo es lo que invalida el anterior.
+     */
+    private void issueInvitation(User user) {
+        user.setInvitationToken(UUID.randomUUID().toString().replace("-", "") + UUID.randomUUID().toString().replace("-", ""));
+        user.setInvitationSentAt(Instant.now());
+    }
+
+    /**
      * El correo con el enlace para elegir contraseña.
      *
      * <p>Los fallos se registran y no se propagan <b>a propósito</b>: el administrador ya está creado y su
@@ -141,7 +195,7 @@ public class UserServiceImpl implements UserService {
                 // tienda B le mandaba al panel de la tienda A, donde su token no vale nada porque el
                 // endpoint de aceptación resuelve el tenant por el Host.
                 + publicUrls.storefrontUrl(store, "/admin/aceptar-invitacion?token=" + user.getInvitationToken()) + "\n\n"
-                + "El enlace es de un solo uso y caduca en " + invitationTtl.toDays() + " días. "
+                + "El enlace es de un solo uso y caduca en " + invitationPolicy.ttlDays() + " días. "
                 + "Nadie más conoce tu contraseña: la eliges tú.";
     }
 

@@ -8,6 +8,7 @@ vi.mock('@/admin/services/adminApi', () => ({
       list: vi.fn(),
       delete: vi.fn(),
       toggleStatus: vi.fn(),
+      resendInvitation: vi.fn(),
     },
   },
 }))
@@ -24,6 +25,8 @@ function user(overrides: Partial<AdminUserDto> = {}): AdminUserDto {
     notes: null,
     roles: [],
     createdAt: '2026-01-01T00:00:00Z',
+    invitationPending: false,
+    invitationExpiresAt: null,
     ...overrides,
   }
 }
@@ -81,5 +84,24 @@ describe('useAdminUsersStore', () => {
     await useAdminUsersStore.getState().toggleStatus(1)
 
     expect(useAdminUsersStore.getState().data?.content[0].active).toBe(false)
+  })
+
+  it('PROD-06: guarda la fila que devuelve el reenvío, con su nueva caducidad', async () => {
+    // Importa porque de `invitationExpiresAt` depende la insignia «caducada» y el intervalo antes del
+    // siguiente reenvío: si la fila no se reemplaza, la pantalla sigue mostrando la caducidad vieja.
+    const adminApi = (await import('@/admin/services/adminApi')).default
+    vi.mocked(adminApi.users.list).mockResolvedValue(
+      page([user({ id: 1, invitationPending: true, invitationExpiresAt: '2026-01-02T00:00:00Z' })]),
+    )
+    vi.mocked(adminApi.users.resendInvitation).mockResolvedValue(
+      user({ id: 1, invitationPending: true, invitationExpiresAt: '2026-02-01T00:00:00Z' }),
+    )
+    const { useAdminUsersStore } = await import('./useAdminUsersStore')
+    await useAdminUsersStore.getState().fetchList({ page: 1 })
+
+    await useAdminUsersStore.getState().resendInvitation(1)
+
+    expect(adminApi.users.resendInvitation).toHaveBeenCalledWith(1)
+    expect(useAdminUsersStore.getState().data?.content[0].invitationExpiresAt).toBe('2026-02-01T00:00:00Z')
   })
 })

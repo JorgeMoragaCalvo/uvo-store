@@ -47,6 +47,10 @@ export const router = createBrowserRouter([
   { path: '/admin/login', lazy: lazyRoute(() => import('./admin/pages/Login')) },
   { path: '/admin/forgot-password', lazy: lazyRoute(() => import('./admin/pages/ForgotPassword')) },
   { path: '/admin/reset-password', lazy: lazyRoute(() => import('./admin/pages/ResetPassword')) },
+  // PROD-06. Pública y fuera del AdminLayout, como las otras tres: quien llega aquí todavía no tiene
+  // contraseña, así que no puede tener sesión. El correo de la invitación enlaza exactamente a esta ruta
+  // (UserServiceImpl.invitationBody), que hasta ahora respondía 404.
+  { path: '/admin/aceptar-invitacion', lazy: lazyRoute(() => import('./admin/pages/AcceptInvitation')) },
   { path: '/plataforma/nueva-tienda', lazy: lazyRoute(() => import('./platform/pages/NewStore')) },
   {
     path: '/admin',
