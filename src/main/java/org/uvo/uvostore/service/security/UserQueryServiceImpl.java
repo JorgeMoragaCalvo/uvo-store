@@ -17,9 +17,11 @@ import java.util.NoSuchElementException;
 public class UserQueryServiceImpl implements UserQueryService {
 
     private final UserRepository userRepository;
+    private final AdminInvitationPolicy invitationPolicy;
 
-    public UserQueryServiceImpl(UserRepository userRepository) {
+    public UserQueryServiceImpl(UserRepository userRepository, AdminInvitationPolicy invitationPolicy) {
         this.userRepository = userRepository;
+        this.invitationPolicy = invitationPolicy;
     }
 
     @Override
@@ -64,7 +66,15 @@ public class UserQueryServiceImpl implements UserQueryService {
         List<RoleRefDto> roles = u.getRoles().stream()
                 .map(r -> new RoleRefDto(r.getId(), r.getName()))
                 .toList();
+        // PROD-06: pendiente es "hay token y nadie lo ha usado". Se comprueba también
+        // `invitationAcceptedAt` y no solo el token porque son dos preguntas distintas y conviene que una
+        // fila a medias (token presente y aceptación escrita, que no debería ocurrir) no se lea como
+        // pendiente.
+        boolean invitationPending = u.getInvitationToken() != null && u.getInvitationAcceptedAt() == null;
         return new UserDto(u.getId(), u.getName(), u.getEmail(), u.getPhone(), u.getAvatar(), u.isActive(),
-                u.getLastLoginAt(), u.getNotes(), roles, u.getCreatedAt());
+                u.getLastLoginAt(), u.getNotes(), roles, u.getCreatedAt(),
+                // La fecha de caducidad solo tiene sentido mientras haya invitación viva: en una cuenta
+                // normal, `invitation_sent_at` es un dato histórico que no caduca de nada.
+                invitationPending, invitationPending ? invitationPolicy.expiresAt(u) : null);
     }
 }

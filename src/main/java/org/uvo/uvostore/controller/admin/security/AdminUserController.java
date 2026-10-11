@@ -89,6 +89,16 @@ public class AdminUserController {
         return ResponseEntity.noContent().build();
     }
 
+    // PROD-06. Mismo permiso que crear (`users.manage`), porque es la misma capacidad: dar a alguien
+    // acceso al panel. Devuelve el usuario refrescado como toggleStatus, para que la lista reciba el
+    // `invitationSentAt` nuevo sin recargar la página.
+    @PostMapping("/{id}/resend-invitation")
+    @PreAuthorize("hasAuthority('users.manage')")
+    public UserDto resendInvitation(@PathVariable Long id) {
+        User user = userService.resendInvitation(id);
+        return userQueryService.getById(user.getId());
+    }
+
     @PostMapping("/{id}/toggle-status")
     @PreAuthorize("hasAuthority('users.manage')")
     public UserDto toggleStatus(@PathVariable Long id, Authentication authentication) {

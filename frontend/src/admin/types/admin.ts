@@ -251,6 +251,12 @@ export interface AdminUserDto {
   notes: string | null
   roles: RoleRefDto[]
   createdAt: string
+  // PROD-06: hay una invitación viva que nadie ha aceptado. Distingue a un invitado que todavía no ha
+  // entrado de un administrador normal, que es lo que decide si se le puede reenviar. El token no viaja.
+  invitationPending: boolean
+  // Ya calculada por el servidor (AdminInvitationPolicy), para que el panel no lleve su propia copia del
+  // plazo. Null cuando no hay invitación pendiente.
+  invitationExpiresAt: string | null
 }
 
 export interface PermissionDto {

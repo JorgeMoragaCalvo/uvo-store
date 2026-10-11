@@ -131,6 +131,10 @@ export const adminApi = {
     forgotPassword: (email: string): Promise<void> => client.post('/auth/forgot-password', { email }),
     resetPassword: (token: string, password: string): Promise<void> =>
       client.post('/auth/reset-password', { token, password }),
+    // PROD-06. Devuelve la sesión ya iniciada, con permisos, igual que el login: el invitado acaba de
+    // demostrar que controla el buzón y acaba de fijar él mismo la contraseña.
+    acceptInvitation: (token: string, password: string): Promise<AdminLoginResponse> =>
+      client.post('/auth/accept-invitation', { token, password }),
   },
   products: {
     list: (params: ProductListParams): Promise<Page<ProductDto>> => client.get('/products', { params }),
@@ -222,6 +226,8 @@ export const adminApi = {
       client.put(`/users/${id}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
     delete: (id: number): Promise<void> => client.delete(`/users/${id}`),
     toggleStatus: (id: number): Promise<AdminUserDto> => client.post(`/users/${id}/toggle-status`),
+    // PROD-06. Genera un token nuevo, así que el enlace del correo anterior deja de valer.
+    resendInvitation: (id: number): Promise<AdminUserDto> => client.post(`/users/${id}/resend-invitation`),
   },
   roles: {
     list: (): Promise<RoleDto[]> => client.get('/roles'),

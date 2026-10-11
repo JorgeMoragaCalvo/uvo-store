@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
-import { Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { MailPlus, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -23,15 +23,24 @@ import DataTablePagination from '@/admin/components/DataTablePagination'
 import { useAdminUsersStore } from '@/admin/stores/useAdminUsersStore'
 import type { AdminUserDto } from '@/admin/types/admin'
 
+// PROD-06. La fecha la calcula el servidor con el TTL que él mismo decide (AdminInvitationPolicy), así
+// que aquí solo se compara: el panel no lleva una segunda copia del plazo que pudiera discrepar.
+function isExpired(user: AdminUserDto): boolean {
+  return user.invitationExpiresAt !== null && new Date(user.invitationExpiresAt) <= new Date()
+}
+
 export default function UsersList() {
   const data = useAdminUsersStore((state) => state.data)
   const loading = useAdminUsersStore((state) => state.loading)
   const fetchList = useAdminUsersStore((state) => state.fetchList)
   const remove = useAdminUsersStore((state) => state.remove)
   const toggleStatus = useAdminUsersStore((state) => state.toggleStatus)
+  const resendInvitation = useAdminUsersStore((state) => state.resendInvitation)
 
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
+  // PROD-06: el id que se está reenviando, para no dejar pulsar dos veces mientras el correo sale.
+  const [resending, setResending] = useState<number | null>(null)
 
   useEffect(() => {
     fetchList({ search: search || undefined, page }).catch(() => toast.error('No se pudieron cargar los usuarios'))
@@ -53,6 +62,22 @@ export default function UsersList() {
     } catch (err) {
       const message = (err as { message?: string })?.message
       toast.error(message ?? 'No se pudo cambiar el estado del usuario')
+    }
+  }
+
+  // PROD-06. Antes, si los 7 días de la invitación se agotaban, la única salida era borrar al usuario y
+  // crearlo otra vez. El mensaje del servidor es el que importa aquí: dice si ya tiene contraseña, si
+  // está desactivado, o cuántos minutos faltan para poder reenviar.
+  async function handleResend(user: AdminUserDto) {
+    setResending(user.id)
+    try {
+      await resendInvitation(user.id)
+      toast.success(`Invitación reenviada a ${user.email}`)
+    } catch (err) {
+      const message = (err as { message?: string })?.message
+      toast.error(message ?? 'No se pudo reenviar la invitación')
+    } finally {
+      setResending(null)
     }
   }
 
@@ -136,13 +161,33 @@ export default function UsersList() {
                     {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString('es-CL') : 'Nunca'}
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <Switch checked={user.active} onCheckedChange={() => handleToggle(user)} />
                       <Badge variant={user.active ? 'default' : 'secondary'}>{user.active ? 'Activo' : 'Inactivo'}</Badge>
+                      {/* PROD-06: sin esto no hay forma de distinguir a quien nunca ha entrado de quien
+                          simplemente no entra hace tiempo, y el botón de reenviar no tendría a quién
+                          ofrecerse. La caducidad la calcula el servidor. */}
+                      {user.invitationPending && (
+                        <Badge variant="outline">
+                          {isExpired(user) ? 'Invitación caducada' : 'Invitación pendiente'}
+                        </Badge>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-2">
+                      {user.invitationPending && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="Reenviar invitación"
+                          aria-label={`Reenviar invitación a ${user.email}`}
+                          disabled={resending === user.id}
+                          onClick={() => handleResend(user)}
+                        >
+                          <MailPlus className="size-4" />
+                        </Button>
+                      )}
                       <Button variant="ghost" size="icon" asChild>
                         <Link to={`/admin/users/${user.id}/edit`}>
                           <Pencil className="size-4" />
