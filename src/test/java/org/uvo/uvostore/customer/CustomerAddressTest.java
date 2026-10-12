@@ -6,6 +6,7 @@ import org.uvo.uvostore.entity.customer.Customer;
 import org.uvo.uvostore.entity.security.User;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.support.IntegrationTestSupport;
+import org.uvo.uvostore.support.WithCustomerAccounts;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -26,6 +27,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <p>Primera cobertura de la superficie de direcciones — no tenía ninguna, que es el mismo patrón de F20
  * (informes) y F22 (cuenta del cliente): lo que no se prueba es donde estaban los fallos.
  */
+@WithCustomerAccounts
 class CustomerAddressTest extends IntegrationTestSupport {
 
     @Test

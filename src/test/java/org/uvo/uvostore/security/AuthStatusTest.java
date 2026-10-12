@@ -81,7 +81,12 @@ class AuthStatusTest extends IntegrationTestSupport {
     void aCustomerTokenOnAnAdminRouteIsForbidden() throws Exception {
         Store store = createStore("auth-wrong-role");
         Customer customer = createCustomer(store, "auth-wrong-role");
-        String token = loginCustomer(store, customer);
+        // Acuñado y no obtenido de /api/customer/auth/login: con las cuentas de comprador diferidas
+        // (PROD-07) ese endpoint responde 404, y lo que se mide aquí no son las cuentas sino qué código
+        // devuelve la cadena ante un autenticado sin la autoridad que la ruta pide. Así este caso sigue
+        // corriendo con la configuración de despacho —bandera apagada— y además dice algo más fuerte:
+        // un token de cliente sigue dando 403 en /api/admin/** aunque las cuentas estén apagadas.
+        String token = customerToken(store, customer);
 
         // Este es el caso que separa el arreglo de "cambiar 403 por 401 en todas partes": hay un
         // autenticado de verdad, lo que le falta es la autoridad. Cerrar su sesión sería lo incorrecto.

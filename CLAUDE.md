@@ -158,6 +158,12 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
   separates counters with `req.setRemoteAddr(...)`; it used to use `X-Forwarded-For`, which no longer
   does anything by default. `TrustedProxyRateLimitTest` and `AccountThrottleTest` need their own
   contexts because they need different properties.
+- **`app.customer-accounts.enabled`** (`CUSTOMER_ACCOUNTS_ENABLED`, **false**): buyer accounts, deferred
+  by PROD-07. Off, every `/api/customer/**` path answers 404, guest checkout issues no invitation and no
+  invitation email goes out; guest purchase itself is unaffected. Read in exactly one place,
+  `CustomerAccountsPolicy`. **Deliberately not overridden in surefire**, so the whole suite runs under
+  the shipped value and the six classes that need accounts opt in with `@WithCustomerAccounts`. Don't
+  turn it on in production without the storefront screens — see the PROD-07 bullet in "Architecture".
 - **JWTs are revocable** (`TokenVersionService`, A5). `users.token_version`/`customers.token_version`
   (V14) is carried in the token's `tv` claim and compared on every authenticated request through a
   60s Caffeine cache. Bumping the version — deactivating, deleting or re-roling a user, and any
@@ -257,9 +263,9 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
   set a password through "forgot password" — both paths prove the same mailbox, so it's not a shortcut —
   but it used to leave a live invitation link for days afterwards and `invitation_accepted_at` null, which
   made the one column that answers "did they ever set their own password?" lie.
-  Still missing in this family: the **customer** half (`/cuenta/activar`, F24) has no screen either, and
-  can't until the storefront grows an account surface (PROD-07), plus customer password recovery (see the
-  F24 bullet below).
+  Still missing in this family: the **customer** half (`/cuenta/activar`, F24) has no screen either, plus
+  customer password recovery (see the F24 bullet below). **PROD-07 settled that half by deferring it
+  behind a flag rather than building it** — see the PROD-07 bullet below.
 - **A guest buyer can turn that email into an account** (F24). The checkout already generated an
   `invitationToken`, a timestamp and `INVITED` (`markInvitedIfGuest`) — and that was all: no email went
   out and no endpoint accepted it, so the email was **burned** in that store (register rejects it because
@@ -272,7 +278,8 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
   column was already there. Rate-limited by IP; **not** by account, because what arrives is a token, not
   an email to key on. As with the admin half, **the `/cuenta/activar` the email points at doesn't exist**
   — and here it can't until the storefront grows an account surface, so this endpoint stays contract-only
-  for now.
+  for now. **PROD-07 turned the whole thing off** (next bullet): the email isn't sent and the endpoint
+  answers 404 until `CUSTOMER_ACCOUNTS_ENABLED=true`.
   Note on the finding's other option ("don't create an INVITED state without a mechanism"): it would not
   have fixed anything. The lockout comes from `customerRegister`'s `existsByStoreIdAndEmail`, which ignores
   status and password — dropping INVITED leaves the guest as GUEST, and the email is just as unusable.
@@ -286,6 +293,47 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
   `findByEmail`, `existsByEmail`,
   `countWithOrders`, `countByCreatedAtAfter` — the first two and last two queries **without `storeId`**,
   which is a cross-tenant leak waiting for a careless caller.
+- **Customer accounts are deferred behind one flag** (PROD-07),
+  `app.customer-accounts.enabled` / `CUSTOMER_ACCOUNTS_ENABLED`, **off by default**. The backend half is
+  complete (fifteen endpoints under `/api/customer/**`, F22/F23/F24) and the storefront half does not
+  exist at all: no `/cuenta/*` route, no buyer session store, no customer password recovery. The
+  production plan's rule for a deferred feature is that it disappears from its **entry points, API and
+  emails**, so all three are off:
+  - **`CustomerAccountsGateFilter`** answers **404** to anything under `/api/customer`, by prefix rather
+    than endpoint by endpoint, so an endpoint added there tomorrow is covered without remembering the
+    flag. `@ConditionalOnProperty` on controllers couldn't do it: the three customer auth endpoints live
+    inside `AuthController` next to the admin ones. It runs **after `RateLimitFilter` and before
+    `TenantResolutionFilter`** — a deferred feature must not become a free unlimited endpoint, but a
+    disabled call shouldn't pay for tenant resolution or JWT parsing either. Being ahead of the Security
+    chain is what makes the 404 arrive **without** credentials instead of F19's 401, which would be
+    asking someone to log in to something that doesn't exist. The body is a real `ApiError` written with
+    the context's (Jackson 3) `ObjectMapper`, like `ApiSecurityErrorHandlers` and unlike
+    `RateLimitFilter.reject`, whose hand-concatenated JSON is missing `timestamp`.
+  - **`markInvitedIfGuest` stops issuing invitations**, and that's not tidiness — it's what keeps the
+    feature switchable back on. A row marked `INVITED` with a token that was never emailed is **trapped
+    forever**: that method won't re-invite it (it demands `GUEST`) and `customerRegister` rejects it (the
+    email exists). That is F24's bug wearing a different hat. Guest checkout is otherwise untouched.
+  - **The email listener checks the flag too**, for rows that already carry a token from before the
+    switch, so "no invitation is ever sent" is true by every path. While there, a comment that claimed a
+    second order wouldn't re-send was corrected: it's false — the token is **kept**, not regenerated, so
+    all three guard conditions still hold and the same broken promise goes out again. `CustomerInvitationTest`
+    only ever asserted the token doesn't change.
+  - **Frontend**: the inert 👤 "Cuenta (próximamente)" is gone from `Header.tsx`, and `Terms.tsx` §3 no
+    longer claims an account "may be necessary" — it says what actually happens (guest checkout, tracked
+    by order number).
+  - **Nothing was deleted**: not the API, not `accept-invitation`, not the tests covering them. The six
+    classes that exercise accounts opt in with `@WithCustomerAccounts` (one composed annotation, so they
+    share a single extra Spring context), which means **the shipped value — off — is what the rest of the
+    suite runs under**, and `CustomerAccountsDisabledTest` deliberately carries no annotation.
+    `AuthStatusTest` instead mints its customer token with the new `IntegrationTestSupport.customerToken`,
+    so it keeps testing the security chain's status codes under the shipped config.
+  - **To turn them on** you need six screens (`/cuenta/activar`, login, forgot, reset, profile/password,
+    addresses), a buyer session store with a route guard, and **two endpoints that don't exist** (customer
+    password recovery — the columns are already there since V12, no migration). The flag is
+    platform-wide, not per store. The admin panel still shows `AccountStatus.INVITED`; with the flag off
+    no new rows reach that state and the existing ones are legitimate history. `OpenApiConfig` still
+    documents `/api/customer/**` — that's operator documentation, and the filter's 404 is the operational
+    truth.
 - **401 vs 403 is now defined** (`ApiSecurityErrorHandlers`, F19), and the distinction matters to the SPA,
   not just to purists. There are three cases:
   - **No token, expired, revoked, or issued for another store → 401**, with `WWW-Authenticate: Bearer`.
@@ -587,6 +635,11 @@ consuming this API.
   with a screen (`/admin/aceptar-invitacion`); resending is `POST /api/admin/users/{id}/resend-invitation`
   (`users.manage`). See the invitation bullets above.
 - `/api/admin/**` (`ROLE_ADMIN`) and `/api/customer/**` (`ROLE_CUSTOMER`) are guarded; `/api/v1/**` is fully public.
+- **Everything under `/api/customer/**` answers 404 as shipped** — `app.customer-accounts.enabled`
+  (`CUSTOMER_ACCOUNTS_ENABLED`) is off, so `CustomerAccountsGateFilter` intercepts the whole prefix
+  ahead of the Security chain, the checkout issues no invitation and no invitation email is sent. The
+  authority on the flag is `CustomerAccountsPolicy`, the only class that reads it. See the PROD-07
+  bullet in "Architecture" for why, and for what turning it on would require.
 - `/api/platform/**` (store onboarding) uses `X-Platform-Key`, not JWT — see "Multi-tenancy".
 - POS integration (`/api/sync/**`, `/api/webhooks/pos/**`) uses its own HMAC/API-key filters, separate from JWT.
 
@@ -666,17 +719,22 @@ login (`/admin/login`) is separate and fully functional.
     Spring 7 now rejects at startup — both need
     `@Transactional(propagation = Propagation.REQUIRES_NEW)`. If you add another `AFTER_COMMIT`
     listener that also needs a transaction, use the same pattern.
-- **Testing**: **452 backend `@Test` methods across 81 classes** (JUnit + `IntegrationTestSupport`,
+- **Testing**: **457 backend `@Test` methods across 83 classes** (JUnit + `IntegrationTestSupport`,
   one Spring-managed transaction per test, auto-rolled-back — `AFTER_COMMIT` listeners never fire
-  under this setup, which is intentional) and **135 frontend tests across 29 files** (Vitest +
+  under this setup, which is intentional) and **137 frontend tests across 30 files** (Vitest +
   React Testing Library, `npm run test`), both wired into CI (`.github/workflows/ci.yml`) and the
   release workflow (`.github/workflows/release.yml`, triggered by pushing a `vX.Y.Z` tag — builds
   artifacts and publishes a GitHub Release with auto-generated notes). Most of that growth is the
   audit rounds: nearly every `C`/`A`/`M`/`B`/`F` finding left a test that fails when its fix is
   undone, so a red suite after a refactor is usually an invariant being removed, not a flaky test.
-  Three recurring devices worth knowing before writing a new one:
+  Four recurring devices worth knowing before writing a new one:
   - **`disableShipping(store)` before any checkout.** A fresh store covers no shipping zone, so
     checkout legitimately answers 409 (A7). Tests that don't care about delivery call this.
+  - **`@WithCustomerAccounts` to touch `/api/customer/**`.** Buyer accounts ship off (PROD-07), so
+    without it the whole prefix answers 404 — including `loginCustomer`, whose `status().isOk()` then
+    fails. One composed annotation rather than six copies of
+    `@SpringBootTest(properties = …)`, so the opting-in classes share a single extra Spring context.
+    Need a customer credential *without* the login endpoint? `customerToken(store, customer)`.
   - **Package-visible builder methods to assert outbound payloads** without SMTP or network:
     `MercadoPagoServiceImpl.buildPreferenceRequest`, `PaymentServiceImpl.buildSessionParams`,
     `CustomerInvitationEmailListener.body`, `UserServiceImpl.invitationBody`. That's why those

@@ -11,6 +11,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.uvo.uvostore.security.ApiSecurityErrorHandlers;
+import org.uvo.uvostore.security.CustomerAccountsGateFilter;
 import org.uvo.uvostore.security.JwtAuthenticationFilter;
 import org.uvo.uvostore.security.PlatformApiKeyAuthFilter;
 import org.uvo.uvostore.security.PosApiKeyAuthFilter;
@@ -50,6 +51,7 @@ public class SecurityConfig {
             HttpSecurity http,
             TenantCorsConfigurationSource corsConfigurationSource,
             RateLimitFilter rateLimitFilter,
+            CustomerAccountsGateFilter customerAccountsGateFilter,
             TenantResolutionFilter tenantResolutionFilter,
             JwtAuthenticationFilter jwtAuthenticationFilter,
             PosWebhookAuthFilter posWebhookAuthFilter,
@@ -98,7 +100,15 @@ public class SecurityConfig {
                 // A4: first in the chain on purpose — a throttled request should be rejected before
                 // resolving a tenant or parsing a JWT, so flooding costs the server as little as
                 // possible.
-                .addFilterBefore(rateLimitFilter, TenantResolutionFilter.class);
+                .addFilterBefore(rateLimitFilter, TenantResolutionFilter.class)
+                // PROD-07: entre el límite de intentos y la resolución de tienda. Una llamada a
+                // /api/customer/** con las cuentas diferidas no necesita tienda ni JWT para que se le
+                // diga que ahí no hay nada, pero sigue contando para el límite: una función diferida no
+                // debe convertirse en un endpoint gratis e ilimitado. Y por ir antes de la cadena de
+                // Security, el 404 llega igual sin credencial — si fuera después, lo que se vería es el
+                // 401 de ApiSecurityErrorHandlers, que dice "vuelve a entrar" sobre algo que no existe.
+                // Anclado "after" porque rateLimitFilter ya quedó registrado en la línea de arriba.
+                .addFilterAfter(customerAccountsGateFilter, RateLimitFilter.class);
 
         return http.build();
     }

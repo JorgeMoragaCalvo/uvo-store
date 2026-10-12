@@ -6,6 +6,7 @@ import org.uvo.uvostore.entity.customer.Customer;
 import org.uvo.uvostore.entity.security.User;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.support.IntegrationTestSupport;
+import org.uvo.uvostore.support.WithCustomerAccounts;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -23,6 +24,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * ordenación inexistente caían al handler genérico y salían como 500 — errores del cliente contados
  * como caídas del servidor.
  */
+@WithCustomerAccounts
 class ErrorResponseTest extends IntegrationTestSupport {
 
     // --- M1: el cliente se equivocó, no el servidor ------------------------------------------------

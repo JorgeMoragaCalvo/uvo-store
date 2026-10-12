@@ -60,10 +60,12 @@ export default function Header() {
             className="hidden w-56 rounded-full border border-gray-400 px-4 py-1.5 text-sm outline-none focus:border-primary sm:block"
           />
 
-          <span className="cursor-not-allowed text-secondary" title="Cuenta (próximamente)" aria-disabled>
-            👤
-          </span>
-
+          {/*
+            PROD-07: aquí había un 👤 «Cuenta (próximamente)». Se quitó, no se comentó por costumbre:
+            era un punto de entrada a una función diferida, y no lleva a ninguna parte porque el
+            storefront no tiene superficie de cuenta de comprador. Vuelve cuando existan las pantallas
+            (ver CLAUDE.md, PROD-07), y entonces como <Link>, no como un span inerte.
+          */}
           <button type="button" onClick={toggleCart} className="relative text-dark" title="Carrito" aria-label="Abrir carrito">
             🛒
             <span className="absolute -right-2 -top-2 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] text-white">
