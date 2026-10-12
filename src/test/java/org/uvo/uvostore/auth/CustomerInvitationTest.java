@@ -11,6 +11,7 @@ import org.uvo.uvostore.entity.customer.enums.AccountStatus;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.CustomerRepository;
 import org.uvo.uvostore.support.IntegrationTestSupport;
+import org.uvo.uvostore.support.WithCustomerAccounts;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -33,6 +34,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * {@code EmailServiceImpl} registra y omite el envío — es exactamente como trabaja
  * {@code PasswordResetTest}, y equivale a leerlo del enlace del correo en producción.
  */
+@WithCustomerAccounts
 class CustomerInvitationTest extends IntegrationTestSupport {
 
     @Autowired

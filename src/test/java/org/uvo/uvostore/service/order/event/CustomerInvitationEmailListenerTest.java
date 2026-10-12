@@ -11,6 +11,7 @@ import org.uvo.uvostore.entity.order.Order;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.CustomerRepository;
 import org.uvo.uvostore.support.IntegrationTestSupport;
+import org.uvo.uvostore.support.WithCustomerAccounts;
 
 import java.math.BigDecimal;
 
@@ -31,6 +32,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * {@code REQUIRES_NEW}, que escaparía al rollback del test y dejaría basura en la base. Lo que sí se
  * comprueba, en {@code AsyncListenerDispatchTest}, es que salga por el executor del correo.
  */
+@WithCustomerAccounts
 class CustomerInvitationEmailListenerTest extends IntegrationTestSupport {
 
     @Autowired

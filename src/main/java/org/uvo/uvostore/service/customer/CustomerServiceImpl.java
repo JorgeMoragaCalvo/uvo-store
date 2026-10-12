@@ -19,12 +19,14 @@ public class CustomerServiceImpl implements CustomerService {
     private final CustomerRepository customerRepository;
     private final PasswordEncoder passwordEncoder;
     private final TokenVersionService tokenVersionService;
+    private final CustomerAccountsPolicy accountsPolicy;
 
     public CustomerServiceImpl(CustomerRepository customerRepository, PasswordEncoder passwordEncoder,
-                                TokenVersionService tokenVersionService) {
+                                TokenVersionService tokenVersionService, CustomerAccountsPolicy accountsPolicy) {
         this.customerRepository = customerRepository;
         this.passwordEncoder = passwordEncoder;
         this.tokenVersionService = tokenVersionService;
+        this.accountsPolicy = accountsPolicy;
     }
 
     @Override
@@ -100,6 +102,15 @@ public class CustomerServiceImpl implements CustomerService {
     @Override
     @Transactional
     public Customer markInvitedIfGuest(Customer customer) {
+        // PROD-07. Con las cuentas diferidas el invitado se queda GUEST, sin token ni fecha.
+        //
+        // Esto es lo que mantiene posible encenderlas después, y no un detalle de limpieza: una fila
+        // marcada INVITED con un token que nunca se envió queda ATRAPADA PARA SIEMPRE — este mismo
+        // método ya no la vuelve a invitar porque la condición exige GUEST, y customerRegister la
+        // rechaza porque el correo ya existe en la tienda. Es el fallo que cerró F24, con otra forma.
+        if (!accountsPolicy.isEnabled()) {
+            return customer;
+        }
         if (customer.getAccountStatus() == AccountStatus.GUEST && customer.getInvitationToken() == null) {
             customer.setInvitationToken(java.util.UUID.randomUUID().toString().replace("-", "") + java.util.UUID.randomUUID().toString().replace("-", ""));
             customer.setInvitationSentAt(java.time.Instant.now());

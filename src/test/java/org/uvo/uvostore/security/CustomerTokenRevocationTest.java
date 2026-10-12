@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.uvo.uvostore.entity.customer.Customer;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.support.IntegrationTestSupport;
+import org.uvo.uvostore.support.WithCustomerAccounts;
 
 import java.util.HashMap;
 
@@ -26,6 +27,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * —solo lo rozaba {@code MultiTenancyIsolationTest} para el aislamiento entre tiendas—, y la primera de
  * la mitad cliente de A5: los tests de revocación de {@code SecurityHardeningTest} son todos de admin.
  */
+@WithCustomerAccounts
 class CustomerTokenRevocationTest extends IntegrationTestSupport {
 
     private static final String NEW_PASSWORD = "contrasena-nueva-123";

@@ -7,6 +7,7 @@ import org.uvo.uvostore.entity.customer.Customer;
 import org.uvo.uvostore.entity.security.User;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.support.IntegrationTestSupport;
+import org.uvo.uvostore.support.WithCustomerAccounts;
 
 import java.math.BigDecimal;
 
@@ -19,6 +20,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 // store's data, whether through the public storefront API, the admin API, or a replayed JWT.
 // Everything here was previously verified by hand with curl during the Fase 0/1 sessions — this
 // class is that verification turned into a regression test.
+@WithCustomerAccounts
 class MultiTenancyIsolationTest extends IntegrationTestSupport {
 
     @Test

@@ -4,6 +4,7 @@ import jakarta.servlet.Filter;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.uvo.uvostore.security.CustomerAccountsGateFilter;
 import org.uvo.uvostore.security.JwtAuthenticationFilter;
 import org.uvo.uvostore.security.PlatformApiKeyAuthFilter;
 import org.uvo.uvostore.security.PosApiKeyAuthFilter;
@@ -12,7 +13,7 @@ import org.uvo.uvostore.security.RateLimitFilter;
 import org.uvo.uvostore.security.TenantResolutionFilter;
 
 /**
- * B8: los seis filtros de seguridad son {@code @Component}, y Spring Boot registra automáticamente
+ * B8: los siete filtros de seguridad son {@code @Component}, y Spring Boot registra automáticamente
  * como filtro de servlet cualquier bean de tipo {@link Filter}. Resultado: cada uno estaba
  * registrado dos veces — una en la cadena del servlet y otra donde de verdad se le quiso poner,
  * dentro de la cadena de Spring Security.
@@ -25,7 +26,7 @@ import org.uvo.uvostore.security.TenantResolutionFilter;
  *
  * <p>Lo que sí queda mal sin esto es todo lo que no pasa por la cadena de Security: los
  * {@code DispatcherType.ERROR}, los recursos estáticos y cualquier petición que la cadena no
- * atienda. Ahí los seis corren de verdad, en un orden que nadie declaró — y ese orden importa,
+ * atienda. Ahí los siete corren de verdad, en un orden que nadie declaró — y ese orden importa,
  * porque {@code TenantResolutionFilter} tiene que resolver la tienda antes de que
  * {@code JwtAuthenticationFilter} valide un token contra ella, y {@code RateLimitFilter} tiene que
  * ir antes que ambos para que un ataque no pague el costo de resolver la tienda.
@@ -38,6 +39,11 @@ public class FilterRegistrationConfig {
 
     @Bean
     public FilterRegistrationBean<RateLimitFilter> rateLimitFilterRegistration(RateLimitFilter filter) {
+        return disableAutoRegistration(filter);
+    }
+
+    @Bean
+    public FilterRegistrationBean<CustomerAccountsGateFilter> customerAccountsGateFilterRegistration(CustomerAccountsGateFilter filter) {
         return disableAutoRegistration(filter);
     }
 

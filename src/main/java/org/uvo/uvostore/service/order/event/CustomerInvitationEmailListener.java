@@ -14,6 +14,7 @@ import org.uvo.uvostore.entity.customer.Customer;
 import org.uvo.uvostore.entity.order.Order;
 import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.security.TenantContext;
+import org.uvo.uvostore.service.customer.CustomerAccountsPolicy;
 import org.uvo.uvostore.service.notification.EmailService;
 import org.uvo.uvostore.service.url.StorePublicUrlResolver;
 
@@ -44,25 +45,41 @@ public class CustomerInvitationEmailListener {
     private final OrderRepository orderRepository;
     private final EmailService emailService;
     private final StorePublicUrlResolver publicUrls;
+    private final CustomerAccountsPolicy accountsPolicy;
 
     public CustomerInvitationEmailListener(OrderRepository orderRepository, EmailService emailService,
-                                            StorePublicUrlResolver publicUrls) {
+                                            StorePublicUrlResolver publicUrls, CustomerAccountsPolicy accountsPolicy) {
         this.orderRepository = orderRepository;
         this.emailService = emailService;
         this.publicUrls = publicUrls;
+        this.accountsPolicy = accountsPolicy;
     }
 
     @Async(AsyncConfig.MAIL_EXECUTOR)
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onOrderPlaced(OrderPlacedEvent event) {
+        // PROD-07. Con las cuentas diferidas no sale ningún correo que prometa una.
+        //
+        // La comprobación va aquí ADEMÁS de en markInvitedIfGuest, y no sobra: las filas que quedaron
+        // INVITED antes del interruptor siguen trayendo token, y si compran otra vez pasarían el guarda
+        // de abajo. Con esto, "no se manda ninguna invitación" es cierto por cualquier camino.
+        if (!accountsPolicy.isEnabled()) {
+            return;
+        }
         try {
             Order order = orderRepository.findById(event.orderId())
                     .orElseThrow(() -> new NoSuchElementException("Order " + event.orderId() + " not found"));
             Customer customer = order.getCustomer();
-            // Solo al invitado al que el checkout acaba de generarle una invitación. Un cliente que ya
-            // tenía cuenta no recibe nada, y quien compra por segunda vez tampoco: markInvitedIfGuest no
-            // regenera el token, así que a partir del segundo pedido esto no encuentra nada que mandar.
+            // Solo a quien tiene una invitación pendiente: un cliente que ya tenía cuenta no recibe nada.
+            //
+            // PROD-07 corrige lo que este comentario afirmaba antes ("quien compra por segunda vez
+            // tampoco"): es FALSO. markInvitedIfGuest no regenera el token, pero lo CONSERVA, así que en
+            // el segundo pedido de un invitado que nunca activó las tres condiciones siguen dándose y la
+            // misma invitación se vuelve a mandar. Lo que el test de CustomerInvitationTest acredita es
+            // que el token no cambia, no que el correo no se repita — nadie lo había comprobado.
+            // Con las cuentas diferidas esto da igual (no se llega hasta aquí); el día que se enciendan,
+            // hay que decidir si el reenvío es deseable, como ya se decidió para el panel en PROD-06.
             if (customer == null || customer.getInvitationToken() == null || customer.getPassword() != null) {
                 return;
             }

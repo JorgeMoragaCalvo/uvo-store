@@ -30,6 +30,7 @@ import org.uvo.uvostore.repository.ProductRepository;
 import org.uvo.uvostore.repository.SettingRepository;
 import org.uvo.uvostore.repository.StoreRepository;
 import org.uvo.uvostore.repository.UserRepository;
+import org.uvo.uvostore.security.JwtService;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -80,6 +81,8 @@ public abstract class IntegrationTestSupport {
     protected RoleRepository roleRepository;
     @Autowired
     protected PermissionRepository permissionRepository;
+    @Autowired
+    protected JwtService jwtService;
 
     protected static final String TEST_PASSWORD = "password123";
 
@@ -229,6 +232,19 @@ public abstract class IntegrationTestSupport {
 
     protected String loginCustomer(Store store, Customer customer) throws Exception {
         return login("/api/customer/auth/login", store, customer.getEmail());
+    }
+
+    /**
+     * El mismo token que emitiría {@code /api/customer/auth/login}, acuñado sin pasar por el endpoint.
+     *
+     * <p>Hace falta donde el endpoint no está disponible: con las cuentas de comprador diferidas
+     * (PROD-07) {@code loginCustomer} recibe un 404 y su {@code status().isOk()} falla, así que no hay
+     * forma de obtener una credencial válida de cliente para comprobar que el resto de la superficie
+     * también está apagada. Es la misma llamada que hace {@code AuthController} al iniciar sesión.
+     */
+    protected String customerToken(Store store, Customer customer) {
+        return jwtService.generateToken(customer.getId(), customer.getEmail(), "CUSTOMER", store.getId(),
+                List.of("ROLE_CUSTOMER"), customer.getTokenVersion());
     }
 
     private String login(String path, Store store, String email) throws Exception {

@@ -20,7 +20,6 @@ export default function Terms() {
           body: (
             <ul className="list-inside list-disc space-y-1">
               <li>Proporcionar información veraz, precisa y completa al realizar un pedido</li>
-              <li>Mantener la confidencialidad de su cuenta y contraseña</li>
               <li>No utilizar el sitio para actividades ilegales o no autorizadas</li>
               <li>No intentar acceder a áreas restringidas del sitio</li>
               <li>No transmitir virus o código malicioso</li>
@@ -28,8 +27,12 @@ export default function Terms() {
           ),
         },
         {
-          title: '3. Registro de Cuenta',
-          body: <p>Para realizar compras puede ser necesario crear una cuenta. Usted es responsable de mantener la confidencialidad de su información de cuenta y de toda actividad que ocurra bajo ella.</p>,
+          // PROD-07: esta sección decía que «puede ser necesario crear una cuenta» y pedía al comprador
+          // cuidar una contraseña que nunca se le da. Las cuentas de comprador están diferidas: no hay
+          // registro, no hay ingreso y no se envía ninguna invitación. Decir lo contrario en los
+          // términos es prometer algo que el sitio no hace.
+          title: '3. Compras sin cuenta',
+          body: <p>No es necesario crear una cuenta para comprar: el pedido se realiza como invitado y su estado se consulta con el número de pedido. Los datos que usted entregue en el checkout se utilizan para procesar y despachar esa compra.</p>,
         },
         {
           title: '4. Productos y Servicios',
