@@ -13,6 +13,7 @@ import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.PosConnectionRepository;
 import org.uvo.uvostore.repository.ProductSyncMappingRepository;
 import org.uvo.uvostore.support.IntegrationTestSupport;
+import org.uvo.uvostore.support.WithPosIntegration;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -42,6 +43,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <p>Se comprueba contra la base, no contra el código de estado: un 403 con el producto igualmente
  * escrito sería un test verde sobre un sistema roto.
  */
+@WithPosIntegration
 class PosCrossTenantWriteTest extends IntegrationTestSupport {
 
     private static final String SECRET_A = "secreto-webhook-de-la-tienda-a";

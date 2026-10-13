@@ -9,6 +9,7 @@ import org.uvo.uvostore.entity.shipping.enums.ShippingMethodType;
 import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.repository.ShippingMethodRepository;
 import org.uvo.uvostore.security.TenantContext;
+import org.uvo.uvostore.service.shipping.carrier.ShippingCarrierPolicy;
 
 import java.util.Comparator;
 import java.util.HashMap;
@@ -21,10 +22,14 @@ public class AdminShippingMethodServiceImpl implements AdminShippingMethodServic
 
     private final ShippingMethodRepository shippingMethodRepository;
     private final OrderRepository orderRepository;
+    private final ShippingCarrierPolicy carrierPolicy;
 
-    public AdminShippingMethodServiceImpl(ShippingMethodRepository shippingMethodRepository, OrderRepository orderRepository) {
+    public AdminShippingMethodServiceImpl(ShippingMethodRepository shippingMethodRepository,
+                                          OrderRepository orderRepository,
+                                          ShippingCarrierPolicy carrierPolicy) {
         this.shippingMethodRepository = shippingMethodRepository;
         this.orderRepository = orderRepository;
+        this.carrierPolicy = carrierPolicy;
     }
 
     @Override
@@ -75,7 +80,14 @@ public class AdminShippingMethodServiceImpl implements AdminShippingMethodServic
     @Transactional
     public ShippingMethodDto toggleStatus(Long id) {
         ShippingMethod method = findOrThrow(id);
-        method.setActive(!method.isActive());
+        boolean activating = !method.isActive();
+        // PROD-12. Las filas escritas antes del guarda de resolveCarrier siguen ahí, y este es el camino
+        // por el que se reactivarían. Apagar uno nunca se bloquea: encerrar a alguien con un método
+        // inservible encendido sería el fallo opuesto.
+        if (activating && method.isHasApiIntegration() && !carrierPolicy.isAvailable(method.getCarrier())) {
+            throw new BusinessException(carrierPolicy.unavailableReason(method.getCarrier()));
+        }
+        method.setActive(activating);
         return toDto(shippingMethodRepository.save(method));
     }
 
@@ -105,12 +117,32 @@ public class AdminShippingMethodServiceImpl implements AdminShippingMethodServic
         method.setDescription(command.description());
         method.setType(ShippingMethodType.valueOf(command.type().toUpperCase()));
         method.setHasApiIntegration(command.hasApiIntegration());
-        method.setCarrier(command.carrier() == null || command.carrier().isBlank()
-                ? null : ShippingCarrier.valueOf(command.carrier().toUpperCase()));
+        method.setCarrier(resolveCarrier(command.carrier()));
         method.setMinDeliveryDays(command.minDeliveryDays());
         method.setMaxDeliveryDays(command.maxDeliveryDays());
         method.setActive(command.active());
         method.setSortOrder(command.sortOrder());
+    }
+
+    /**
+     * PROD-12. Un transportista que no se puede ofrecer tampoco se puede configurar.
+     *
+     * <p>Antes esto era un {@code ShippingCarrier.valueOf(...)} suelto: cualquiera de los dos valores del
+     * enum se aceptaba y se guardaba. Con Correos de Chile —un placeholder que siempre devuelve vacío— el
+     * método quedaba activo y el checkout no lo mostraba nunca, sin que nada avisara al comerciante. Un
+     * nombre que no existe en el enum sigue siendo un 400 por {@code IllegalArgumentException} (M1), y
+     * ahora uno que existe pero no está disponible también, con un mensaje que dice cuál de los dos
+     * problemas es.
+     */
+    private ShippingCarrier resolveCarrier(String name) {
+        if (name == null || name.isBlank()) {
+            return null;
+        }
+        ShippingCarrier carrier = ShippingCarrier.valueOf(name.toUpperCase());
+        if (!carrierPolicy.isAvailable(carrier)) {
+            throw new BusinessException(carrierPolicy.unavailableReason(carrier));
+        }
+        return carrier;
     }
 
     private ShippingMethod findOrThrow(Long id) {

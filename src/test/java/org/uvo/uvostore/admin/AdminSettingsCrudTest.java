@@ -219,6 +219,13 @@ class AdminSettingsCrudTest extends IntegrationTestSupport {
                 .andExpect(status().isNotFound());
     }
 
+    /**
+     * PROD-12: el secreto de webhook va junto al token y no en blanco. Este fixture estaba ejerciendo el
+     * fallo que PROD-12 cierra —un token de POS sin secreto dejaba la conexion activa y sin poder
+     * verificar ni un webhook— igual que el de SettingsControllerTest activaba Stripe sin credenciales
+     * antes de F17. Solo importa cuando el token es valido; los casos de token vacio o mal formado no
+     * llegan a crear conexion.
+     */
     private String generalSettingsBody(String posApiToken) {
         return """
                 {
@@ -227,7 +234,7 @@ class AdminSettingsCrudTest extends IntegrationTestSupport {
                   "shippingEnabled":true,"defaultShippingCost":"0","freeShippingEnabled":false,"freeShippingThreshold":"0",
                   "allowGuestCheckout":true,"requirePhone":false,"requireCompany":false,
                   "stripePublicKey":"","stripeSecretKey":"","stripeEnabled":false,
-                  "posApiUrl":"","posApiToken":"%s","posWebhookSecret":"","posSyncEnabled":false,
+                  "posApiUrl":"","posApiToken":"%s","posWebhookSecret":"whsec_de_prueba_12345","posSyncEnabled":false,
                   "metaTitle":"","metaDescription":"","metaKeywords":"",
                   "facebookUrl":"","instagramUrl":"","twitterUrl":""
                 }

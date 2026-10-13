@@ -17,6 +17,9 @@ import java.util.Optional;
 // keeps working (the method is just never offered), but it always returns empty until someone with
 // real Correos de Chile API docs/credentials implements the actual HTTP call here — same shape as
 // ChilexpressQuoteClient once that's available.
+//
+// PROD-12: la frase "a store can select CORREOS_CHILE as a method's carrier" ya no es cierta, y era el
+// problema — ver isImplemented() abajo.
 @Component
 public class CorreosChileQuoteClient implements ShippingCarrierQuoteClient {
 
@@ -25,6 +28,23 @@ public class CorreosChileQuoteClient implements ShippingCarrierQuoteClient {
     @Override
     public ShippingCarrier carrier() {
         return ShippingCarrier.CORREOS_CHILE;
+    }
+
+    /**
+     * PROD-12. Lo que convierte el comentario de arriba en algo comprobable.
+     *
+     * <p>Antes el aviso solo estaba en prosa, así que el panel ofrecía «Correos de Chile» en su
+     * desplegable y un administrador podía seleccionarlo, guardar y activar el método. El checkout
+     * simplemente nunca lo mostraba —{@code quote} devuelve vacío y una cotización vacía se omite—, así
+     * que el comerciante creía haber habilitado un despacho que no existe y nada en la pantalla lo
+     * contradecía. Devolviendo {@code false}, {@link ShippingCarrierPolicy} lo declara no disponible, la
+     * administración rechaza configurarlo y el desplegable ni lo lista.
+     *
+     * <p>Quien implemente el {@code quote} de verdad: borra este método y ya está.
+     */
+    @Override
+    public boolean isImplemented() {
+        return false;
     }
 
     @Override

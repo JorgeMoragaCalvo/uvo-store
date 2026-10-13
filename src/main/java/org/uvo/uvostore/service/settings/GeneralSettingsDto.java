@@ -28,6 +28,11 @@ public record GeneralSettingsDto(
         boolean posApiTokenConfigured,
         boolean posWebhookSecretConfigured,
         boolean posSyncEnabled,
+        // PROD-12, solo lectura: si esta instalación tiene la integración POS habilitada
+        // (app.pos.enabled). En false, posSyncEnabled no decide nada y el panel lo dice en vez de
+        // ofrecer un interruptor sin efecto. Mismo patrón que stripeSecretKeyConfigured — un dato de
+        // estado que el formulario necesita y que no se escribe desde él.
+        boolean posIntegrationAvailable,
         String metaTitle,
         String metaDescription,
         String metaKeywords,

@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.uvo.uvostore.entity.security.User;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.support.IntegrationTestSupport;
+import org.uvo.uvostore.support.WithShippingCarriers;
 
 import java.math.BigDecimal;
 
@@ -20,6 +21,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 // have its API credentials stored separately from the general edit form, encrypted at rest via the
 // same converter payment_gateway_configs uses — same redaction contract as
 // AdminPaymentGatewayController: never echo the raw secret, never leak it in the DB column.
+@WithShippingCarriers
 class AdminShippingCarrierTest extends IntegrationTestSupport {
 
     @PersistenceContext

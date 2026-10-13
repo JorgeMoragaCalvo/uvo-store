@@ -209,6 +209,11 @@ export const adminApi = {
     updateCredentials: (id: number, credentials: Record<string, string>): Promise<ShippingMethodDto> =>
       client.put(`/shipping/methods/${id}/credentials`, credentials),
   },
+  // PROD-12: los transportistas que esta instalación tiene habilitados. El formulario los pide en vez
+  // de listar los dos literales que tenía escritos a mano, uno de los cuales no está implementado.
+  shippingCarriers: {
+    available: (): Promise<string[]> => client.get('/shipping/carriers'),
+  },
   shippingRates: {
     list: (params: ShippingRateListParams): Promise<ShippingRateDto[]> => client.get('/shipping/rates', { params }),
     getById: (id: number): Promise<ShippingRateDto> => client.get(`/shipping/rates/${id}`),

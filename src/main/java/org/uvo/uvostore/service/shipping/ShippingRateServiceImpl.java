@@ -18,6 +18,7 @@ import org.uvo.uvostore.repository.ShippingZoneRepository;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.Money;
 import org.uvo.uvostore.service.order.CartLineCommand;
+import org.uvo.uvostore.service.shipping.carrier.ShippingCarrierPolicy;
 import org.uvo.uvostore.service.shipping.carrier.ShippingCarrierQuoteDispatcher;
 import org.uvo.uvostore.service.shipping.carrier.ShippingCarrierQuoteRequest;
 
@@ -38,6 +39,7 @@ public class ShippingRateServiceImpl implements ShippingRateService {
     private final ProductVariationRepository variationRepository;
     private final SettingRepository settingRepository;
     private final ShippingCarrierQuoteDispatcher carrierQuoteDispatcher;
+    private final ShippingCarrierPolicy carrierPolicy;
 
     public ShippingRateServiceImpl(
             ShippingZoneRepository zoneRepository,
@@ -46,7 +48,8 @@ public class ShippingRateServiceImpl implements ShippingRateService {
             ProductRepository productRepository,
             ProductVariationRepository variationRepository,
             SettingRepository settingRepository,
-            ShippingCarrierQuoteDispatcher carrierQuoteDispatcher) {
+            ShippingCarrierQuoteDispatcher carrierQuoteDispatcher,
+            ShippingCarrierPolicy carrierPolicy) {
         this.zoneRepository = zoneRepository;
         this.rateRepository = rateRepository;
         this.methodRepository = methodRepository;
@@ -54,6 +57,7 @@ public class ShippingRateServiceImpl implements ShippingRateService {
         this.variationRepository = variationRepository;
         this.settingRepository = settingRepository;
         this.carrierQuoteDispatcher = carrierQuoteDispatcher;
+        this.carrierPolicy = carrierPolicy;
     }
 
     @Override
@@ -99,6 +103,11 @@ public class ShippingRateServiceImpl implements ShippingRateService {
                 .filter(ShippingMethod::isActive)
                 .filter(ShippingMethod::isHasApiIntegration)
                 .filter(m -> m.getCarrier() != null)
+                // PROD-12. Cinturón: la administración ya rechaza configurar o reactivar un transportista
+                // no disponible, pero las filas escritas antes de ese guarda siguen en la base y este es el
+                // único camino por el que cotizarían. Con esto, "no se cobra ningún envío con un
+                // transportista sin homologar" es cierto por cualquier camino, no solo por el formulario.
+                .filter(m -> carrierPolicy.isAvailable(m.getCarrier()))
                 .toList();
         if (apiMethods.isEmpty()) return List.of();
 

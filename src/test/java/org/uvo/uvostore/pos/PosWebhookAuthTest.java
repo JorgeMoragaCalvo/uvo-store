@@ -8,6 +8,7 @@ import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.PosConnectionRepository;
 import org.uvo.uvostore.repository.SyncWebHookLogRepository;
 import org.uvo.uvostore.support.IntegrationTestSupport;
+import org.uvo.uvostore.support.WithPosIntegration;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -28,6 +29,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <p>Las rutas están en {@code SecurityConfig.PUBLIC_PATHS} (Spring Security no las mira), así que
  * esos filtros son literalmente lo único que hay entre internet y el stock de la tienda.
  */
+@WithPosIntegration
 class PosWebhookAuthTest extends IntegrationTestSupport {
 
     private static final String WEBHOOK_SECRET = "secreto-de-webhook-pos-de-prueba";

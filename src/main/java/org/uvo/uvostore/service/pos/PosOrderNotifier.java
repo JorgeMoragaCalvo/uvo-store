@@ -42,17 +42,19 @@ public class PosOrderNotifier {
     private final PosConnectionRepository posConnectionRepository;
     private final PosClient posClient;
     private final PosOrderPayloadMapper payloadMapper;
+    private final PosIntegrationPolicy posPolicy;
     private final int divergenceAlertThreshold;
 
     public PosOrderNotifier(OrderRepository orderRepository, ProductSyncMappingRepository mappingRepository,
                             PosConnectionRepository posConnectionRepository, PosClient posClient,
-                            PosOrderPayloadMapper payloadMapper,
+                            PosOrderPayloadMapper payloadMapper, PosIntegrationPolicy posPolicy,
                             @Value("${app.pos.stock-divergence-alert-threshold:3}") int divergenceAlertThreshold) {
         this.orderRepository = orderRepository;
         this.mappingRepository = mappingRepository;
         this.posConnectionRepository = posConnectionRepository;
         this.posClient = posClient;
         this.payloadMapper = payloadMapper;
+        this.posPolicy = posPolicy;
         this.divergenceAlertThreshold = divergenceAlertThreshold;
     }
 
@@ -69,6 +71,19 @@ public class PosOrderNotifier {
     public boolean notifyOrder(Long orderId) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new NoSuchElementException("Order " + orderId + " not found"));
+
+        // PROD-12. El corte va aquí y no en PosNotificationListener a propósito: este método es el único
+        // cuello de botella de salida, así que cubre también a PosNotificationRetryJob —que lo llama
+        // directamente, con su propia bandera— y "no se emite ningún documento tributario" queda cierto
+        // por cualquier camino, no solo por el del pago confirmado.
+        //
+        // Devuelve true: no hay nada pendiente ni que reintentar. Un false metería la orden en la cola
+        // del reintento, que es el sentido opuesto de tener la integración apagada.
+        if (!posPolicy.isEnabledFor(order.getStore())) {
+            log.debug("Integración POS deshabilitada — no se notifica la orden order_id={} store_id={}",
+                    orderId, order.getStore() == null ? null : order.getStore().getId());
+            return true;
+        }
 
         List<ProductSyncMapping> mappings = order.getItems().stream()
                 .map(item -> mappingRepository.findByProductId(item.getProduct().getId()))

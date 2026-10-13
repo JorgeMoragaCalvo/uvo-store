@@ -500,6 +500,9 @@ export interface GeneralSettingsDto {
   posApiTokenConfigured: boolean
   posWebhookSecretConfigured: boolean
   posSyncEnabled: boolean
+  // PROD-12, solo lectura: si esta instalación tiene la integración POS habilitada. En false,
+  // posSyncEnabled no decide nada y el formulario lo dice en vez de ofrecer un interruptor sin efecto.
+  posIntegrationAvailable: boolean
   metaTitle: string
   metaDescription: string
   metaKeywords: string
@@ -510,7 +513,7 @@ export interface GeneralSettingsDto {
 
 // Mirrors GeneralSettingsUpdateRequest — PUT body. Secret fields are write-only: blank/omitted
 // means "leave the stored value unchanged" (see SettingsServiceImpl.setSecret).
-export interface GeneralSettingsUpdateRequest extends Omit<GeneralSettingsDto, 'stripeSecretKeyConfigured' | 'posApiTokenConfigured' | 'posWebhookSecretConfigured'> {
+export interface GeneralSettingsUpdateRequest extends Omit<GeneralSettingsDto, 'stripeSecretKeyConfigured' | 'posApiTokenConfigured' | 'posWebhookSecretConfigured' | 'posIntegrationAvailable'> {
   stripeSecretKey: string
   posApiToken: string
   posWebhookSecret: string
