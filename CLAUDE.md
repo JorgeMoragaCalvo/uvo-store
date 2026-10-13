@@ -75,7 +75,7 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
     request's `getScheme()`/`getServerName()`/`getServerPort()`, so behind a TLS-terminating proxy
     the gateway got a URL describing the internal hop (`http`, upstream port). **Don't "fix" that
     class of problem with `server.forward-headers-strategy`** — see the `ClientIpResolver` note
-    under rate limiting. `LocalFileStorageService.publicUrl` still builds image URLs this way and
+    underrate limiting. `LocalFileStorageService.publicUrl` still builds image URLs this way and
     is the one known remaining case (deferred to PROD-05/09).
   - **The SPA no longer sends return URLs at all.** `successUrl`/`cancelUrl`/`failureUrl`/
     `pendingUrl`/`returnUrl` are gone from the three `*Request` records: they were passed to Stripe
@@ -131,7 +131,7 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
   host is same-origin and CORS never engages — use a different port.
 - **Rate limiting** (`RateLimitFilter`, A4) on the six unauthenticated endpoints: admin/customer
   login, customer registration, admin forgot-password (window 5x longer — each hit sends a real
-  email), order tracking and the MercadoPago webhook. Counters in a bounded Caffeine cache; limits
+  email), order tracking, and the MercadoPago webhook. Counters in a bounded Caffeine cache; limits
   are properties (`app.rate-limit.*`). **Who the caller is, is `ClientIpResolver`'s decision, not this
   filter's** (F18): the filter used to take `X-Forwarded-For`'s first entry without checking where it
   came from, so anyone who sent the header picked their own counter and this control did not exist.
@@ -143,7 +143,7 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
   `ForwardedHeaderFilter` does overwrite `getRemoteAddr()` from that header but has no trusted-proxy
   notion at all, so it would spread the hole instead of closing it. Startup logs which mode is active —
   behind an unconfigured proxy every client shares one bucket, and login cuts off at 5 attempts total.
-- **Per-account throttling** (`AccountAttemptThrottle`, F18) on admin login, customer login and admin
+- **Per-account throttling** (`AccountAttemptThrottle`, F18) on admin login, customer login, and admin
   forgot-password, because per-IP is blind to an attacker spread across many addresses. Same Caffeine
   pattern, but called from `AuthController` where the email is already parsed — no body reading in a
   filter. The key includes the **store id** (emails are per store). Logins count *failures* and a
@@ -159,10 +159,10 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
   does anything by default. `TrustedProxyRateLimitTest` and `AccountThrottleTest` need their own
   contexts because they need different properties.
 - **`app.customer-accounts.enabled`** (`CUSTOMER_ACCOUNTS_ENABLED`, **false**): buyer accounts, deferred
-  by PROD-07. Off, every `/api/customer/**` path answers 404, guest checkout issues no invitation and no
+  by PROD-07. Off, every `/api/customer/**` path answers 404, guest checkout issues no invitation, and no
   invitation email goes out; guest purchase itself is unaffected. Read in exactly one place,
   `CustomerAccountsPolicy`. **Deliberately not overridden in surefire**, so the whole suite runs under
-  the shipped value and the six classes that need accounts opt in with `@WithCustomerAccounts`. Don't
+  the shipped value, and the six classes that need accounts opt in with `@WithCustomerAccounts`. Don't
   turn it on in production without the storefront screens — see the PROD-07 bullet in "Architecture".
 - **JWTs are revocable** (`TokenVersionService`, A5). `users.token_version`/`customers.token_version`
   (V14) is carried in the token's `tv` claim and compared on every authenticated request through a
@@ -234,12 +234,12 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
   `createUser` is what now stops a silent 200 creating an admin nobody can ever log into.
   **PROD-06 closed the rest of the loop.** Three things it added, and one hole it found:
   - **The landing page** (`admin/pages/AcceptInvitation.tsx`, route `/admin/aceptar-invitacion`, public
-    and outside `AdminLayout` like the other three). Until it existed the email linked to a 404 and the
-    only way to finish was POSTing the token by hand. On success it logs straight into the panel with the
+    and outside `AdminLayout` like the other three). Until it existed, the email linked to a 404 and the
+    only way to finish was POSTing the token by hand. On success, it logs straight into the panel with the
     permissions the endpoint returns, rather than bouncing to the login: the invitee just proved mailbox
     control and chose the password, so retyping it protects nothing. **The two bad endings say different
     things and neither clears the typed password** — the server deliberately can't tell an invalid token
-    from an expired, used or deactivated one, so that branch says "ask for a resend", while a failed
+    from an expired, used, or deactivated one, so that branch says "ask for a resend", while a failed
     request (no `status` on the rejection — the `adminApi` interceptor spreads the `ApiError` body, which
     carries one) says the connection failed and keeps the form intact.
   - **Resend from the panel**, `POST /api/admin/users/{id}/resend-invitation` (`users.manage`, same
@@ -297,7 +297,7 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
   `app.customer-accounts.enabled` / `CUSTOMER_ACCOUNTS_ENABLED`, **off by default**. The backend half is
   complete (fifteen endpoints under `/api/customer/**`, F22/F23/F24) and the storefront half does not
   exist at all: no `/cuenta/*` route, no buyer session store, no customer password recovery. The
-  production plan's rule for a deferred feature is that it disappears from its **entry points, API and
+  production plan's rule for a deferred feature is that it disappears from its **entry points, API, and
   emails**, so all three are off:
   - **`CustomerAccountsGateFilter`** answers **404** to anything under `/api/customer`, by prefix rather
     than endpoint by endpoint, so an endpoint added there tomorrow is covered without remembering the
@@ -330,8 +330,8 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
   - **To turn them on** you need six screens (`/cuenta/activar`, login, forgot, reset, profile/password,
     addresses), a buyer session store with a route guard, and **two endpoints that don't exist** (customer
     password recovery — the columns are already there since V12, no migration). The flag is
-    platform-wide, not per store. The admin panel still shows `AccountStatus.INVITED`; with the flag off
-    no new rows reach that state and the existing ones are legitimate history. `OpenApiConfig` still
+    platform-wide, not per store. The admin panel still shows `AccountStatus.INVITED`; with the flag off, 
+    no new rows reach that state, and the existing ones are legitimate history. `OpenApiConfig` still
     documents `/api/customer/**` — that's operator documentation, and the filter's 404 is the operational
     truth.
 - **401 vs 403 is now defined** (`ApiSecurityErrorHandlers`, F19), and the distinction matters to the SPA,
@@ -421,7 +421,7 @@ and sales/products/payment-methods reports with date-range filters and CSV expor
 
 **A payment is only accepted if the amount matches** (M4). `OrderStatusService.markPaid` takes the
 amount the gateway says arrived and compares it against `order.getTotal()` before anything is marked
-paid — none of Stripe, Webpay or MercadoPago did that; they each read the payment's *status* while
+paid — none of Stripe, Webpay, or MercadoPago did that; they each read the payment's *status* while
 the amount sat unused in the SDK response. A mismatch (including an unknown amount) leaves the order
 **PENDING** with a note in `order_status_history` and a Sentry message, the same pair
 `OrderInventoryService` uses. The check lives inside `markPaid`, not in the five callers, so no
@@ -489,7 +489,7 @@ store and assigns it to every existing admin — without that backfill, enforcin
 everyone out of their own panel. For the same reason `IntegrationTestSupport.createAdmin` now grants
 a full-access role, and `createAdminWithPermissions(store, prefix, "products.view")` builds a
 restricted one. Those 19 are the guarded admin subset, not every controller in the project (there
-are 37 `@RestController` classes in total — the rest are public storefront, customer, POS, platform
+are 37 `@RestController` classes in total — the rest are public storefront, customer, POS, platform,
 and auth surfaces, each with its own filter). Three of the 19 live in `controller/settings/**`, not
 `controller/admin/**` — easy to miss when adding endpoints. On the frontend, `NAV_ITEMS` entries and
 admin routes declare a `permission` (`handle.permission` in `router.tsx`), checked once in
@@ -552,7 +552,7 @@ locally) without leaking internals to the client.
 `BusinessException` → 400 with the message. A request that can't be served but wasn't wrong is
 `OutOfStockException`/`ShippingUnavailableException` → 409. Anything else — a wrapped SDK error, a
 failed decryption — stays `IllegalStateException` and falls to the catch-all: 500, nothing leaked,
-Sentry notified. Don't put `IllegalStateException` back on the 400 handler; that mapping is what
+Sentry notified. Don't put `IllegalStateException` back on the 400 handlers; that mapping is what
 sent Stripe's raw error text to customers and kept those failures out of Sentry.
 `IllegalArgumentException` does map to 400, and every use of it here is genuine input validation.
 
@@ -570,7 +570,7 @@ is the other trap — it can't be proxied, so it costs one SELECT per row no mat
 
 **Database**: PostgreSQL via Flyway, schema in `src/main/resources/db/migration/` — **23 migrations,
 currently up to `V23__store_domain_verified.sql`**, well past the original catalog/settings ones.
-Everything from V8 on is hardening or new capability rather than the original port: V8 stores, V11
+Everything from V8 on is a hardening or new capability rather than the original port: V8 stores, V11
 store domains, V12 password reset, V13 stock/coupon integrity, V14 token versions, V15 the
 permission catalogue, V16 the listing indexes, V17 TIMESTAMPTZ + the enum CHECK constraints, V18
 store status, V19 order refunds, V20 `order_items.stock_applied`, V21 refund intent, V22 nullable

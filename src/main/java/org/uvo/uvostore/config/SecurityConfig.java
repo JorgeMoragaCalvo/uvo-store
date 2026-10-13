@@ -61,7 +61,7 @@ public class SecurityConfig {
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 // F19: sin esto la cadena no tenía punto de entrada declarado y una petición SIN
-                // autenticar a una ruta protegida respondía 403 — el código de "estás dentro pero no
+                // autenticar a una ruta protegida respondía 403 — el código de "estás dentro, pero no
                 // puedes", no el de "vuelve a entrar". El panel solo cierra sesión ante 401, así que un
                 // token caducado dejaba la SPA atrapada mostrando errores sin volver al login.
                 // ExceptionTranslationFilter ya sabe cuál de los dos casos es; solo faltaba decirle qué

@@ -265,7 +265,7 @@ public class AuthController {
     /**
      * PROD-04. El enlace sale del origen de ESTA tienda. Antes era la URL global de plataforma, así que el
      * administrador de cualquier tienda recibía un enlace al panel de otra — y el token, que sí es suyo, no
-     * habría servido allí: {@code adminResetPassword} resuelve el tenant por el {@code Host}.
+     * habría servido allí: {@code adminResetPassword} resuelve el tenant por él {@code Host}.
      *
      * <p>Visible en el paquete para poder afirmar sobre el cuerpo sin enviar nada, igual que
      * {@code UserServiceImpl.invitationBody} y {@code CustomerInvitationEmailListener.body}: en los tests no
