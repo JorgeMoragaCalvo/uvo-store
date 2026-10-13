@@ -89,6 +89,54 @@ class StorePublicUrlResolverTest {
                 .hasMessageContaining("sin tienda");
     }
 
+    // --- PROD-05a: la mitad de entrada del subdominio de plataforma ---------------------------------
+
+    @Test
+    @DisplayName("Un host <slug>.<dominio-plataforma> da el slug")
+    void aPlatformSubdomainYieldsItsSlug() {
+        assertThat(resolver.slugOfPlatformHost("juan.uvostore.cl")).contains("juan");
+        // Los nombres de host no distinguen mayúsculas; el slug se guarda en minúsculas.
+        assertThat(resolver.slugOfPlatformHost("Juan.UVOSTORE.cl")).contains("juan");
+    }
+
+    @Test
+    @DisplayName("Lo que hostname() compone, slugOfPlatformHost() lo descompone")
+    void whatIsComposedIsDecomposed() {
+        // Es la razón de que las dos mitades vivan en la misma clase: si una cambia el esquema y la otra
+        // no, los enlaces que salen dejan de resolver la tienda cuando vuelven.
+        Store store = store("juan", null, null);
+        String host = resolver.storefrontOrigin(store).replace("https://", "");
+
+        assertThat(resolver.slugOfPlatformHost(host)).contains("juan");
+    }
+
+    @Test
+    @DisplayName("Un host de otro dominio no da slug, aunque empiece igual")
+    void aForeignDomainYieldsNoSlug() {
+        // El agujero que cierra PROD-05a: antes se tomaba el primer segmento de cualquier host.
+        assertThat(resolver.slugOfPlatformHost("juan.dominio-ajeno.com")).isEmpty();
+        // El dominio de plataforma como prefijo de otro nombre tampoco cuenta.
+        assertThat(resolver.slugOfPlatformHost("juan.uvostore.cl.dominio-ajeno.com")).isEmpty();
+        // Ni como sufijo SIN el punto de frontera: "evil-uvostore.cl" no es un subdominio de uvostore.cl.
+        assertThat(resolver.slugOfPlatformHost("juan-uvostore.cl")).isEmpty();
+        assertThat(resolver.slugOfPlatformHost("juan.uvostore.com")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Sin subdominio, o con más de una etiqueta, no hay slug")
+    void onlyASingleLabelBeforeThePlatformDomainIsASlug() {
+        assertThat(resolver.slugOfPlatformHost("uvostore.cl")).isEmpty();
+        assertThat(resolver.slugOfPlatformHost(".uvostore.cl")).isEmpty();
+        assertThat(resolver.slugOfPlatformHost("a.juan.uvostore.cl")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Un host nulo, o una IP, no da slug")
+    void aNullHostOrAnIpYieldsNoSlug() {
+        assertThat(resolver.slugOfPlatformHost(null)).isEmpty();
+        assertThat(resolver.slugOfPlatformHost("127.0.0.1")).isEmpty();
+    }
+
     // --- configuración inválida: el arranque se cae en vez de mandar enlaces rotos -----------------
 
     @Test

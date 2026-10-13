@@ -48,6 +48,22 @@ class SecurityHardeningTest extends IntegrationTestSupport {
                 .andExpect(header().doesNotExist("Access-Control-Allow-Origin"));
     }
 
+    @Test
+    @DisplayName("PROD-05a: un origen ajeno con el nick de una tienda real tampoco recibe permiso")
+    void corsRejectsAForeignOriginThatBorrowsARealStoresSlug() throws Exception {
+        Store store = createStore("cors-borrow");
+        // La CORS comparte resolver con TenantResolutionFilter, así que heredaba el agujero: con el primer
+        // segmento valía como tienda, y un sitio ajeno obtenía permiso CON credenciales. "evil.example" a
+        // secas (arriba) nunca lo ejercitó porque no empieza por el slug de ninguna tienda.
+        String origin = "http://" + store.getSlug() + ".evil.example:5173";
+
+        mockMvc.perform(options("/api/v1/products")
+                        .header("Host", hostHeader(store))
+                        .header("Origin", origin)
+                        .header("Access-Control-Request-Method", "GET"))
+                .andExpect(header().doesNotExist("Access-Control-Allow-Origin"));
+    }
+
     // --- A3: health check ---------------------------------------------------------------------
 
     @Test
