@@ -164,6 +164,14 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
   `CustomerAccountsPolicy`. **Deliberately not overridden in surefire**, so the whole suite runs under
   the shipped value, and the six classes that need accounts opt in with `@WithCustomerAccounts`. Don't
   turn it on in production without the storefront screens — see the PROD-07 bullet in "Architecture".
+- **`app.shipping.carriers.enabled`** (`SHIPPING_CARRIERS_ENABLED`, **empty**) and **`app.pos.enabled`**
+  (`POS_ENABLED`, **false**): the other two deferred integrations, PROD-12. Empty/off, no carrier can be
+  configured on a shipping method and the quoter skips any row that already has one; `/api/sync/**` and
+  `/api/webhooks/pos/**` answer 404 and no order is notified to the POS — which means no tax document is
+  emitted. Read only by `ShippingCarrierPolicy` and `PosIntegrationPolicy`. The POS also needs the
+  store's own `pos_sync_enabled`. **Neither is overridden in surefire**; the classes that need them opt
+  in with `@WithPosIntegration` / `@WithShippingCarriers`. Note `@WithShippingCarriers` must also move
+  `chilexpress.quote-url` off the sandbox default, or the context refuses to start — on purpose.
 - **JWTs are revocable** (`TokenVersionService`, A5). `users.token_version`/`customers.token_version`
   (V14) is carried in the token's `tv` claim and compared on every authenticated request through a
   60s Caffeine cache. Bumping the version — deactivating, deleting or re-roling a user, and any
@@ -334,6 +342,50 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
     no new rows reach that state, and the existing ones are legitimate history. `OpenApiConfig` still
     documents `/api/customer/**` — that's operator documentation, and the filter's 404 is the operational
     truth.
+- **Carriers and the POS are deferred behind two more flags** (PROD-12), both off/empty by default:
+  `app.shipping.carriers.enabled` / `SHIPPING_CARRIERS_ENABLED` and `app.pos.enabled` / `POS_ENABLED`.
+  Same shape and same reason as PROD-07, applied to the other two incomplete integrations. The
+  authorities are `ShippingCarrierPolicy` and `PosIntegrationPolicy`; `CustomerAccountsGateFilter` was
+  generalized into **`DeferredSurfaceGateFilter`**, one filter with a rule list (`RateLimitFilter`'s
+  `Rule` pattern) rather than a near-identical copy per feature.
+  - **Carriers need two different kinds of yes.** "Implemented" is a fact of the code, declared by each
+    client through `ShippingCarrierQuoteClient.isImplemented()` — Correos de Chile is a placeholder that
+    always returns empty, so **no property can enable it**; whoever writes the real `quote` deletes one
+    override. "Homologated" is an operations decision and lives in the property. Before this, the panel
+    offered both carriers as two hand-written `<SelectItem>`s and `AdminShippingMethodServiceImpl` took
+    any enum name, so a merchant could configure and activate a shipping method the checkout would
+    **never** show, with nothing on screen saying so. Rejected at configuration time now, with two
+    different messages because the two cases differ for the merchant: one can't be fixed by configuring
+    anything, the other can.
+  - **A homologated Chilexpress over the sandbox URL fails startup.** `chilexpress.quote-url` defaults to
+    `testservices.wschilexpress.com` so development works without credentials; declaring the carrier live
+    while still pointing there is §7.1's "sandbox involuntario" — quoting real shipping off a toy
+    environment. Same policy as `ReportZone` with a bad timezone and `RequiredSecret` with a dev secret.
+    An unknown carrier name in the list fails startup too, rather than silently offering no shipping.
+  - **The POS needs two yeses as well**, and the per-store one already existed: `pos_sync_enabled` has
+    been in the panel from the start and **no code read it** — turning it off turned nothing off, the
+    same lie as F11's `isOnSale='false'` and PROD-06's `sendInvitation='false'`. The platform flag is
+    what contains the real risk: notifying an order **emits a tax document**, and the receiver's
+    idempotency contract is still unconfirmed, which is exactly why `app.pos.retry.enabled` was already
+    off. Having the retry contained while the emission itself ran by default was incoherent.
+  - **The outbound cut is in `PosOrderNotifier.notifyOrder`, not in the listener**: it's the single
+    outbound chokepoint, so it also covers `PosNotificationRetryJob`, which calls it directly. It returns
+    `true` (nothing pending) — a `false` would queue the order for retry, the opposite of being off.
+    Inbound, `/api/sync/**` and `/api/webhooks/pos/**` answer 404 through the gate filter.
+  - **Connecting the POS now requires the webhook secret**, like F17 requires credentials to enable
+    Stripe. The connection used to go `active = true` unconditionally with the secret left as `""`, and
+    that doesn't leave a door open, it leaves it **broken**: `PosWebhookAuthFilter` signs without
+    checking the secret exists and `SecretKeySpec` rejects an empty key, so every inbound webhook dies
+    building the HMAC — from a filter, where `GlobalExceptionHandler` never gets to answer.
+    `PosConnectionActivationTest` pins that behavior instead of assuming it.
+  - **What's still missing the day a carrier is homologated**, and unreachable while they're off: the
+    commune → Chilexpress county-code table (the real blocker, and it needs credentials and docs we don't
+    have); `shipping_origin_region`/`shipping_origin_commune`, which `ShippingRateServiceImpl` reads and
+    **nothing can write** (no DTO field, no screen, no seed); `ShippingCoverageService` deriving public
+    coverage from `ShippingZone` only, so a carrier-only store reports no coverage and the flow is
+    unreachable from the SPA; and no test of a successful Chilexpress response — the six that exist cover
+    only the failure paths. On the POS side, `handleStockAlert` and `handleProductCreated` only log, and
+    the HTTP response admits it to the caller.
 - **401 vs 403 is now defined** (`ApiSecurityErrorHandlers`, F19), and the distinction matters to the SPA,
   not just to purists. There are three cases:
   - **No token, expired, revoked, or issued for another store → 401**, with `WWW-Authenticate: Bearer`.
@@ -719,15 +771,15 @@ login (`/admin/login`) is separate and fully functional.
     Spring 7 now rejects at startup — both need
     `@Transactional(propagation = Propagation.REQUIRES_NEW)`. If you add another `AFTER_COMMIT`
     listener that also needs a transaction, use the same pattern.
-- **Testing**: **457 backend `@Test` methods across 83 classes** (JUnit + `IntegrationTestSupport`,
+- **Testing**: **480 backend `@Test` methods across 89 classes** (JUnit + `IntegrationTestSupport`,
   one Spring-managed transaction per test, auto-rolled-back — `AFTER_COMMIT` listeners never fire
-  under this setup, which is intentional) and **137 frontend tests across 30 files** (Vitest +
+  under this setup, which is intentional) and **142 frontend tests across 32 files** (Vitest +
   React Testing Library, `npm run test`), both wired into CI (`.github/workflows/ci.yml`) and the
   release workflow (`.github/workflows/release.yml`, triggered by pushing a `vX.Y.Z` tag — builds
   artifacts and publishes a GitHub Release with auto-generated notes). Most of that growth is the
   audit rounds: nearly every `C`/`A`/`M`/`B`/`F` finding left a test that fails when its fix is
   undone, so a red suite after a refactor is usually an invariant being removed, not a flaky test.
-  Four recurring devices worth knowing before writing a new one:
+  Five recurring devices worth knowing before writing a new one:
   - **`disableShipping(store)` before any checkout.** A fresh store covers no shipping zone, so
     checkout legitimately answers 409 (A7). Tests that don't care about delivery call this.
   - **`@WithCustomerAccounts` to touch `/api/customer/**`.** Buyer accounts ship off (PROD-07), so
@@ -735,6 +787,10 @@ login (`/admin/login`) is separate and fully functional.
     fails. One composed annotation rather than six copies of
     `@SpringBootTest(properties = …)`, so the opting-in classes share a single extra Spring context.
     Need a customer credential *without* the login endpoint? `customerToken(store, customer)`.
+  - **`@WithPosIntegration` / `@WithShippingCarriers` to touch the POS or a carrier.** Both ship off
+    (PROD-12), so without them `/api/sync/**` and `/api/webhooks/pos/**` answer 404 and configuring a
+    carrier on a shipping method is a 400. Unit tests of `PosOrderNotifier` just need a policy in the
+    constructor — `PosPolicyFixture` has the three combinations that matter.
   - **Package-visible builder methods to assert outbound payloads** without SMTP or network:
     `MercadoPagoServiceImpl.buildPreferenceRequest`, `PaymentServiceImpl.buildSessionParams`,
     `CustomerInvitationEmailListener.body`, `UserServiceImpl.invitationBody`. That's why those

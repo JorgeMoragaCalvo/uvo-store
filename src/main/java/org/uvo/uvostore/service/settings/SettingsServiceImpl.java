@@ -9,6 +9,7 @@ import org.uvo.uvostore.repository.PosConnectionRepository;
 import org.uvo.uvostore.repository.SettingRepository;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.BusinessException;
+import org.uvo.uvostore.service.pos.PosIntegrationPolicy;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -20,10 +21,13 @@ public class SettingsServiceImpl implements SettingsService {
 
     private final SettingRepository settingRepository;
     private final PosConnectionRepository posConnectionRepository;
+    private final PosIntegrationPolicy posPolicy;
 
-    public SettingsServiceImpl(SettingRepository settingRepository, PosConnectionRepository posConnectionRepository) {
+    public SettingsServiceImpl(SettingRepository settingRepository, PosConnectionRepository posConnectionRepository,
+                               PosIntegrationPolicy posPolicy) {
         this.settingRepository = settingRepository;
         this.posConnectionRepository = posConnectionRepository;
+        this.posPolicy = posPolicy;
     }
 
     @Override
@@ -38,7 +42,8 @@ public class SettingsServiceImpl implements SettingsService {
                 getBool("require_company", false), get("stripe_public_key", ""), isSet("stripe_secret_key"),
                 getBool("stripe_enabled", false), get("pos_api_url", ""),
                 connection != null && notBlank(connection.getApiKey()), connection != null && notBlank(connection.getWebhookSecret()),
-                getBool("pos_sync_enabled", false), get("meta_title", ""), get("meta_description", ""), get("meta_keywords", ""),
+                getBool("pos_sync_enabled", false), posPolicy.isEnabled(),
+                get("meta_title", ""), get("meta_description", ""), get("meta_keywords", ""),
                 get("facebook_url", ""), get("instagram_url", ""), get("twitter_url", "")
         );
     }
@@ -109,6 +114,7 @@ public class SettingsServiceImpl implements SettingsService {
             } else if (connection.getWebhookSecret() == null) {
                 connection.setWebhookSecret("");
             }
+            requirePosWebhookSecret(connection);
             connection.setActive(true);
             if (connection.getCompanyName() == null) {
                 connection.setCompanyName("UvoPOS");
@@ -134,6 +140,31 @@ public class SettingsServiceImpl implements SettingsService {
      * de secreto (que el panel nunca puede pre-rellenar) no puede fallar por eso. Es la misma regla que
      * {@link #setSecret}.
      */
+    /**
+     * PROD-12. Activar la conexión al POS exige el secreto con el que se firman sus webhooks, igual que
+     * F17 exige credenciales para activar Stripe y M3 para MercadoPago, y por la misma razón: se rechaza
+     * donde la persona puede hacer algo al respecto.
+     *
+     * <p>Antes la conexión quedaba {@code active = true} de forma incondicional, con el secreto en cadena
+     * vacía si el administrador dejaba el campo en blanco. Y eso no deja la puerta abierta, la deja
+     * <b>rota</b>: {@code PosWebhookAuthFilter} no comprueba que el secreto exista antes de firmar, así
+     * que cada webhook entrante de esa tienda muere al construir el HMAC — desde un filtro, donde
+     * {@code GlobalExceptionHandler} no llega. Una conexión que se presenta como activa y no puede
+     * autenticar ni una petición es peor que no tenerla.
+     *
+     * <p>Se comprueba sobre la conexión y no sobre el comando porque el secreto cuenta si <b>llega o ya
+     * estaba guardado</b>: el panel nunca puede pre-rellenar un secreto, así que un guardado que no toca
+     * ese campo no debe fallar por él. Misma regla que {@link #requireStripeCredentials}.
+     */
+    private void requirePosWebhookSecret(PosConnection connection) {
+        if (notBlank(connection.getWebhookSecret())) {
+            return;
+        }
+        throw new BusinessException(
+                "Para conectar UvoPOS debes indicar el secreto de webhook: es con lo que se firman las "
+                        + "notificaciones que llegan del POS, y sin él ninguna se puede verificar.");
+    }
+
     private void requireStripeCredentials(GeneralSettingsUpdateRequest command) {
         if (!command.stripeEnabled()) {
             return;

@@ -45,8 +45,11 @@ class PosOrderNotifierTest {
     private final PosConnectionRepository connectionRepository = mock(PosConnectionRepository.class);
     private final PosClient posClient = mock(PosClient.class);
 
+    // PROD-12: con la política habilitada, porque lo que mide esta clase es qué se escribe en la orden
+    // según responda el POS. Que no se notifique nada cuando está apagada es PosNotifierDisabledTest.
     private final PosOrderNotifier notifier = new PosOrderNotifier(
-            orderRepository, mappingRepository, connectionRepository, posClient, new PosOrderPayloadMapper(), 3);
+            orderRepository, mappingRepository, connectionRepository, posClient, new PosOrderPayloadMapper(),
+            PosPolicyFixture.enabled(), 3);
 
     @Test
     @DisplayName("Una notificación correcta marca la orden como sincronizada y cuenta el intento")

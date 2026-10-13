@@ -17,26 +17,28 @@ function Field({
   value,
   onChange,
   type = 'text',
+  disabled,
 }: {
   id: string
   label: string
   value: string
   onChange: (value: string) => void
   type?: string
+  disabled?: boolean
 }) {
   return (
     <div className="flex flex-col gap-2">
       <Label htmlFor={id}>{label}</Label>
-      <Input id={id} type={type} value={value} onChange={(e) => onChange(e.target.value)} />
+      <Input id={id} type={type} value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled} />
     </div>
   )
 }
 
-function Toggle({ id, label, checked, onChange }: { id: string; label: string; checked: boolean; onChange: (v: boolean) => void }) {
+function Toggle({ id, label, checked, onChange, disabled }: { id: string; label: string; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
     <div className="flex items-center justify-between rounded-md border px-3 py-2">
       <Label htmlFor={id}>{label}</Label>
-      <Switch id={id} checked={checked} onCheckedChange={onChange} />
+      <Switch id={id} checked={checked} onCheckedChange={onChange} disabled={disabled} />
     </div>
   )
 }
@@ -49,12 +51,14 @@ function SecretField({
   value,
   configured,
   onChange,
+  disabled,
 }: {
   id: string
   label: string
   value: string
   configured: boolean
   onChange: (value: string) => void
+  disabled?: boolean
 }) {
   return (
     <div className="flex flex-col gap-2">
@@ -70,6 +74,7 @@ function SecretField({
         value={value}
         placeholder="Dejar en blanco para no cambiar"
         onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
       />
     </div>
   )
@@ -98,6 +103,7 @@ function toUpdateRequest(dto: GeneralSettingsDto): GeneralSettingsUpdateRequest 
     stripeSecretKeyConfigured,
     posApiTokenConfigured,
     posWebhookSecretConfigured,
+    posIntegrationAvailable,
     ...rest
   } = dto
   return { ...rest, stripeSecretKey: '', posApiToken: '', posWebhookSecret: '' }
@@ -266,23 +272,46 @@ function GeneralSettingsForm({ initial }: { initial: GeneralSettingsDto }) {
           <TabsContent value="pos">
             <Card>
               <CardContent className="flex flex-col gap-4 pt-6">
-                <p className="text-sm text-muted-foreground">
-                  Opcional — solo necesario si tu tienda sincroniza stock/productos con UvoPOS.
-                </p>
+                {/*
+                  PROD-12: el interruptor de abajo existía desde siempre y hasta ahora no lo leía nadie,
+                  así que apagarlo no apagaba nada. Ya decide de verdad, pero por encima de él hay un
+                  interruptor de plataforma: notificar una orden al POS emite un documento tributario y
+                  el contrato de idempotencia del receptor no está confirmado. Si está apagado se dice,
+                  en vez de dejar un formulario que parece hacer algo.
+                */}
+                {initial.posIntegrationAvailable ? (
+                  <p className="text-sm text-muted-foreground">
+                    Opcional — solo necesario si tu tienda sincroniza stock/productos con UvoPOS.
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    La integración con UvoPOS está deshabilitada en esta instalación, así que estos datos
+                    no tendrían efecto. Se habilita desde la configuración del servidor, una vez validada
+                    la emisión de documentos con el POS.
+                  </p>
+                )}
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <Toggle
                     id="posSyncEnabled"
                     label="Sincronización con POS habilitada"
                     checked={form.posSyncEnabled}
                     onChange={(v) => set('posSyncEnabled', v)}
+                    disabled={!initial.posIntegrationAvailable}
                   />
-                  <Field id="posApiUrl" label="URL de la API del POS" value={form.posApiUrl} onChange={(v) => set('posApiUrl', v)} />
+                  <Field
+                    id="posApiUrl"
+                    label="URL de la API del POS"
+                    value={form.posApiUrl}
+                    onChange={(v) => set('posApiUrl', v)}
+                    disabled={!initial.posIntegrationAvailable}
+                  />
                   <SecretField
                     id="posApiToken"
                     label="Token de la API (uvp_&#123;companyId&#125;_&#123;clave&#125;)"
                     value={form.posApiToken}
                     configured={configured.posApiToken}
                     onChange={(v) => set('posApiToken', v)}
+                    disabled={!initial.posIntegrationAvailable}
                   />
                   <SecretField
                     id="posWebhookSecret"
@@ -290,6 +319,7 @@ function GeneralSettingsForm({ initial }: { initial: GeneralSettingsDto }) {
                     value={form.posWebhookSecret}
                     configured={configured.posWebhookSecret}
                     onChange={(v) => set('posWebhookSecret', v)}
+                    disabled={!initial.posIntegrationAvailable}
                   />
                 </div>
               </CardContent>

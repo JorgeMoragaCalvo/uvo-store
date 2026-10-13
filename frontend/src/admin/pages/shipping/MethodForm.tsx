@@ -47,6 +47,14 @@ const CREDENTIAL_FIELDS: Record<string, { key: string; label: string }[]> = {
   CORREOS_CHILE: [],
 }
 
+// Solo para la etiqueta. Qué transportistas se pueden elegir lo decide el backend (PROD-12): antes esto
+// eran dos <SelectItem> escritos a mano, y uno de los dos —Correos de Chile— es un placeholder que nunca
+// cotiza, así que se podía configurar y activar un despacho que el checkout no mostraba jamás.
+const CARRIER_LABELS: Record<string, string> = {
+  CHILEXPRESS: 'Chilexpress',
+  CORREOS_CHILE: 'Correos de Chile',
+}
+
 function toNumberOrNull(value: string): number | null {
   return value.trim() === '' ? null : Number(value)
 }
@@ -59,9 +67,19 @@ export default function MethodForm() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [credentialsSet, setCredentialsSet] = useState<Record<string, boolean>>({})
   const [credentialInputs, setCredentialInputs] = useState<Record<string, string>>({})
+  const [availableCarriers, setAvailableCarriers] = useState<string[]>([])
   const [loading, setLoading] = useState(isEdit)
   const [saving, setSaving] = useState(false)
   const [savingCredentials, setSavingCredentials] = useState(false)
+
+  // PROD-12: un fallo aquí deja la lista vacía, que es el lado seguro — no se ofrece un transportista
+  // que no se pudo confirmar.
+  useEffect(() => {
+    adminApi.shippingCarriers
+      .available()
+      .then(setAvailableCarriers)
+      .catch(() => setAvailableCarriers([]))
+  }, [])
 
   useEffect(() => {
     if (!id) return
@@ -232,24 +250,36 @@ export default function MethodForm() {
                 id="hasApiIntegration"
                 checked={form.hasApiIntegration}
                 onCheckedChange={(checked) => setForm({ ...form, hasApiIntegration: checked })}
+                disabled={availableCarriers.length === 0}
               />
             </div>
-            {form.hasApiIntegration && (
-              <div className="flex flex-col gap-2">
-                <Label>Transportista</Label>
-                <Select
-                  value={form.carrier || undefined}
-                  onValueChange={(value) => setForm({ ...form, carrier: value as ShippingCarrier })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecciona un transportista" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="CHILEXPRESS">Chilexpress</SelectItem>
-                    <SelectItem value="CORREOS_CHILE">Correos de Chile</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            {availableCarriers.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No hay transportistas habilitados en esta instalación. Usa tarifas propias por zona: una
+                cotización automática requiere homologar antes el contrato del transportista y el mapeo de
+                comunas.
+              </p>
+            ) : (
+              form.hasApiIntegration && (
+                <div className="flex flex-col gap-2">
+                  <Label>Transportista</Label>
+                  <Select
+                    value={form.carrier || undefined}
+                    onValueChange={(value) => setForm({ ...form, carrier: value as ShippingCarrier })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecciona un transportista" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableCarriers.map((carrier) => (
+                        <SelectItem key={carrier} value={carrier}>
+                          {CARRIER_LABELS[carrier] ?? carrier}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )
             )}
           </CardContent>
         </Card>

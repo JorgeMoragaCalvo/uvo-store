@@ -4,7 +4,7 @@ import jakarta.servlet.Filter;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.uvo.uvostore.security.CustomerAccountsGateFilter;
+import org.uvo.uvostore.security.DeferredSurfaceGateFilter;
 import org.uvo.uvostore.security.JwtAuthenticationFilter;
 import org.uvo.uvostore.security.PlatformApiKeyAuthFilter;
 import org.uvo.uvostore.security.PosApiKeyAuthFilter;
@@ -43,7 +43,7 @@ public class FilterRegistrationConfig {
     }
 
     @Bean
-    public FilterRegistrationBean<CustomerAccountsGateFilter> customerAccountsGateFilterRegistration(CustomerAccountsGateFilter filter) {
+    public FilterRegistrationBean<DeferredSurfaceGateFilter> deferredSurfaceGateFilterRegistration(DeferredSurfaceGateFilter filter) {
         return disableAutoRegistration(filter);
     }
 

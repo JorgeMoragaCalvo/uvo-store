@@ -16,6 +16,7 @@ import org.uvo.uvostore.repository.ProductSyncMappingRepository;
 import org.uvo.uvostore.service.pos.PosWebhookService;
 import org.uvo.uvostore.service.pos.StockUpdatePayload;
 import org.uvo.uvostore.support.IntegrationTestSupport;
+import org.uvo.uvostore.support.WithPosIntegration;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -33,6 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * ({@code PosOrderNotifier.checkStockDivergence}, que ante un desacuerdo registra la divergencia en vez de
  * pisar el stock). Lo que hacía falta era que la entrada respetara lo mismo.
  */
+@WithPosIntegration
 class PosStockRaceTest extends IntegrationTestSupport {
 
     @Autowired

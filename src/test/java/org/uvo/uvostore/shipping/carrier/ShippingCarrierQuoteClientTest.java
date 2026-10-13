@@ -11,6 +11,7 @@ import java.math.BigDecimal;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 // Plain unit tests (no Spring context, no network) — verify the "never breaks checkout" contract:
@@ -71,5 +72,14 @@ class ShippingCarrierQuoteClientTest {
                 "RM", "Santiago", "RM", "Providencia", BigDecimal.ONE, BigDecimal.valueOf(10000));
 
         assertTrue(correosChile.quote(method, request).isEmpty());
+    }
+
+    @Test
+    void theTwoClientsDeclareWhetherTheyAreReallyImplemented() {
+        // PROD-12: antes "Correos es un placeholder" solo estaba escrito en un comentario, asi que el
+        // panel lo ofrecia y la administracion lo aceptaba. Esto es lo que lee ShippingCarrierPolicy
+        // para no dejar configurar un transportista que nunca cotizaria.
+        assertFalse(correosChile.isImplemented());
+        assertTrue(chilexpress.isImplemented());
     }
 }
