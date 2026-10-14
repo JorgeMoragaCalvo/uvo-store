@@ -6,6 +6,8 @@ import org.uvo.uvostore.entity.tenant.Store;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -103,6 +105,33 @@ public class StorePublicUrlResolver {
             return domain;
         }
         return store.getSlug() + "." + platformDomain;
+    }
+
+    /**
+     * PROD-05a. La mitad de entrada del subdominio de plataforma: de un nombre de host al {@code slug} de
+     * {@code <slug>.<dominio-plataforma>}, o vacío si el host no tiene esa forma <b>exacta</b>.
+     *
+     * <p>Vive aquí, junto a {@link #hostname(Store)}, para que quien compone el subdominio y quien lo
+     * descompone sean el mismo código: lo que {@code hostname} produce siempre vuelve por este método.
+     * Antes {@code StoreHostResolver} tomaba el primer segmento de <b>cualquier</b> host, de modo que
+     * {@code demo.dominio-ajeno.com} resolvía la tienda {@code demo} — y, como el filtro CORS usa el mismo
+     * resolver, un origen {@code https://demo.dominio-ajeno.com} recibía permiso con credenciales.
+     *
+     * <p>Se exige <b>una sola etiqueta</b> antes del dominio: {@code a.b.uvostore.cl} no es
+     * {@code <slug>.uvostore.cl}, y los nick de tienda no llevan puntos. La comparación ignora las
+     * mayúsculas porque los nombres de host las ignoran (el slug se guarda en minúsculas).
+     */
+    public Optional<String> slugOfPlatformHost(String hostname) {
+        if (hostname == null) {
+            return Optional.empty();
+        }
+        String host = hostname.toLowerCase(Locale.ROOT);
+        String suffix = "." + platformDomain;
+        if (!host.endsWith(suffix)) {
+            return Optional.empty(); // otro dominio, o el dominio de plataforma "pelado" (sin subdominio)
+        }
+        String slug = host.substring(0, host.length() - suffix.length());
+        return slug.isEmpty() || slug.indexOf('.') >= 0 ? Optional.empty() : Optional.of(slug);
     }
 
     private static String join(String origin, String path) {

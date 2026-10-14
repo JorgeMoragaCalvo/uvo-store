@@ -65,6 +65,37 @@ class MultiTenancyIsolationTest extends IntegrationTestSupport {
                 .andExpect(status().isBadRequest());
     }
 
+    // PROD-05a. El caso que antes pasaba: el primer segmento de CUALQUIER host era un slug válido, así que
+    // un host de otro dominio con el nick de una tienda real resolvía esa tienda. Aquí la tienda existe
+    // (a diferencia de "no-such-store" arriba), que es lo que hace que la prueba distinga las dos
+    // situaciones.
+    @Test
+    void aForeignDomainWithARealStoresSlugIsNotResolvedToThatStore() throws Exception {
+        Store store = createStore("tenant-foreign");
+        User admin = createAdmin(store, "admin-foreign");
+        String body = "{\"email\":\"" + admin.getEmail() + "\",\"password\":\"" + TEST_PASSWORD + "\"}";
+
+        // Sin control: por su propio subdominio de plataforma sí entra, o el rechazo de abajo no probaría nada.
+        mockMvc.perform(post("/api/admin/auth/login")
+                        .header("Host", hostHeader(store))
+                        .contentType("application/json")
+                        .content(body))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/admin/auth/login")
+                        .header("Host", store.getSlug() + ".dominio-ajeno.com")
+                        .contentType("application/json")
+                        .content(body))
+                .andExpect(status().isBadRequest());
+
+        // Ni con puerto, ni con el dominio de plataforma metido como prefijo del ajeno.
+        mockMvc.perform(post("/api/admin/auth/login")
+                        .header("Host", store.getSlug() + ".localhost.dominio-ajeno.com:8443")
+                        .contentType("application/json")
+                        .content(body))
+                .andExpect(status().isBadRequest());
+    }
+
     @Test
     void adminJwtIsRejectedWhenReplayedAgainstAnotherStoresSubdomain() throws Exception {
         Store storeA = createStore("tenant-jwt-a");

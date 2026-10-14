@@ -53,7 +53,7 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
 
 ## Multi-tenancy
 
-- `TenantContext` (ThreadLocal) holds the current request's `Store`. `TenantResolutionFilter` populates it from the `Host` header: exact match on `Store.domain` first (a client's own custom domain), then a `<slug>.<anything>` subdomain match as the fallback every store keeps working under regardless (e.g. `demo.localhost:8080` in dev). `JwtAuthenticationFilter` cross-checks the token's `sid` claim against the resolved tenant — a mismatch clears the security context (and so answers **401**, F19), not a silent cross-tenant leak.
+- `TenantContext` (ThreadLocal) holds the current request's `Store`. `TenantResolutionFilter` populates it from the `Host` header: exact match on `Store.domain` first (a client's own custom domain), then a `<slug>.<platform-domain>` subdomain match as the fallback every store keeps working under regardless (e.g. `demo.localhost:8080` in dev). **PROD-05a:** the fallback accepts the host only when it is *exactly* one label plus `app.public-url.platform-domain` (`StorePublicUrlResolver.slugOfPlatformHost`, which sits next to the code that composes that same subdomain so the two can't drift) — `demo.somebody-else.com`, `a.demo.<platform-domain>` and the bare platform domain resolve nothing. Before, it took the first label of *any* hostname, and since CORS shares the resolver, a foreign origin borrowing a real store's nick got credentialed access. The custom-domain match is unchanged. Consequence for dev: a `VITE_DEV_PROXY_TARGET` or `Host` outside `*.<platform-domain>` (default `localhost`) now answers 400 "no se pudo determinar la tienda" instead of resolving by accident. This does **not** close PROD-05: the proxy must still reject unknown hosts (PROD-03/05c). `JwtAuthenticationFilter` cross-checks the token's `sid` claim against the resolved tenant — a mismatch clears the security context (and so answers **401**, F19), not a silent cross-tenant leak.
 - New stores are created via `/api/platform/**` (`PlatformApiKeyAuthFilter`, shared secret in the `X-Platform-Key` header) — an **operator-only** tool (`/plataforma/nueva-tienda` in the frontend), not public self-service signup. The intended flow: a client hands the operator team a nick/domain/admin credentials, the operator creates the store, the client then self-manages everything from their own admin panel.
 - **Anything the backend builds that points at a store goes through `StorePublicUrlResolver`**
   (`service/url/`, PROD-04) — the inverse of `StoreHostResolver`: that one turns a hostname into a
@@ -123,7 +123,7 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
   `VITE_API_URL` anymore — the API base URL is computed at runtime, not build time.
 - **CORS is an allowlist derived from the stores themselves** (`TenantCorsConfigurationSource`, A2):
   an origin is accepted only when its hostname resolves to a real store — custom domain first, then
-  subdomain slug, the same two-step lookup `TenantResolutionFilter` uses, shared via
+  `<slug>.<platform-domain>`, the same two-step lookup `TenantResolutionFilter` uses, shared via
   `StoreHostResolver`. Anything else gets no `Access-Control-Allow-*` header and the browser blocks
   it. `app.cors.additional-origins` is the escape hatch for an origin that isn't a store hostname
   (a separately hosted SPA build); empty by default, because in dev Vite proxies `/api/*` and
