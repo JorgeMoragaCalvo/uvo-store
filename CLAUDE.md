@@ -613,7 +613,17 @@ Still open in the same area, two things:
 
 `OpenApiConfig` wires springdoc — API docs at `/swagger-ui.html`, grouped into five surfaces
 (public/admin/customer/pos/platform) with a `bearerAuth` JWT scheme wired to the "Authorize"
-button. Error tracking is `io.sentry:sentry` (the **core SDK**, not
+button. **PROD-17c:** all of it sits behind one switch, `SWAGGER_ENABLED` → `app.swagger.enabled`
+(default **true**, the dev value), from which `springdoc.api-docs.enabled` and
+`springdoc.swagger-ui.enabled` both derive so they can't diverge. On, `/swagger-ui.html` and
+`/v3/api-docs/**` are public and publish the whole API map, `/api/platform/**` included. Off, springdoc
+registers nothing and they answer **404**. **Production must set `SWAGGER_ENABLED=false`** — the default
+is not safe-by-default, and nothing enforces it yet (PROD-08a should make it a startup failure in
+production mode). The three paths stay in `SecurityConfig.PUBLIC_PATHS` on purpose: removing them would
+turn the 404 into a 401 "log in again" over something that doesn't exist. `/v3/api-docs.yaml` is not in
+that list (the pattern doesn't reach it) so an anonymous caller gets 401 either way; whether an
+*authenticated* caller gets the spec from it was not checked. Pinned by `config/SwaggerDisabledTest` and
+its control `SwaggerEnabledByDefaultTest`. Error tracking is `io.sentry:sentry` (the **core SDK**, not
 `sentry-spring-boot-starter-jakarta` — that starter's autoconfiguration references a class Spring
 Boot 4 moved/removed and fails to load; see the comment in `pom.xml`). Initialized manually in
 `UvoStoreApplication.main()` from `SENTRY_DSN`; a blank/unset DSN leaves it inactive.
