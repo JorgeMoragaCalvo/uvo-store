@@ -36,6 +36,12 @@ public class SecurityConfig {
             // got a 404 on one and a 401 on the other. Exposure is pinned to `health` alone in
             // application.properties, so opening this doesn't open the rest of the actuator.
             "/actuator/health",
+            // PROD-15a. Las sondas de liveness y readiness cuelgan de /actuator/health/<grupo> y el
+            // patrón de arriba es exacto, no las alcanza. Van nombradas una a una y no como
+            // `/actuator/health/**`: ese comodín abriría también cualquier grupo o componente que se
+            // añada mañana, y la regla de A3 es que lo público sea lo que se decidió abrir.
+            "/actuator/health/liveness",
+            "/actuator/health/readiness",
             // PROD-17c. Las tres rutas de documentación siguen aquí aunque SWAGGER_ENABLED=false, y es
             // a propósito: con springdoc apagado esos endpoints no existen y responden 404, igual que
             // cualquier ruta inexistente. Quitarlas de esta lista las llevaría a anyRequest().authenticated()

@@ -4,6 +4,7 @@ import io.sentry.Sentry;
 import me.paulschwarz.springdotenv.spring.DotenvApplicationInitializer;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.builder.SpringApplicationBuilder;
+import org.uvo.uvostore.config.SentryBootstrap;
 
 @SpringBootApplication
 public class UvoStoreApplication {
@@ -13,9 +14,10 @@ public class UvoStoreApplication {
         // early) — same "off until configured" pattern as every other external integration in
         // this project. Sentry.init() itself no-ops when the dsn is blank/null, no extra guard
         // needed. See GlobalExceptionHandler for where unhandled exceptions get reported.
-        String sentryDsn = System.getenv("SENTRY_DSN");
-        if (sentryDsn != null && !sentryDsn.isBlank()) {
-            Sentry.init(options -> options.setDsn(sentryDsn));
+        // PROD-15a: SentryBootstrap also carries SENTRY_ENVIRONMENT/SENTRY_RELEASE — see there for why
+        // they are read by hand, and why this one-liner is all that main() can leave untested.
+        if (SentryBootstrap.isConfigured(System::getenv)) {
+            Sentry.init(options -> SentryBootstrap.configure(options, System::getenv));
         }
 
         // .env is registered explicitly. spring-dotenv 4.x announced itself through

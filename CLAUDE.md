@@ -641,6 +641,34 @@ Boot 4 moved/removed and fails to load; see the comment in `pom.xml`). Initializ
 `GlobalExceptionHandler`'s catch-all reports unhandled exceptions to Sentry (and logs them
 locally) without leaking internals to the client.
 
+**PROD-15a — probes and Sentry labels.** `/actuator/health/liveness` and `/actuator/health/readiness`
+(`management.endpoint.health.probes.enabled`) are public, named one by one in
+`SecurityConfig.PUBLIC_PATHS` — not `/actuator/health/**`, which would also open any group or component
+added later; `show-details=never` stays, so a caller gets `{"status":"UP"}` and nothing else. The two
+groups are pinned in `application.properties`: liveness is `livenessState` alone (**no** external
+dependency, so a database outage never gets the process killed and restarted into the same outage — it
+would also lose the token-version cache and the rate-limiter counters), readiness is `readinessState,db`
+(out of the load balancer while the database is down). Boot's default readiness does *not* include the
+database. Side effect, on purpose: `probes.enabled=false` makes the app refuse to start (Boot validates
+that the pinned groups exist). `HealthProbesDatabaseDownTest` replaces the `db` contributor with a bean
+named `dbHealthIndicator` (the name the autoconfiguration backs off from) and asserts 503 on readiness /
+200 on liveness. Sentry labels: `SentryBootstrap` reads `SENTRY_ENVIRONMENT` (`production` / `staging` /
+`development`) and `SENTRY_RELEASE` (the release tag) from the process environment, next to the DSN. They
+are read by hand because the SDK's `enableExternalConfiguration` is `false` by default, so setting those
+variables did nothing before, and turning it on would also admit every other `SENTRY_*` variable. **If
+`SENTRY_ENVIRONMENT` is unset the SDK reports `production`**, so a staging that forgets it files its
+errors under production — nothing enforces it yet (same open item as `SWAGGER_ENABLED`, PROD-08a). The
+frontend does the same in `frontend/src/lib/sentry.ts` from build variables `VITE_SENTRY_ENVIRONMENT`
+(falls back to Vite's `MODE`) and `VITE_SENTRY_RELEASE` (`release.yml` sets it from the tag; the
+environment is *not* set there because the artifact is promoted between environments). That file also
+**strips the value of `token`/`password`/`secret`/`signature` query parameters** from `request.url`,
+`query_string`, the `Referer` header and the navigation/fetch/xhr breadcrumbs: the `?token=` in the reset
+and invitation e-mail links (`/admin/reset-password`, `/admin/aceptar-invitacion`) was reaching Sentry
+with every error raised on those pages. The backend sends no request URLs to Sentry (core SDK, no servlet
+integration), so it needs no such filter. Not covered: `main()` itself (one line, calls
+`SentryBootstrap`); and the customer-invitation e-mail links to `/cuenta/activar?token=…`, a route the SPA
+does not have (the customer surface is deferred).
+
 **Which exception to throw** (M1): a rule the caller broke, in words meant for them, is
 `BusinessException` → 400 with the message. A request that can't be served but wasn't wrong is
 `OutOfStockException`/`ShippingUnavailableException` → 409. Anything else — a wrapped SDK error, a
