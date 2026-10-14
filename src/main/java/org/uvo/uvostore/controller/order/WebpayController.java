@@ -27,6 +27,10 @@ public class WebpayController {
 
     private static final Logger log = LoggerFactory.getLogger(WebpayController.class);
 
+    // Lo justo para encontrar la orden (`payment_id LIKE 'abcd1234%'`) sin que la línea de log sirva para
+    // reutilizar el token: uno de Webpay tiene 64 caracteres, así que 8 dejan 56 sin revelar.
+    private static final int TOKEN_PREFIX_LENGTH = 8;
+
     private final WebpayService webpayService;
     private final StorePublicUrlResolver publicUrls;
 
@@ -64,9 +68,26 @@ public class WebpayController {
             WebpayCommitResult result = webpayService.commitTransaction(tokenWs);
             return redirectTo(publicUrls.storefrontUrl(store, "/order-success?order=" + result.orderNumber()));
         } catch (Exception e) {
-            log.warn("Error confirmando transacción Webpay token={}: {}", tokenWs, e.getMessage());
+            // PROD-17a. El token_ws completo NO se registra. Es la credencial de esa transacción frente a
+            // Transbank y este endpoint es público, así que escribirlo lo deja en cada agregador y copia
+            // de logs durante todo el tiempo que se conserven. Y como es entrada sin autenticar, tampoco
+            // se imprime tal cual aunque sea falso: ver tokenPrefix().
+            //
+            // El mensaje de la excepción sí se conserva: el SDK de Transbank (6.2.1) no incluye el token
+            // en los suyos —las validaciones dicen "'token' can't be null…" y los errores HTTP traen el
+            // `error_message` de la respuesta— y se registra el mensaje, no la traza.
+            log.warn("Error confirmando transacción Webpay store_id={} token_prefix={} error={}",
+                    store.getId(), tokenPrefix(tokenWs), e.getMessage());
             return redirectTo(publicUrls.storefrontUrl(store, "/checkout?error=webpay"));
         }
+    }
+
+    // Entrada pública sin autenticar: cualquiera puede mandar `token_ws` con saltos de línea para fabricar
+    // entradas de log falsas, o con megabytes para inflarlo. Por eso se recorta ANTES de sanear, y todo lo
+    // que no sea alfanumérico se sustituye por '?' (un token real es hexadecimal).
+    private static String tokenPrefix(String token) {
+        String head = token.length() > TOKEN_PREFIX_LENGTH ? token.substring(0, TOKEN_PREFIX_LENGTH) : token;
+        return head.replaceAll("[^A-Za-z0-9]", "?") + "...";
     }
 
     private ResponseEntity<Void> redirectTo(String location) {
