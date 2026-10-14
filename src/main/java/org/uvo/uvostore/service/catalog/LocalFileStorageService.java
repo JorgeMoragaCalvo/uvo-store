@@ -1,12 +1,11 @@
 package org.uvo.uvostore.service.catalog;
 
-import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
-import org.springframework.web.context.request.RequestContextHolder;
-import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.multipart.MultipartFile;
+import org.uvo.uvostore.security.TenantContext;
+import org.uvo.uvostore.service.url.StorePublicUrlResolver;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -28,11 +27,14 @@ public class LocalFileStorageService implements FileStorageService {
 
     private final Path uploadRoot;
     private final UploadedImageValidator imageValidator;
+    private final StorePublicUrlResolver publicUrls;
 
     public LocalFileStorageService(@Value("${app.upload-dir:uploads}") String uploadDir,
-                                   UploadedImageValidator imageValidator) {
+                                   UploadedImageValidator imageValidator,
+                                   StorePublicUrlResolver publicUrls) {
         this.uploadRoot = Path.of(uploadDir).toAbsolutePath().normalize();
         this.imageValidator = imageValidator;
+        this.publicUrls = publicUrls;
     }
 
     @Override
@@ -70,25 +72,23 @@ public class LocalFileStorageService implements FileStorageService {
     // API domain in production). A root-relative "/uploads/..." resolves against whatever origin
     // the browser page is on — the frontend's — which doesn't serve that path; the browser gets
     // that dev server's SPA-fallback HTML back instead of image bytes and shows a broken image.
-    // Built from the CURRENT request's own scheme/host (same pattern as WebpayController's
-    // defaultReturnUrl()) rather than a fixed config property, since this app is multi-tenant via
-    // subdomain — a static base URL would strand every store but one.
+    //
+    // PROD-05b. El origen sale de StorePublicUrlResolver.apiOrigin(), el mismo que usan los retornos de
+    // pasarela y los webhooks, y NO de la petición en curso. Antes se armaba con getScheme()/
+    // getServerName()/getServerPort(): detrás de un proxy que termina TLS eso describe el tramo interno
+    // (http y el puerto del upstream), así que el navegador recibía imágenes en http://…:8080 desde una
+    // página https — contenido mixto bloqueado — y no se podía arreglar con server.forward-headers-
+    // strategy (ver ClientIpResolver: confiaría en cabeceras del cliente).
+    //
+    // La tienda se lee de TenantContext y no se recibe por parámetro, a propósito: los nueve sitios de
+    // llamada son código de petición que ya está dentro de una tienda (los servicios de banners y de
+    // ajustes la leen en el mismo método), los mappers son estáticos y recibirían la tienda solo para
+    // pasarla, y S3FileStorageServiceImpl.store() ya la toma de aquí. Sin tienda FALLA, en vez de devolver
+    // "/uploads/…" relativo como hacía sin petición: en producción esa URL es justo la que rompe la
+    // imagen. Un oyente o un trabajo que necesite una URL debe correr dentro de TenantContext.runWithin().
     @Override
     public String publicUrl(String path) {
         if (path == null) return null;
-        HttpServletRequest request = currentRequest();
-        if (request == null) {
-            return "/uploads/" + path;
-        }
-        String port = request.getServerPort() == 80 || request.getServerPort() == 443
-                ? "" : ":" + request.getServerPort();
-        return request.getScheme() + "://" + request.getServerName() + port + "/uploads/" + path;
-    }
-
-    private HttpServletRequest currentRequest() {
-        if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes) {
-            return attributes.getRequest();
-        }
-        return null;
+        return publicUrls.apiUrl(TenantContext.requireCurrent(), "/uploads/" + path);
     }
 }

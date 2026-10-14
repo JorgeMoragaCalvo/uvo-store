@@ -95,8 +95,19 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
     request's `getScheme()`/`getServerName()`/`getServerPort()`, so behind a TLS-terminating proxy
     the gateway got a URL describing the internal hop (`http`, upstream port). **Don't "fix" that
     class of problem with `server.forward-headers-strategy`** — see the `ClientIpResolver` note
-    underrate limiting. `LocalFileStorageService.publicUrl` still builds image URLs this way and
-    is the one known remaining case (deferred to PROD-05/09).
+    underrate limiting. `LocalFileStorageService.publicUrl` was the last place that built a URL this
+    way (image URLs came out as `http://…:8080` behind the proxy — mixed content from an https page);
+    **PROD-05b** moved it to `StorePublicUrlResolver.apiUrl(store, "/uploads/…")`. It reads the store
+    from `TenantContext` instead of taking it as a parameter, on purpose: all nine call sites are request
+    code already inside a store (the banner and settings services read `TenantContext` in the same
+    methods), the DTO mappers are static and would only forward the store, and
+    `S3FileStorageServiceImpl.store()` already reads it there. Without a store it **throws** instead of
+    returning a relative `/uploads/…` as it did with no request — that URL is the one that breaks the
+    image in production — so a listener or job needing an image URL must run inside
+    `TenantContext.runWithin(store, …)`. The S3 driver's URLs (bucket/CDN) don't depend on the store and
+    didn't change. A verified custom domain now serves the images too, even when the page was entered by
+    the platform subdomain. Pinned by `storage/StoreImageUrlTest` (end to end: a `Host` carrying port
+    9999 must not reach the URL) and the local cases of `FileStorageServiceTest`.
   - **The SPA no longer sends return URLs at all.** `successUrl`/`cancelUrl`/`failureUrl`/
     `pendingUrl`/`returnUrl` are gone from the three `*Request` records: they were passed to Stripe
     and MercadoPago unvalidated, which is an open redirect inside a real payment flow. An old SPA

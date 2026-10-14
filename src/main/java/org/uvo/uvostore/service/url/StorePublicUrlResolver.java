@@ -37,6 +37,9 @@ import java.util.Set;
  * {@code server.forward-headers-strategy}: {@code ClientIpResolver} (F18) documenta que
  * {@code ForwardedHeaderFilter} no tiene noción de proxy de confianza y extendería el agujero.
  *
+ * <p>PROD-05b: la URL de las imágenes subidas ({@code LocalFileStorageService.publicUrl}) era la última de
+ * esa familia y también sale de aquí, con {@link #apiUrl(Store, String)}.
+ *
  * <p><b>Recibe la tienda por parámetro y no lee {@code TenantContext} ni la petición.</b> Es lo que le
  * permite funcionar en los oyentes {@code AFTER_COMMIT} y en los trabajos programados, que corren en hilos
  * de pool sin petición HTTP y toman la tienda de la orden o del usuario.
