@@ -12,6 +12,9 @@ import org.springframework.context.annotation.Configuration;
 // Swagger UI at /swagger-ui.html, spec at /v3/api-docs — both already public in
 // SecurityConfig.PUBLIC_PATHS. Grouped by the project's five route surfaces (see CLAUDE.md)
 // instead of one flat list of 36+ controllers.
+//
+// PROD-17c: todo esto está detrás de SWAGGER_ENABLED (app.swagger.enabled). Apagado, estos beans se
+// siguen creando pero springdoc no publica nada: ni la UI ni /v3/api-docs ni los grupos.
 @Configuration
 @SecurityScheme(
         name = "bearerAuth",

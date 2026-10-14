@@ -12,16 +12,11 @@ import java.util.Optional;
 @Repository
 public interface CategoryRepository extends JpaRepository<Category, Long>, JpaSpecificationExecutor<Category> {
 
-    Optional<Category> findBySlug(String slug);
-    Optional<Category> findByName(String name); // PosSyncService::getOrCreateCategory() lookup key
     Optional<Category> findById(Long id);
-    List<Category> findByActiveTrueOrderBySortOrderAsc();
-    List<Category> findByParentIsNullOrderBySortOrderAsc(); // Category::rootCategories
     List<Category> findByParentIdOrderBySortOrderAsc(Long parentId);
-    List<Category> findByIsFeaturedTrueAndActiveTrue();
-    boolean existsBySlug(String slug);
 
-    // Tenant-scoped lookups.
+    // Tenant-scoped lookups. PROD-17b: las versiones sin tienda (findBySlug, findByName, existsBySlug,
+    // las listas de activas/raíz/destacadas) no tenían llamadores y se quitaron.
     Optional<Category> findByStoreIdAndSlug(Long storeId, String slug);
     List<Category> findByStoreIdAndParentIsNullOrderBySortOrderAsc(Long storeId);
     List<Category> findByStoreIdOrderByNameAsc(Long storeId);

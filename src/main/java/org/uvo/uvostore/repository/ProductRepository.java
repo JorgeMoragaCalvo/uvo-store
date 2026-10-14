@@ -7,7 +7,6 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import org.uvo.uvostore.entity.catalog.Product;
-import org.uvo.uvostore.entity.catalog.enums.ProductType;
 
 import java.util.List;
 import java.util.Optional;
@@ -15,31 +14,17 @@ import java.util.Optional;
 @Repository
 public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpecificationExecutor<Product> {
 
-    Optional<Product> findBySlug(String slug);
-    Optional<Product> findBySku(String sku);
-    boolean existsBySku(String sku);
-
-    List<Product> findByActiveTrue();
-    List<Product> findByActiveTrueAndStockGreaterThan(int stock);
     List<Product> findByCategoryId(Long categoryId);
-    List<Product> findByProductType(ProductType productType);
-    List<Product> findByIsFeaturedTrueAndActiveTrue();
-    List<Product> findByIsNewTrueAndActiveTrue();
-    List<Product> findByIsOnSaleTrueAndActiveTrue();
-    Optional<Product> findByPosProductId(String posProductId);
 
     // Tenant-scoped lookups — the storefront and admin panel always operate within one store.
+    // PROD-17b: las versiones sin tienda (findBySlug, findBySku, existsBySku, findByActive…,
+    // findByProductType, findByIsNew/IsOnSale…, findByPosProductId y search) no tenían llamadores y se
+    // quitaron. Slug y SKU son únicos POR TIENDA: findBySlug/findBySku podían devolver varias filas, y
+    // search buscaba en el catálogo de todas. Cuando POS-3 necesite buscar por posProductId, tiene que
+    // nacer con storeId (el id del POS es de una empresa, no global).
     Optional<Product> findByStoreIdAndSlug(Long storeId, String slug);
     List<Product> findByStoreIdAndCategoryId(Long storeId, Long categoryId);
     List<Product> findByStoreIdAndIsFeaturedTrueAndActiveTrue(Long storeId);
-
-    @Query("""
-        SELECT p FROM Product p
-        WHERE p.active = true
-        AND (LOWER(p.name) LIKE LOWER(CONCAT('%', :term, '%'))
-                OR LOWER(p.description) LIKE LOWER(CONCAT('%', :term, '%')))
-        """)
-    List<Product> search(@Param("term") String term);
 
     // C5: the `AND p.stock >= :quantity` is the lock. Reading the stock, comparing it in Java and
     // saving the entity lets two concurrent payments for the last unit both succeed; this pushes

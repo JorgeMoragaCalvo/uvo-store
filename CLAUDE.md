@@ -54,6 +54,26 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
 ## Multi-tenancy
 
 - `TenantContext` (ThreadLocal) holds the current request's `Store`. `TenantResolutionFilter` populates it from the `Host` header: exact match on `Store.domain` first (a client's own custom domain), then a `<slug>.<platform-domain>` subdomain match as the fallback every store keeps working under regardless (e.g. `demo.localhost:8080` in dev). **PROD-05a:** the fallback accepts the host only when it is *exactly* one label plus `app.public-url.platform-domain` (`StorePublicUrlResolver.slugOfPlatformHost`, which sits next to the code that composes that same subdomain so the two can't drift) — `demo.somebody-else.com`, `a.demo.<platform-domain>` and the bare platform domain resolve nothing. Before, it took the first label of *any* hostname, and since CORS shares the resolver, a foreign origin borrowing a real store's nick got credentialed access. The custom-domain match is unchanged. Consequence for dev: a `VITE_DEV_PROXY_TARGET` or `Host` outside `*.<platform-domain>` (default `localhost`) now answers 400 "no se pudo determinar la tienda" instead of resolving by accident. This does **not** close PROD-05: the proxy must still reject unknown hosts (PROD-03/05c). `JwtAuthenticationFilter` cross-checks the token's `sid` claim against the resolved tenant — a mismatch clears the security context (and so answers **401**, F19), not a silent cross-tenant leak.
+- **A repository query on a tenant entity must name the store (PROD-17b).** E-mails, slugs, SKUs, coupon
+  codes, role names and setting keys are unique *per store*, not globally, so `findByEmail(String)` on
+  `CustomerRepository` would return — or count — another store's customer the day someone called it
+  without thinking. 45 such queries sat in 15 repositories, all with zero callers (ported 1:1 from the
+  Laravel scopes: `Order::byStatus()` listed every store's orders); they were deleted, not kept "just in
+  case". `multitenancy/RepositoryTenantScopeTest` now enforces it for every repository whose entity has a
+  `store` field: each declared method must mention the store, take a `Long` id (`id`, `customerId`,
+  `companyId`… — a lookup by a record, or by its parent, already inside one store) or be listed in
+  `GLOBAL_ON_PURPOSE` **with the reason it is safe**. The ten that are: three random UNIQUE tokens, four
+  keys issued by a payment gateway, and three scheduled jobs that deliberately walk every store. Adding a
+  global query is possible; it just has to be written down. Three of those are flagged in the test as
+  *not store-checked by their caller* (`UserRepository.findByPasswordResetToken` and Stripe's two
+  `findByStripe…Id`) — a known gap, not an endorsement. For Stripe it is wider than the repository:
+  `PaymentServiceImpl.handleWebhook` verifies the signature with the *tenant's* webhook secret but never
+  compares the found order's store with the request's, and `orderFromIntent` resolves the order with a
+  plain `findById` from the event's `order_id` metadata (not covered by this test — it is an inherited
+  method). Whether an event signed by one store's Stripe account can name another store's order id was
+  **not tested**; the Webpay, MercadoPago and tracking paths do compare the store. The test skips synthetic methods (JaCoCo's
+  `$jacocoInit`, and the bridge `findById(Object)` javac generates when a repository redeclares
+  `findById(Long)`).
 - New stores are created via `/api/platform/**` (`PlatformApiKeyAuthFilter`, shared secret in the `X-Platform-Key` header) — an **operator-only** tool (`/plataforma/nueva-tienda` in the frontend), not public self-service signup. The intended flow: a client hands the operator team a nick/domain/admin credentials, the operator creates the store, the client then self-manages everything from their own admin panel.
 - **Anything the backend builds that points at a store goes through `StorePublicUrlResolver`**
   (`service/url/`, PROD-04) — the inverse of `StoreHostResolver`: that one turns a hostname into a
@@ -593,7 +613,17 @@ Still open in the same area, two things:
 
 `OpenApiConfig` wires springdoc — API docs at `/swagger-ui.html`, grouped into five surfaces
 (public/admin/customer/pos/platform) with a `bearerAuth` JWT scheme wired to the "Authorize"
-button. Error tracking is `io.sentry:sentry` (the **core SDK**, not
+button. **PROD-17c:** all of it sits behind one switch, `SWAGGER_ENABLED` → `app.swagger.enabled`
+(default **true**, the dev value), from which `springdoc.api-docs.enabled` and
+`springdoc.swagger-ui.enabled` both derive so they can't diverge. On, `/swagger-ui.html` and
+`/v3/api-docs/**` are public and publish the whole API map, `/api/platform/**` included. Off, springdoc
+registers nothing and they answer **404**. **Production must set `SWAGGER_ENABLED=false`** — the default
+is not safe-by-default, and nothing enforces it yet (PROD-08a should make it a startup failure in
+production mode). The three paths stay in `SecurityConfig.PUBLIC_PATHS` on purpose: removing them would
+turn the 404 into a 401 "log in again" over something that doesn't exist. `/v3/api-docs.yaml` is not in
+that list (the pattern doesn't reach it) so an anonymous caller gets 401 either way; whether an
+*authenticated* caller gets the spec from it was not checked. Pinned by `config/SwaggerDisabledTest` and
+its control `SwaggerEnabledByDefaultTest`. Error tracking is `io.sentry:sentry` (the **core SDK**, not
 `sentry-spring-boot-starter-jakarta` — that starter's autoconfiguration references a class Spring
 Boot 4 moved/removed and fails to load; see the comment in `pom.xml`). Initialized manually in
 `UvoStoreApplication.main()` from `SENTRY_DSN`; a blank/unset DSN leaves it inactive.
@@ -699,6 +729,8 @@ consuming this API.
 Every external integration in this codebase follows the same pattern: a blank/missing env var leaves it inactive (log-and-skip, never throw), so the app runs fully in dev/CI without any of these configured.
 Applies to: `EmailService` (SMTP, `spring.mail.*` — password reset, order confirmation, and the customer and admin invitations), Stripe/Webpay/MercadoPago (`PaymentGatewayConfig` per store, plus shared Webpay parent commerce code in `application.properties`), Chilexpress/Correos de Chile
 shipping quotes, S3 file storage (`app.storage.driver=s3`), and Sentry (`SENTRY_DSN`/ `VITE_SENTRY_DSN`). **Webpay/MercadoPago/Stripe are fully wired (backend + checkout UI) but have never been tested against real sandbox credentials** — don't assume they work end-to-end without that verification.
+
+**Tokens never go to the log (PROD-17a).** Webpay's `token_ws` is the credential of that transaction and `/api/v1/webpay/return` is public, so the controller logs only an 8-character, sanitised prefix (`token_prefix=01ab3f9c...`; enough for `payment_id LIKE '01ab3f9c%'`). The prefix is cut *before* it is sanitised because the parameter is unauthenticated input: logging it raw lets anyone forge log lines with newlines or inflate the log. Invitation and reset tokens only travel inside the email body, and `EmailServiceImpl` logs recipient and subject, never the body — keep it that way even when SMTP is unset in dev ("print the link so I can click it" is exactly how this regresses). Both are pinned by `WebpayReturnLoggingTest` and `EmailServiceImplLoggingTest`. The exception *message* is logged but not the stack. The Transbank SDK (6.2.1) puts the token in the request URL path, and its own messages don't echo it (checked in the sources: validation says `'token' can't be null…`, HTTP errors carry Transbank's `error_message` and are read from `getErrorStream()`). If an SDK upgrade or the JDK's `HttpURLConnection` ever throws a message that carries the URL — `Server returned HTTP response code … for URL: …` is the JDK's wording — the token comes back through `e.getMessage()`; re-check on upgrades. **Not covered:** Sentry on the frontend — the invitation and reset pages carry `?token=` in the URL (see `PLAN_PRODUCCION.md` §7.3).
 
 **Shipping is priced from region + commune, and the checkout refuses an address it can't reach**
 (A7). `ShippingRateServiceImpl.findZone` matches a zone by **exact string** against the free-text
