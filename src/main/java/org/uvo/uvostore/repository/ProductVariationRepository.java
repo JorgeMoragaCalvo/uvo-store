@@ -8,15 +8,13 @@ import org.springframework.stereotype.Repository;
 import org.uvo.uvostore.entity.catalog.ProductVariation;
 
 import java.util.List;
-import java.util.Optional;
 
 @Repository
 public interface ProductVariationRepository extends JpaRepository<ProductVariation, Long> {
 
     List<ProductVariation> findByProductId(Long productId);
     List<ProductVariation> findByProductIdAndActiveTrue(Long productId);
-    List<ProductVariation> findByActiveTrueAndStockGreaterThan(int stock);
-    Optional<ProductVariation> findBySku(String sku);
+    // PROD-17b: findByActiveTrueAndStockGreaterThan y findBySku (sin tienda, sin llamadores) se quitaron.
 
     // C5: same conditional-UPDATE reasoning as ProductRepository.decrementStock — see the comment
     // there. 0 rows affected means the stock wasn't available.

@@ -8,9 +8,9 @@ import java.util.Optional;
 
 public interface UserRepository extends JpaRepository<User, Long>, JpaSpecificationExecutor<User> {
 
-    Optional<User> findByEmail(String email);
+    // PROD-17b. findByEmail y existsByEmail sin tienda se quitaron (cero llamadores): el correo es único
+    // por tienda. Los dos tokens siguen siendo globales a propósito: son secretos aleatorios y UNIQUE.
     Optional<User> findByStoreIdAndEmail(Long storeId, String email);
     Optional<User> findByInvitationToken(String token);
     Optional<User> findByPasswordResetToken(String token);
-    boolean existsByEmail(String email);
 }

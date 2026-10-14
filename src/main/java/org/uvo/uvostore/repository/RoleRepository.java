@@ -3,10 +3,9 @@ package org.uvo.uvostore.repository;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.uvo.uvostore.entity.security.Role;
 
-import java.util.Optional;
-
 public interface RoleRepository extends JpaRepository<Role, Long> {
 
-    Optional<Role> findByName(String name);
+    // PROD-17b: findByName sin tienda se quitó (cero llamadores). Los nombres de rol se repiten entre
+    // tiendas —el alta crea un 'Administrador' en cada una—, así que devolvería el de cualquiera.
     java.util.List<Role> findByStoreId(Long storeId);
 }

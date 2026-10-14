@@ -7,6 +7,7 @@ import java.util.Optional;
 
 public interface SettingRepository extends JpaRepository<Setting, Long> {
 
-    Optional<Setting> findBySettingKey(String key); // Setting::get()/set()/has()
+    // PROD-17b: findBySettingKey sin tienda se quitó (cero llamadores): cada tienda tiene su propia fila
+    // por clave, y esa devolvería la de cualquiera.
     Optional<Setting> findByStoreIdAndSettingKey(Long storeId, String key);
 }

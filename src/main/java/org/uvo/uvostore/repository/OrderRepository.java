@@ -9,8 +9,6 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import org.uvo.uvostore.entity.order.Order;
-import org.uvo.uvostore.entity.order.enums.OrderStatus;
-import org.uvo.uvostore.entity.order.enums.PaymentStatus;
 import org.uvo.uvostore.entity.tenant.Store;
 
 import java.time.Instant;
@@ -23,7 +21,6 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
     Optional<Order> findByOrderNumber(String orderNumber);
     Optional<Order> findByStripeCheckoutSessionId(String sessionId);
     Optional<Order> findByStripePaymentIntentId(String paymentIntentId);
-    Optional<Order> findByPosOrderId(String posOrderId);
     Optional<Order> findByPaymentId(String paymentId); // Webpay token / MercadoPago reference
 
     /**
@@ -53,12 +50,13 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
     @Query("select o.store from Order o where o.id = :id")
     Optional<Store> findStoreByOrderId(@Param("id") Long id);
 
-    List<Order> findByStatus(OrderStatus status); // Order::byStatus()
-    List<Order> findByPaymentStatus(PaymentStatus paymentStatus); // Order::byPaymentStatus()
+    // PROD-17b. Se quitaron findByStatus, findByPaymentStatus, findTop10ByOrderByCreatedAtDesc,
+    // findByStatusAndCreatedAtAfter, countByPosSyncedFalse y findByPosOrderId: ninguna filtraba por
+    // tienda y ninguna tenía llamadores (eran los scopes de Laravel portados tal cual). Las dos primeras
+    // listaban las órdenes de TODAS las tiendas. Las búsquedas por clave de pasarela de arriba siguen
+    // siendo globales a propósito —el id lo emite la pasarela y es único—, pero quien las llama debe
+    // comprobar la tienda de la orden: así lo hacen el seguimiento, MercadoPago y Webpay.
     List<Order> findByCustomerIdOrderByCreatedAtDesc(Long customerId);
-    List<Order> findTop10ByOrderByCreatedAtDesc(); // Order::recent()
-    List<Order> findByStatusAndCreatedAtAfter(OrderStatus status, Instant since);
-    long countByPosSyncedFalse();
 
     // G2: órdenes que intentaron notificarse al POS y no lo consiguieron. El `syncAttempts >= 1` no
     // es decorativo — deja fuera a las órdenes que nunca tuvieron nada que notificar (ninguna línea

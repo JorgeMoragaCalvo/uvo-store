@@ -8,9 +8,7 @@ import java.util.Optional;
 
 public interface ShippingMethodRepository extends JpaRepository<ShippingMethod, Long> {
 
-    Optional<ShippingMethod> findByCode(String code);
-    List<ShippingMethod> findByIsActiveTrueOrderBySortOrderAsc();
-
+    // PROD-17b: findByCode y findByIsActiveTrueOrderBySortOrderAsc sin tienda se quitaron (cero llamadores).
     List<ShippingMethod> findByStoreId(Long storeId);
     Optional<ShippingMethod> findByStoreIdAndCode(Long storeId, String code);
 }

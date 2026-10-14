@@ -54,6 +54,26 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
 ## Multi-tenancy
 
 - `TenantContext` (ThreadLocal) holds the current request's `Store`. `TenantResolutionFilter` populates it from the `Host` header: exact match on `Store.domain` first (a client's own custom domain), then a `<slug>.<platform-domain>` subdomain match as the fallback every store keeps working under regardless (e.g. `demo.localhost:8080` in dev). **PROD-05a:** the fallback accepts the host only when it is *exactly* one label plus `app.public-url.platform-domain` (`StorePublicUrlResolver.slugOfPlatformHost`, which sits next to the code that composes that same subdomain so the two can't drift) — `demo.somebody-else.com`, `a.demo.<platform-domain>` and the bare platform domain resolve nothing. Before, it took the first label of *any* hostname, and since CORS shares the resolver, a foreign origin borrowing a real store's nick got credentialed access. The custom-domain match is unchanged. Consequence for dev: a `VITE_DEV_PROXY_TARGET` or `Host` outside `*.<platform-domain>` (default `localhost`) now answers 400 "no se pudo determinar la tienda" instead of resolving by accident. This does **not** close PROD-05: the proxy must still reject unknown hosts (PROD-03/05c). `JwtAuthenticationFilter` cross-checks the token's `sid` claim against the resolved tenant — a mismatch clears the security context (and so answers **401**, F19), not a silent cross-tenant leak.
+- **A repository query on a tenant entity must name the store (PROD-17b).** E-mails, slugs, SKUs, coupon
+  codes, role names and setting keys are unique *per store*, not globally, so `findByEmail(String)` on
+  `CustomerRepository` would return — or count — another store's customer the day someone called it
+  without thinking. 45 such queries sat in 15 repositories, all with zero callers (ported 1:1 from the
+  Laravel scopes: `Order::byStatus()` listed every store's orders); they were deleted, not kept "just in
+  case". `multitenancy/RepositoryTenantScopeTest` now enforces it for every repository whose entity has a
+  `store` field: each declared method must mention the store, take a `Long` id (`id`, `customerId`,
+  `companyId`… — a lookup by a record, or by its parent, already inside one store) or be listed in
+  `GLOBAL_ON_PURPOSE` **with the reason it is safe**. The ten that are: three random UNIQUE tokens, four
+  keys issued by a payment gateway, and three scheduled jobs that deliberately walk every store. Adding a
+  global query is possible; it just has to be written down. Three of those are flagged in the test as
+  *not store-checked by their caller* (`UserRepository.findByPasswordResetToken` and Stripe's two
+  `findByStripe…Id`) — a known gap, not an endorsement. For Stripe it is wider than the repository:
+  `PaymentServiceImpl.handleWebhook` verifies the signature with the *tenant's* webhook secret but never
+  compares the found order's store with the request's, and `orderFromIntent` resolves the order with a
+  plain `findById` from the event's `order_id` metadata (not covered by this test — it is an inherited
+  method). Whether an event signed by one store's Stripe account can name another store's order id was
+  **not tested**; the Webpay, MercadoPago and tracking paths do compare the store. The test skips synthetic methods (JaCoCo's
+  `$jacocoInit`, and the bridge `findById(Object)` javac generates when a repository redeclares
+  `findById(Long)`).
 - New stores are created via `/api/platform/**` (`PlatformApiKeyAuthFilter`, shared secret in the `X-Platform-Key` header) — an **operator-only** tool (`/plataforma/nueva-tienda` in the frontend), not public self-service signup. The intended flow: a client hands the operator team a nick/domain/admin credentials, the operator creates the store, the client then self-manages everything from their own admin panel.
 - **Anything the backend builds that points at a store goes through `StorePublicUrlResolver`**
   (`service/url/`, PROD-04) — the inverse of `StoreHostResolver`: that one turns a hostname into a

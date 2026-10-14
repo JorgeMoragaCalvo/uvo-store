@@ -12,18 +12,17 @@ import java.util.Optional;
 @Repository
 public interface CustomerRepository extends JpaRepository<Customer, Long>, JpaSpecificationExecutor<Customer> {
 
-    Optional<Customer> findByEmail(String email);
-    boolean existsByEmail(String email);
+    // PROD-17b. Aquí había cuatro consultas sin tienda (findByEmail, existsByEmail, countWithOrders,
+    // countByCreatedAtAfter), sin un solo llamador. No se dejan "por si acaso": un correo es único por
+    // tienda y no global, así que cualquiera de las dos primeras devolvería —o contaría— a un cliente de
+    // otra tienda en cuanto alguien las usara sin pensarlo. Si hace falta una, se escribe con storeId.
     Optional<Customer> findByStoreIdAndEmail(Long storeId, String email);
     boolean existsByStoreIdAndEmail(Long storeId, String email);
+    // Global a propósito: el token es aleatorio y UNIQUE, y AuthController comprueba que la tienda del
+    // cliente es la del host antes de usarlo.
     Optional<Customer> findByInvitationToken(String token);
 
     // Admin\Customers\CustomerIndex::stats() — 'with_orders' / 'new_this_month'.
-    @Query("SELECT COUNT(DISTINCT c) FROM Customer c JOIN c.orders o")
-    long countWithOrders();
-
-    long countByCreatedAtAfter(Instant since);
-
     long countByStoreId(Long storeId);
 
     @Query("SELECT COUNT(DISTINCT c) FROM Customer c JOIN c.orders o WHERE c.store.id = :storeId")

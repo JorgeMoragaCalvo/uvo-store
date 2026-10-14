@@ -9,9 +9,9 @@ import java.util.List;
 @Repository
 public interface ShippingZoneRepository extends JpaRepository<ShippingZone, Long> {
 
-    List<ShippingZone> findByIsActiveTrueOrderBySortOrderAsc();
     // ShippingZone::covers() checked region/commune membership inside a JSON column —
     // port as a native JSON_CONTAINS query (MySQL/Postgres) rather than a derived method.
+    // PROD-17b: findByIsActiveTrueOrderBySortOrderAsc sin tienda se quitó (cero llamadores).
 
     List<ShippingZone> findByStoreId(Long storeId);
     List<ShippingZone> findByStoreIdAndIsActiveTrueOrderBySortOrderAsc(Long storeId);
