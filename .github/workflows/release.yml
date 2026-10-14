@@ -82,7 +82,12 @@ jobs:
       - name: Test
         run: npm test
 
+      # PROD-15a. Ties a frontend error in Sentry to the release that produced it. The environment is NOT
+      # set here: this artifact is meant to be promoted between environments, and VITE_SENTRY_ENVIRONMENT
+      # is baked into the bundle at build time, so whoever builds a variant for an environment sets it.
       - name: Build
+        env:
+          VITE_SENTRY_RELEASE: ${{ github.ref_name }}
         run: npm run build
 
       - name: Zip build output
