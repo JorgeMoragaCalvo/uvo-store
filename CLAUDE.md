@@ -502,6 +502,22 @@ and sales/products/payment-methods reports with date-range filters and CSV expor
 `controller/customer/**` (account + addresses, JWT), `controller/platform/**` (store onboarding,
 `X-Platform-Key`), and `controller/auth` (admin/customer JWT login+register, password reset).
 
+**PROD-24a — the store name typed at sign-up seeds how the store presents itself.** A store has the name in
+three places, and only one used to get the sign-up value: `stores.name` (e-mails, the platform list),
+`store_settings.store_name` (`StoreSettings`; what the storefront draws in the header, footer and legal
+pages, edited in "Apariencia") and the `settings` key `store_name` (what "Ajustes generales" shows).
+Both of the last two started as `"UvoStore"` — the entity default and the `SettingsServiceImpl` fallback —
+so a brand-new store introduced itself with the platform's name until its owner noticed.
+`StoreOnboardingServiceImpl.seedStoreName` now writes both rows in the sign-up transaction. It goes
+through the repositories directly, not `StoreSettingsService`/`SettingsService`: those read the store
+from `TenantContext`, which doesn't exist yet on the platform route that creates the store. Only the
+**initial** value: the owner's edits win, and **stores created before this change keep `"UvoStore"`** (no
+migration; the code defaults are still there as the fallback for a store with no row). The
+`"store_name"` literal is duplicated between `SettingsServiceImpl` and the onboarding service — a rename
+there would leave a dead row here, which `StoreOnboardingTest` catches by reading it through the real
+endpoints. The "UvoStore Admin" title in `AdminLayout.tsx` is the platform's own branding for the panel,
+not a store name, and is deliberately untouched.
+
 **A payment is only accepted if the amount matches** (M4). `OrderStatusService.markPaid` takes the
 amount the gateway says arrived and compares it against `order.getTotal()` before anything is marked
 paid — none of Stripe, Webpay, or MercadoPago did that; they each read the payment's *status* while

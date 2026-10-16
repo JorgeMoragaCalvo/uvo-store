@@ -1,14 +1,17 @@
 package org.uvo.uvostore.platform;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.uvo.uvostore.entity.security.Role;
+import org.uvo.uvostore.repository.StoreSettingsRepository;
 import org.uvo.uvostore.support.IntegrationTestSupport;
 
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -24,6 +27,9 @@ class StoreOnboardingTest extends IntegrationTestSupport {
     // there is no fixed literal to assert against — surefire supplies a test-only value (pom.xml).
     @Value("${app.platform-api-key}")
     private String platformKey;
+
+    @Autowired
+    private StoreSettingsRepository storeSettingsRepository;
 
     @Test
     void creatingAStoreRequiresTheCorrectPlatformKey() throws Exception {
@@ -207,6 +213,129 @@ class StoreOnboardingTest extends IntegrationTestSupport {
             assertThat(role.getName()).isEqualTo("Administrador");
             assertThat(role.getPermissions()).hasSize((int) permissionRepository.count());
         });
+    }
+
+    // --- PROD-24a: el nombre del alta es el nombre con el que la tienda se presenta -----------------------
+
+    @Test
+    void theStorefrontOfANewStoreIsPresentedWithTheNameChosenAtSignUp() throws Exception {
+        // Antes la fila de identidad nacía con el valor por defecto de la entidad y el encabezado, el pie y
+        // las páginas legales de una tienda recién creada decían «UvoStore» —el nombre de la plataforma—
+        // hasta que su dueño entraba a «Apariencia» y lo cambiaba. Se lee por el endpoint PÚBLICO, que es lo
+        // que ve un comprador, y sin que nadie haya tocado ningún ajuste antes.
+        String slug = "onboard-name-" + nextSeq();
+        String name = "Librería El Ñandú";
+        mockMvc.perform(post("/api/platform/stores")
+                        .header("X-Platform-Key", platformKey)
+                        .contentType("application/json")
+                        .content(onboardingBody(slug, "", name)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/store-settings").header("Host", slug + ".localhost"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.storeName").value(name));
+    }
+
+    @Test
+    void theGeneralSettingsOfANewStoreStartWithTheNameChosenAtSignUp() throws Exception {
+        // La otra pantalla con «Nombre de la tienda»: «Ajustes generales» lee la clave `store_name` de la
+        // tabla `settings`, cuyo respaldo era el mismo «UvoStore».
+        String slug = "onboard-gen-" + nextSeq();
+        String name = "Ferretería Los Andes";
+        String response = mockMvc.perform(post("/api/platform/stores")
+                        .header("X-Platform-Key", platformKey)
+                        .contentType("application/json")
+                        .content(onboardingBody(slug, "", name)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String adminEmail = objectMapper.readTree(response).get("adminEmail").asText();
+
+        String login = mockMvc.perform(post("/api/admin/auth/login")
+                        .header("Host", slug + ".localhost")
+                        .contentType("application/json")
+                        .content("{\"email\":\"" + adminEmail + "\",\"password\":\"password123456\"}"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        mockMvc.perform(get("/api/admin/settings/general")
+                        .header("Host", slug + ".localhost")
+                        .header("Authorization", "Bearer " + objectMapper.readTree(login).get("token").asText()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.storeName").value(name));
+    }
+
+    @Test
+    void theSignUpWritesBothNamesItselfInsteadOfLeavingItToTheFirstRead() throws Exception {
+        // Las dos pantallas crean sus filas «al primer uso» si no existen. Por eso los tests de arriba, solos,
+        // no distinguen "el alta las escribió" de "la primera lectura las creó con el nombre de la tienda":
+        // aquí se mira la base ANTES de que nadie lea nada.
+        String slug = "onboard-rows-" + nextSeq();
+        String response = mockMvc.perform(post("/api/platform/stores")
+                        .header("X-Platform-Key", platformKey)
+                        .contentType("application/json")
+                        .content(onboardingBody(slug, "", "Tienda de las filas")))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        long storeId = objectMapper.readTree(response).get("storeId").asLong();
+
+        assertThat(storeSettingsRepository.findByStoreId(storeId))
+                .hasValueSatisfying(s -> assertThat(s.getStoreName()).isEqualTo("Tienda de las filas"));
+        assertThat(settingRepository.findByStoreIdAndSettingKey(storeId, "store_name"))
+                .hasValueSatisfying(s -> assertThat(s.getValue()).isEqualTo("Tienda de las filas"));
+    }
+
+    @Test
+    void theNameChosenAtSignUpIsOnlyTheStartingPointNotAFixedValue() throws Exception {
+        // La fila existe desde el alta, así que el guardado de «Apariencia» la actualiza (no crea una
+        // segunda: UNIQUE(store_id)) y lo que el dueño escribe manda sobre el nombre del alta.
+        String slug = "onboard-edit-" + nextSeq();
+        String response = mockMvc.perform(post("/api/platform/stores")
+                        .header("X-Platform-Key", platformKey)
+                        .contentType("application/json")
+                        .content(onboardingBody(slug, "", "Nombre del alta")))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String adminEmail = objectMapper.readTree(response).get("adminEmail").asText();
+        long storeId = objectMapper.readTree(response).get("storeId").asLong();
+        String token = objectMapper.readTree(mockMvc.perform(post("/api/admin/auth/login")
+                        .header("Host", slug + ".localhost")
+                        .contentType("application/json")
+                        .content("{\"email\":\"" + adminEmail + "\",\"password\":\"password123456\"}"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString()).get("token").asText();
+
+        // Multipart con método PUT, igual que AdminSettingsCrudTest: es como lo envía el panel.
+        mockMvc.perform(multipart("/api/admin/settings/store")
+                        .with(req -> {
+                            req.setMethod("PUT");
+                            return req;
+                        })
+                        .header("Host", slug + ".localhost")
+                        .header("Authorization", "Bearer " + token)
+                        .param("storeName", "Nombre elegido por el dueño")
+                        .param("primaryColor", "#123456")
+                        .param("secondaryColor", "#654321")
+                        .param("accentColor", "#abcdef")
+                        .param("darkColor", "#111111")
+                        .param("showHero", "true")
+                        .param("heroAutoplaySpeed", "5000")
+                        .param("showCategories", "true")
+                        .param("categoriesLimit", "6")
+                        .param("showNewProducts", "true")
+                        .param("newProductsLimit", "12")
+                        .param("newProductsDays", "30")
+                        .param("showFeaturedProducts", "true")
+                        .param("featuredProductsLimit", "12")
+                        .param("showDeals", "true")
+                        .param("dealsLimit", "12")
+                        .param("showBenefits", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.storeName").value("Nombre elegido por el dueño"));
+
+        assertThat(storeSettingsRepository.findByStoreId(storeId))
+                .hasValueSatisfying(s -> assertThat(s.getStoreName()).isEqualTo("Nombre elegido por el dueño"));
+        mockMvc.perform(get("/api/v1/store-settings").header("Host", slug + ".localhost"))
+                .andExpect(jsonPath("$.storeName").value("Nombre elegido por el dueño"));
     }
 
     private String onboardingBody(String slug, String domain, String storeName) {
