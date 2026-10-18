@@ -776,7 +776,10 @@ runs — `critical: 0` in `qodana.yaml` can turn the job red, but nothing requir
 protection and Dependabot alerts can't be read without admin rights. What `main` should require, by exact
 job name: `Backend (Maven)`, `Frontend (npm)`, `qodana`, `Dependency review`, via a pull request with no
 approval count while there is a single maintainer (GitHub does not count an author's approval of their own
-pull request). `CODEOWNERS` only asks for review until "Require review from Code Owners" is turned on, which
+pull request). **`Dependency review` needs "Dependency graph" switched on** in Settings → Code security — it
+did not come on by itself here even though the repository is public, and with it off the job fails with
+"Dependency review is not supported on this repository" (it did, on PR #62). Don't add it to the ruleset
+until it has run green once, or it would block every pull request. `CODEOWNERS` only asks for review until "Require review from Code Owners" is turned on, which
 needs a second person. Known gaps: GitHub's dependency graph for Maven reads `pom.xml` only, so versions
 the Spring Boot BOM manages are invisible to alerts and to dependency review; Dependabot's pull requests get
 a read-only token and no repository secrets, which may leave the `qodana` check red on them; actions are
