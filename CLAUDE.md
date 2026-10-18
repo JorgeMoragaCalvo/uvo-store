@@ -35,7 +35,7 @@ exercised against real sandbox credentials.
 
 ```
 ./mvnw spring-boot:run          # run the app (reads .env automatically, see below)
-./mvnw clean verify             # build + full test suite + JaCoCo report
+./mvnw clean verify             # build + full test suite + JaCoCo report + line-coverage floor
 ./mvnw test                     # run tests only
 ./mvnw test -Dtest=ClassName    # run a single test class
 ```
@@ -741,10 +741,22 @@ servlet chain on top of where `SecurityConfig` puts them. `FilterRegistrationCon
 auto-registration, so `SecurityConfig` is the single place the order is decided. A new filter needs
 its `setEnabled(false)` registration there too.
 
-**Coverage**: `./mvnw verify` writes a JaCoCo report to `target/site/jacoco/index.html`. There is no
-enforced threshold yet — the baseline is 63.7% of lines (2026-09-07), with `service.report` the
-thinnest area at 9.2%. **Both figures predate the F01–F24 round**, which roughly quintupled the
-suite and gave `service.report` its first tests at all (F20); re-measure before quoting them.
+**Coverage** (PROD-25a): `./mvnw verify` writes a JaCoCo report to `target/site/jacoco/index.html` and
+**fails if line coverage of the whole project drops below the floor**, the `jacoco.line-coverage.minimum`
+property in `pom.xml` (`0.76`). It is a floor, not a target: the figure measured on 2026-10-16 with 523
+tests was **76.51% of lines (4264 of 5573)**, a margin of about 28 lines that lose coverage, or about 37
+new lines added without a test. Branches
+were 56.3% and are not gated. CI and `release.yml` both run `clean verify`, so both enforce it. To raise
+it, take the integer part of a full run's figure once that is a point above the floor; lowering it to make
+a build pass is the wrong fix — write the test, or, for a real exception, lower it and leave the reason
+in the `pom.xml` comment. The check runs *after* the report so the HTML exists when it fails. Two traps:
+`verify` with a subset (`-Dtest=Foo`) measures a sliver and fails the floor — use `-Djacoco.skip=true`
+(`./mvnw test -Dtest=Foo`, the usual single-class command, never reaches it); and `target/jacoco.exec`
+accumulates between runs, so a `verify` without `clean` can pass on stale data. The floor is global, so it
+protects no area in particular. Thinnest by lines at that measurement: `service.order.event` 33%,
+`controller.admin.report` 37%, `service.catalog` 59%, `controller.pos` 60%, `service.report` 61%,
+`service.payment` 64% (478 lines, the money path), `service.pos` 65%. The earlier 63.7% / 9.2% figures
+predate the F01–F24 round and no longer describe anything. The frontend has no coverage measurement.
 
 **PROD-22 — supply chain and repository rules.** `.github/` holds `dependabot.yml` (Maven `/`, npm
 `/frontend`, GitHub Actions `/`; weekly on Mondays, a 7-day `cooldown` on version updates, minor and patch
