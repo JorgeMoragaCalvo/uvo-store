@@ -35,7 +35,7 @@ exercised against real sandbox credentials.
 
 ```
 ./mvnw spring-boot:run          # run the app (reads .env automatically, see below)
-./mvnw clean verify             # build + full test suite + JaCoCo report
+./mvnw clean verify             # build + full test suite + JaCoCo report + line-coverage floor
 ./mvnw test                     # run tests only
 ./mvnw test -Dtest=ClassName    # run a single test class
 ```
@@ -502,6 +502,22 @@ and sales/products/payment-methods reports with date-range filters and CSV expor
 `controller/customer/**` (account + addresses, JWT), `controller/platform/**` (store onboarding,
 `X-Platform-Key`), and `controller/auth` (admin/customer JWT login+register, password reset).
 
+**PROD-24a — the store name typed at sign-up seeds how the store presents itself.** A store has the name in
+three places, and only one used to get the sign-up value: `stores.name` (e-mails, the platform list),
+`store_settings.store_name` (`StoreSettings`; what the storefront draws in the header, footer and legal
+pages, edited in "Apariencia") and the `settings` key `store_name` (what "Ajustes generales" shows).
+Both of the last two started as `"UvoStore"` — the entity default and the `SettingsServiceImpl` fallback —
+so a brand-new store introduced itself with the platform's name until its owner noticed.
+`StoreOnboardingServiceImpl.seedStoreName` now writes both rows in the sign-up transaction. It goes
+through the repositories directly, not `StoreSettingsService`/`SettingsService`: those read the store
+from `TenantContext`, which doesn't exist yet on the platform route that creates the store. Only the
+**initial** value: the owner's edits win, and **stores created before this change keep `"UvoStore"`** (no
+migration; the code defaults are still there as the fallback for a store with no row). The
+`"store_name"` literal is duplicated between `SettingsServiceImpl` and the onboarding service — a rename
+there would leave a dead row here, which `StoreOnboardingTest` catches by reading it through the real
+endpoints. The "UvoStore Admin" title in `AdminLayout.tsx` is the platform's own branding for the panel,
+not a store name, and is deliberately untouched.
+
 **A payment is only accepted if the amount matches** (M4). `OrderStatusService.markPaid` takes the
 amount the gateway says arrived and compares it against `order.getTotal()` before anything is marked
 paid — none of Stripe, Webpay, or MercadoPago did that; they each read the payment's *status* while
@@ -725,10 +741,49 @@ servlet chain on top of where `SecurityConfig` puts them. `FilterRegistrationCon
 auto-registration, so `SecurityConfig` is the single place the order is decided. A new filter needs
 its `setEnabled(false)` registration there too.
 
-**Coverage**: `./mvnw verify` writes a JaCoCo report to `target/site/jacoco/index.html`. There is no
-enforced threshold yet — the baseline is 63.7% of lines (2026-09-07), with `service.report` the
-thinnest area at 9.2%. **Both figures predate the F01–F24 round**, which roughly quintupled the
-suite and gave `service.report` its first tests at all (F20); re-measure before quoting them.
+**Coverage** (PROD-25a): `./mvnw verify` writes a JaCoCo report to `target/site/jacoco/index.html` and
+**fails if line coverage of the whole project drops below the floor**, the `jacoco.line-coverage.minimum`
+property in `pom.xml` (`0.76`). It is a floor, not a target: the figure measured on 2026-10-16 with 523
+tests was **76.51% of lines (4264 of 5573)**, a margin of about 28 lines that lose coverage, or about 37
+new lines added without a test. Branches
+were 56.3% and are not gated. CI and `release.yml` both run `clean verify`, so both enforce it. To raise
+it, take the integer part of a full run's figure once that is a point above the floor; lowering it to make
+a build pass is the wrong fix — write the test, or, for a real exception, lower it and leave the reason
+in the `pom.xml` comment. The check runs *after* the report so the HTML exists when it fails. Two traps:
+`verify` with a subset (`-Dtest=Foo`) measures a sliver and fails the floor — use `-Djacoco.skip=true`
+(`./mvnw test -Dtest=Foo`, the usual single-class command, never reaches it); and `target/jacoco.exec`
+accumulates between runs, so a `verify` without `clean` can pass on stale data. The floor is global, so it
+protects no area in particular. Thinnest by lines at that measurement: `service.order.event` 33%,
+`controller.admin.report` 37%, `service.catalog` 59%, `controller.pos` 60%, `service.report` 61%,
+`service.payment` 64% (478 lines, the money path), `service.pos` 65%. The earlier 63.7% / 9.2% figures
+predate the F01–F24 round and no longer describe anything. The frontend has no coverage measurement.
+
+**PROD-22 — supply chain and repository rules.** `.github/` holds `dependabot.yml` (Maven `/`, npm
+`/frontend`, GitHub Actions `/`; weekly on Mondays, a 7-day `cooldown` on version updates, minor and patch
+batched per ecosystem, every major its own pull request so a payment SDK's API change gets looked at; the
+three `io.jsonwebtoken:*` artifacts are one group with every update type so they can't be split),
+`workflows/dependency-review.yml` (fails a pull request that adds or upgrades to a dependency with a
+high/critical advisory; pinned `@v5.0.0` because that action publishes no floating `v4`/`v5` tag, so
+`@v5` would not resolve) and `CODEOWNERS` (one owner today; the sensitive paths are the build and workflow
+files, the migrations, `security/`, `config/`, `service/security/`, `controller/auth/` and the payment,
+platform and POS packages). `ci.yml` and `release.yml` run with `contents: read`; only the job that
+creates the GitHub Release holds `contents: write`. Dependabot reads its file from the default branch only.
+
+**None of this blocks anything by itself: the rules live in GitHub's settings, which no YAML shows.**
+Read through the public API on 2026-10-18: the repository is public, **`main` had no branch protection and
+no ruleset** (a push straight to `main` ran no check before it landed), and Qodana had failed once in 138
+runs — `critical: 0` in `qodana.yaml` can turn the job red, but nothing required it. Secret scanning, push
+protection and Dependabot alerts can't be read without admin rights. What `main` should require, by exact
+job name: `Backend (Maven)`, `Frontend (npm)`, `qodana`, `Dependency review`, via a pull request with no
+approval count while there is a single maintainer (GitHub does not count an author's approval of their own
+pull request). **`Dependency review` needs "Dependency graph" switched on** in Settings → Code security — it
+did not come on by itself here even though the repository is public, and with it off the job fails with
+"Dependency review is not supported on this repository" (it did, on PR #62). Don't add it to the ruleset
+until it has run green once, or it would block every pull request. `CODEOWNERS` only asks for review until "Require review from Code Owners" is turned on, which
+needs a second person. Known gaps: GitHub's dependency graph for Maven reads `pom.xml` only, so versions
+the Spring Boot BOM manages are invisible to alerts and to dependency review; Dependabot's pull requests get
+a read-only token and no repository secrets, which may leave the `qodana` check red on them; actions are
+pinned by tag, not by commit SHA.
 
 ### Public storefront API (`/api/v1/**`, no auth)
 Mirrors what the React `frontend/` consumes: `products` (search/filter incl. `featured`,

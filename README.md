@@ -80,7 +80,8 @@ sends that as the `Host` header, which is what tells the backend which store you
 
 ```bash
 ./mvnw clean verify                   # full backend suite; coverage lands in target/site/jacoco/
-./mvnw test -Dtest=ClassName          # a single test class
+                                      # and the build fails below the line-coverage floor (pom.xml)
+./mvnw test -Dtest=ClassName          # a single test class (with `verify` instead, add -Djacoco.skip=true)
 
 cd frontend
 npm run lint

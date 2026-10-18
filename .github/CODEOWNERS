@@ -1,0 +1,37 @@
+# PROD-22. Who answers for the parts of the repository where a mistake costs money, leaks data between
+# stores or changes what reaches production. Today there is one maintainer, so every line has the same
+# owner; the list is the useful part. When a second person joins, give them the areas they know here and
+# turn on "Require review from Code Owners" in the main ruleset: until that setting is on, this file
+# only marks who is asked for review, it does not block a merge.
+#
+# A pattern that matches nothing is ignored silently, so a renamed or moved path stops being protected
+# without any error. Check them against `git ls-files` when a package moves.
+
+# What gets built and shipped: workflows, dependency updates, build files, analysis and the committed
+# environment template.
+/.github/                                   @JorgeMoragaCalvo
+/pom.xml                                    @JorgeMoragaCalvo
+/mvnw                                       @JorgeMoragaCalvo
+/mvnw.cmd                                   @JorgeMoragaCalvo
+/.mvn/                                      @JorgeMoragaCalvo
+/qodana.yaml                                @JorgeMoragaCalvo
+/frontend/package.json                      @JorgeMoragaCalvo
+/frontend/package-lock.json                 @JorgeMoragaCalvo
+/.env.example                               @JorgeMoragaCalvo
+
+# Runtime configuration and the schema. Migrations are append-only: an applied one is never edited.
+/src/main/resources/application.properties  @JorgeMoragaCalvo
+/src/main/resources/db/migration/           @JorgeMoragaCalvo
+
+# Who can do what: authentication, tenant resolution, rate limiting, required secrets, roles and users.
+/src/main/java/org/uvo/uvostore/security/         @JorgeMoragaCalvo
+/src/main/java/org/uvo/uvostore/config/           @JorgeMoragaCalvo
+/src/main/java/org/uvo/uvostore/service/security/ @JorgeMoragaCalvo
+/src/main/java/org/uvo/uvostore/controller/auth/  @JorgeMoragaCalvo
+
+# Money, store onboarding and the point-of-sale integration.
+/src/main/java/org/uvo/uvostore/service/payment/    @JorgeMoragaCalvo
+/src/main/java/org/uvo/uvostore/service/platform/   @JorgeMoragaCalvo
+/src/main/java/org/uvo/uvostore/service/pos/        @JorgeMoragaCalvo
+/src/main/java/org/uvo/uvostore/controller/platform/ @JorgeMoragaCalvo
+/src/main/java/org/uvo/uvostore/controller/pos/     @JorgeMoragaCalvo

@@ -28,6 +28,15 @@
     </scm>
     <properties>
         <java.version>21</java.version>
+        <!-- PROD-25a. Suelo de cobertura de líneas que `mvnw verify` exige (ver jacoco-maven-plugin, más
+             abajo). Es un SUELO, no una meta: el valor medido, no el que nos gustaría tener.
+             Medido el 2026-10-16 con 523 tests: 76,51 % (4264 de 5573 líneas). Se fija en la parte entera
+             del porcentaje medido, que deja de margen unas 28 líneas que pierdan cobertura o unas 37
+             líneas nuevas sin test.
+             Para subirlo: cuando una ejecución completa mida un punto o más por encima, poner aquí la
+             parte entera de la nueva cifra. Bajarlo para que un build pase está mal: lo que falta es el
+             test, y si de verdad hay una excepción se baja dejando escrito aquí el porqué. -->
+        <jacoco.line-coverage.minimum>0.76</jacoco.line-coverage.minimum>
     </properties>
     <dependencies>
         <dependency>
@@ -275,8 +284,18 @@
                  surefire pasa a la JVM (surefire no define ninguno propio, así que no hay choque) y
                  el informe queda en target/site/jacoco/index.html al correr `mvnw verify`.
 
-                 Deliberadamente SIN la meta `check`: un umbral que rompa el build hay que elegirlo
-                 con el número delante, no antes de haberlo medido nunca. -->
+                 PROD-25a: ya hay número, así que `check` rompe el build si la cobertura de LÍNEAS del
+                 proyecto baja de `jacoco.line-coverage.minimum` (arriba). Solo líneas y global, a
+                 propósito: es la unidad en la que se cita la cobertura aquí, y un umbral por rama o por
+                 paquete habría que elegirlo mirando una cifra que todavía no se ha discutido.
+                 Va declarada DESPUÉS de `report`: en una misma fase Maven respeta el orden de
+                 declaración, y así el informe se genera aunque el umbral falle, que es cuando hace falta.
+
+                 Dos trampas:
+                 - `verify` con un subconjunto (`-Dtest=Clase`) mide una fracción ínfima y falla el
+                   umbral. Para eso, `-Djacoco.skip=true`; `mvnw test -Dtest=…` no llega a esta fase.
+                 - jacoco.exec se acumula entre ejecuciones: sin `clean`, un `verify` puede pasar con
+                   datos de una ejecución anterior. La CI siempre usa `clean verify`. -->
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
@@ -294,6 +313,27 @@
                         <goals>
                             <goal>report</goal>
                         </goals>
+                    </execution>
+                    <execution>
+                        <id>check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <rule>
+                                    <element>BUNDLE</element>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>${jacoco.line-coverage.minimum}</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>

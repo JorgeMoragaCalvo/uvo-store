@@ -1,0 +1,34 @@
+name: Dependency review
+
+# PROD-22. A pull request that adds or upgrades a dependency to a version with a known high or critical
+# advisory goes red here, before it reaches main. It only looks at what the pull request changes in the
+# manifests (pom.xml, package-lock.json, the workflows), not at what is already in main: that is what
+# Dependabot alerts are for.
+#
+# The "Dependency review" job name below is the status check to require in the ruleset for main.
+#
+# No `comment-summary-in-pr`: pull requests opened by Dependabot get a read-only token, so posting the
+# comment would fail them. The summary is on the job's own page instead.
+#
+# This needs "Dependency graph" enabled in the repository's Code security settings (it is by default on a
+# public repository); without it the job fails saying so.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-review:
+    name: Dependency review
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The full tag, not @v5: this action does not publish floating major tags after v3. v5 runs on
+      # node24 and needs a runner >= 2.327.1, which the hosted ubuntu-latest has.
+      - name: Dependency review
+        uses: actions/dependency-review-action@v5.0.0
+        with:
+          fail-on-severity: high

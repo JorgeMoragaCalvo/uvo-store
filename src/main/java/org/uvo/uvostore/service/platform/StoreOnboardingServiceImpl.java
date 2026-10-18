@@ -6,11 +6,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.uvo.uvostore.entity.security.Role;
 import org.uvo.uvostore.entity.security.User;
+import org.uvo.uvostore.entity.settings.Setting;
+import org.uvo.uvostore.entity.settings.StoreSettings;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.entity.tenant.enums.StoreStatus;
 import org.uvo.uvostore.repository.PermissionRepository;
 import org.uvo.uvostore.repository.RoleRepository;
+import org.uvo.uvostore.repository.SettingRepository;
 import org.uvo.uvostore.repository.StoreRepository;
+import org.uvo.uvostore.repository.StoreSettingsRepository;
 import org.uvo.uvostore.repository.UserRepository;
 import org.uvo.uvostore.service.url.StorePublicUrlResolver;
 
@@ -32,20 +36,29 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
      */
     private static final String OWNER_ROLE_NAME = "Administrador";
 
+    /** La clave de {@code settings} que lee y escribe {@code SettingsServiceImpl} para «Ajustes generales». */
+    private static final String STORE_NAME_KEY = "store_name";
+
     private final StoreRepository storeRepository;
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final PermissionRepository permissionRepository;
+    private final StoreSettingsRepository storeSettingsRepository;
+    private final SettingRepository settingRepository;
     private final PasswordEncoder passwordEncoder;
     private final StorePublicUrlResolver publicUrls;
 
     public StoreOnboardingServiceImpl(StoreRepository storeRepository, UserRepository userRepository,
                                       RoleRepository roleRepository, PermissionRepository permissionRepository,
+                                      StoreSettingsRepository storeSettingsRepository,
+                                      SettingRepository settingRepository,
                                       PasswordEncoder passwordEncoder, StorePublicUrlResolver publicUrls) {
         this.storeRepository = storeRepository;
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.permissionRepository = permissionRepository;
+        this.storeSettingsRepository = storeSettingsRepository;
+        this.settingRepository = settingRepository;
         this.passwordEncoder = passwordEncoder;
         this.publicUrls = publicUrls;
     }
@@ -81,6 +94,8 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
 
         savedStore.setOwnerUserId(savedAdmin.getId());
         storeRepository.save(savedStore);
+
+        seedStoreName(savedStore);
 
         return toResponse(savedStore, savedAdmin);
     }
@@ -158,6 +173,37 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
         // guardName se queda en su default "web", que es lo que espera UNIQUE(store_id, name, guard_name).
         role.setPermissions(new HashSet<>(permissionRepository.findAll()));
         return roleRepository.save(role);
+    }
+
+    /**
+     * PROD-24a. El nombre que el operador escribió en el alta, en los dos sitios donde la tienda se presenta.
+     *
+     * <p>Hay dos, y los dos arrancaban en «UvoStore»: {@code store_settings.store_name} (la identidad que
+     * dibuja el storefront en el encabezado, el pie y las páginas legales, y que edita «Apariencia») y la
+     * clave {@code store_name} de {@code settings} (la que muestra «Ajustes generales»). Una tienda recién
+     * creada se presentaba con el nombre de la plataforma hasta que su dueño se fijaba en cambiarlo, y la
+     * lista de tiendas y los correos ({@code Store.name}) decían otra cosa: el nombre del alta.
+     *
+     * <p><b>No pasa por {@code StoreSettingsService} ni {@code SettingsService}</b>: los dos leen la tienda
+     * de {@code TenantContext}, que aquí no existe todavía —la ruta de plataforma es justo la que crea la
+     * tienda—. Por eso se escriben las filas directamente con las tablas de cada uno. La fila de
+     * {@code store_settings} se crea con el resto de sus valores por defecto, los mismos que le daría
+     * {@code StoreSettingsServiceImpl.currentOrCreate()} la primera vez que alguien la pidiera.
+     *
+     * <p>Solo es el valor <b>inicial</b>: el dueño lo cambia después desde el panel y ese cambio manda.
+     * Tampoco corrige las tiendas que ya existían con «UvoStore».
+     */
+    private void seedStoreName(Store store) {
+        StoreSettings branding = new StoreSettings();
+        branding.setStore(store);
+        branding.setStoreName(store.getName());
+        storeSettingsRepository.save(branding);
+
+        Setting general = new Setting();
+        general.setStore(store);
+        general.setSettingKey(STORE_NAME_KEY);
+        general.setValue(store.getName());
+        settingRepository.save(general);
     }
 
     private String normalizeDomain(String domain) {
