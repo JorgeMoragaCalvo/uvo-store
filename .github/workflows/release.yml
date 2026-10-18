@@ -5,8 +5,11 @@ on:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
 
+# PROD-22. Read-only by default; only the job that creates the GitHub Release asks for write access
+# (below). The build jobs compile and test code from the tag and upload artifacts, none of which needs a
+# token that can write to the repository.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-backend:
@@ -104,6 +107,9 @@ jobs:
     name: Create GitHub Release
     needs: [build-backend, build-frontend]
     runs-on: ubuntu-latest
+    # Creating the release and attaching the files is the one thing here that writes to the repository.
+    permissions:
+      contents: write
     steps:
       - name: Download backend artifact
         uses: actions/download-artifact@v4

@@ -10,6 +10,11 @@ on:
       - "feature/**"
   pull_request:
 
+# PROD-22. The job only reads the repository; nothing here pushes, comments or publishes. Without this
+# block the token takes whatever default the repository's Actions settings have.
+permissions:
+  contents: read
+
 jobs:
   backend:
     name: Backend (Maven)

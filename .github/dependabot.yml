@@ -1,0 +1,77 @@
+# PROD-22. Scheduled dependency updates for the three things this repository ships with: the Maven
+# backend, the npm frontend and the GitHub Actions the workflows call.
+#
+# Dependabot only reads this file from the default branch, so nothing happens until it reaches main.
+#
+# Two choices apply to every ecosystem:
+#  * `cooldown`: a version published less than a week ago is not proposed. A compromised release is
+#    usually pulled within hours, and waiting costs nothing here. It applies to version updates only;
+#    security updates (a fix for a published advisory) are not delayed.
+#  * Major versions are never grouped: each one is its own pull request, because that is where an API
+#    changes (the payment SDKs above all) and it should be reviewed on its own. Minor and patch updates
+#    are batched per ecosystem so a week of releases is one pull request, not twenty. The pull requests
+#    run the same CI as any other, so a batch that breaks something shows it before it merges.
+version: 2
+
+updates:
+  - package-ecosystem: maven
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Santiago
+    cooldown:
+      default-days: 7
+    groups:
+      # Dependabot assigns a dependency to the first group that matches it, so the order matters.
+      spring-boot:
+        patterns:
+          - "org.springframework.boot:*"
+        update-types:
+          - minor
+          - patch
+      # jjwt-api, jjwt-impl and jjwt-jackson are one library split in three artifacts and are meant to
+      # move together (pom.xml pins all three to the same version). Every update type, majors
+      # included, so they cannot be split into separate pull requests.
+      jjwt:
+        patterns:
+          - "io.jsonwebtoken:*"
+        update-types:
+          - major
+          - minor
+          - patch
+      maven-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: npm
+    directory: "/frontend"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Santiago
+    cooldown:
+      default-days: 7
+    groups:
+      npm-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    # For this ecosystem "/" is right: Dependabot looks in .github/workflows from the repository root.
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Santiago
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns:
+          - "*"

@@ -746,6 +746,30 @@ enforced threshold yet — the baseline is 63.7% of lines (2026-09-07), with `se
 thinnest area at 9.2%. **Both figures predate the F01–F24 round**, which roughly quintupled the
 suite and gave `service.report` its first tests at all (F20); re-measure before quoting them.
 
+**PROD-22 — supply chain and repository rules.** `.github/` holds `dependabot.yml` (Maven `/`, npm
+`/frontend`, GitHub Actions `/`; weekly on Mondays, a 7-day `cooldown` on version updates, minor and patch
+batched per ecosystem, every major its own pull request so a payment SDK's API change gets looked at; the
+three `io.jsonwebtoken:*` artifacts are one group with every update type so they can't be split),
+`workflows/dependency-review.yml` (fails a pull request that adds or upgrades to a dependency with a
+high/critical advisory; pinned `@v5.0.0` because that action publishes no floating `v4`/`v5` tag, so
+`@v5` would not resolve) and `CODEOWNERS` (one owner today; the sensitive paths are the build and workflow
+files, the migrations, `security/`, `config/`, `service/security/`, `controller/auth/` and the payment,
+platform and POS packages). `ci.yml` and `release.yml` run with `contents: read`; only the job that
+creates the GitHub Release holds `contents: write`. Dependabot reads its file from the default branch only.
+
+**None of this blocks anything by itself: the rules live in GitHub's settings, which no YAML shows.**
+Read through the public API on 2026-10-18: the repository is public, **`main` had no branch protection and
+no ruleset** (a push straight to `main` ran no check before it landed), and Qodana had failed once in 138
+runs — `critical: 0` in `qodana.yaml` can turn the job red, but nothing required it. Secret scanning, push
+protection and Dependabot alerts can't be read without admin rights. What `main` should require, by exact
+job name: `Backend (Maven)`, `Frontend (npm)`, `qodana`, `Dependency review`, via a pull request with no
+approval count while there is a single maintainer (GitHub does not count an author's approval of their own
+pull request). `CODEOWNERS` only asks for review until "Require review from Code Owners" is turned on, which
+needs a second person. Known gaps: GitHub's dependency graph for Maven reads `pom.xml` only, so versions
+the Spring Boot BOM manages are invisible to alerts and to dependency review; Dependabot's pull requests get
+a read-only token and no repository secrets, which may leave the `qodana` check red on them; actions are
+pinned by tag, not by commit SHA.
+
 ### Public storefront API (`/api/v1/**`, no auth)
 Mirrors what the React `frontend/` consumes: `products` (search/filter incl. `featured`,
 `in_stock`, `is_new`, `on_sale`), `products/{slug}`, `products/{slug}/related`, `categories`,
