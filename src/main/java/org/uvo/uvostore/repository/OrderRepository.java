@@ -10,7 +10,6 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import org.uvo.uvostore.entity.order.Order;
-import org.uvo.uvostore.entity.tenant.Store;
 
 import java.time.Instant;
 import java.util.List;
@@ -41,16 +40,6 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
     @Query("select o from Order o where o.id = :id")
     Optional<Order> findByIdForUpdate(@Param("id") Long id);
 
-    /**
-     * R1. Solo la tienda de una orden, para el trabajo que corre en un hilo de pool. {@code Order.store}
-     * es LAZY, así que leerlo desde {@code findById} fuera de transacción revienta; y abrir una
-     * transacción alrededor mantendría una conexión de Hikari tomada durante toda la llamada de red que
-     * viene después, que es justo la forma de agotar el pool que esto quiere evitar. Una consulta y se
-     * cierra.
-     */
-    @Query("select o.store from Order o where o.id = :id")
-    Optional<Store> findStoreByOrderId(@Param("id") Long id);
-
     // PROD-17b. Se quitaron findByStatus, findByPaymentStatus, findTop10ByOrderByCreatedAtDesc,
     // findByStatusAndCreatedAtAfter, countByPosSyncedFalse y findByPosOrderId: ninguna filtraba por
     // tienda y ninguna tenía llamadores (eran los scopes de Laravel portados tal cual). Las dos primeras
@@ -59,30 +48,9 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
     // comprobar la tienda de la orden: así lo hacen el seguimiento, MercadoPago y Webpay.
     List<Order> findByCustomerIdOrderByCreatedAtDesc(Long customerId);
 
-    // G2: órdenes que intentaron notificarse al POS y no lo consiguieron. El `syncAttempts >= 1` no
-    // es decorativo — deja fuera a las órdenes que nunca tuvieron nada que notificar (ninguna línea
-    // con ProductSyncMapping), que también tienen posSynced=false y reintentarlas no haría nada.
-    // El `join fetch o.store` no es una optimización: quien consume esto es un job, fuera de toda
-    // petición y por tanto sin sesión abierta, y lo primero que hace con cada orden es leer su
-    // tienda para fijar el tenant. Sin el fetch, eso es un LazyInitializationException.
-    // F07: y solo órdenes pagadas. Notificar al POS emite un documento tributario, así que una orden
-    // sin cobrar no tiene nada que emitir. Tras mover la notificación al pago confirmado ninguna orden
-    // impaga llega ya a syncAttempts >= 1 — pero las que quedaron con intentos de cuando la
-    // notificación colgaba de la creación sí se reintentarían. La condición deja escrito el requisito
-    // en vez de confiar en que nadie vuelva a colgar la notificación del evento equivocado.
-    @Query("""
-            select o from Order o
-            join fetch o.store
-            where o.posSynced = false
-              and o.paymentStatus = org.uvo.uvostore.entity.order.enums.PaymentStatus.PAID
-              and o.syncAttempts >= 1
-              and o.syncAttempts < :maxAttempts
-              and o.createdAt < :notAfter
-            order by o.createdAt asc
-            """)
-    List<Order> findPendingPosNotification(@Param("maxAttempts") int maxAttempts,
-                                           @Param("notAfter") Instant notAfter,
-                                           Pageable pageable);
+    // PROD-13b: findPendingPosNotification (G2) se quitó con el reintento que la usaba. Solo veía órdenes con
+    // syncAttempts >= 1, así que una venta cuyo proceso murió antes del primer intento no la veía nadie; ahora
+    // cada venta al POS es una fila del outbox desde el commit del pago (OutboxMessageRepository).
 
     // G1: órdenes con el pago sin resolver que ya tienen identificador en la pasarela, es decir, las
     // que se pueden ir a preguntar. Se saltan a propósito las que tienen nota de descuadre de monto:

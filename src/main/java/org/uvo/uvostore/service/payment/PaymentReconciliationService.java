@@ -32,8 +32,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * <p><b>Pregunta, no cobra.</b> La diferencia importa: Webpay usa {@code status()} y nunca
  * {@code commit()} —confirmar aquí una transacción que el cliente abandonó le cobraría—, y el paso a
  * {@code PAID} siempre va por {@code orderStatusService.markPaid}, que es idempotente y verifica el
- * monto desde M4. Por eso este trabajo sí va activado por defecto, al revés que
- * {@code PosNotificationRetryJob}: aquí no hay documentos tributarios que duplicar.
+ * monto desde M4. Por eso este trabajo sí va activado por defecto, al revés que el reintento de las
+ * ventas inciertas al POS ({@code app.pos.retry.enabled}): aquí no hay documentos tributarios que duplicar.
  *
  * <p>La otra mitad es la alerta: una orden que sigue pendiente pasadas
  * {@code app.reconciliation.stale-hours} ya no es un webhook que se retrasa, es algo que hay que

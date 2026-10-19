@@ -62,8 +62,10 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
   case". `multitenancy/RepositoryTenantScopeTest` now enforces it for every repository whose entity has a
   `store` field: each declared method must mention the store, take a `Long` id (`id`, `customerId`,
   `companyId`… — a lookup by a record, or by its parent, already inside one store) or be listed in
-  `GLOBAL_ON_PURPOSE` **with the reason it is safe**. The eleven that are: three random UNIQUE tokens, four
-  keys issued by a payment gateway, and four scheduled jobs that deliberately walk every store. Adding a
+  `GLOBAL_ON_PURPOSE` **with the reason it is safe**. The ten that are: three random UNIQUE tokens, four
+  keys issued by a payment gateway, and three scheduled jobs that deliberately walk every store. (The outbox
+  dispatcher's queries walk every store too, but `OutboxMessage` has no `store` field — it inherits the
+  tenant through its order — so the test doesn't scan that repository.) Adding a
   global query is possible; it just has to be written down. Three of those are flagged in the test as
   *not store-checked by their caller* (`UserRepository.findByPasswordResetToken` and Stripe's two
   `findByStripe…Id`) — a known gap, not an endorsement. For Stripe it is wider than the repository:
@@ -310,8 +312,8 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
   out and no endpoint accepted it, so the email was **burned** in that store (register rejects it because
   the row exists, login demands `ACTIVE` with a password). Five pieces existed, two were missing:
   `CustomerRepository.findByInvitationToken` had zero callers and `AccountStatus.INVITED` was written in
-  one place and read in none. Now `CustomerInvitationEmailListener` (its own listener on `OrderPlacedEvent`,
-  same async/AFTER_COMMIT scaffolding as the other mail listeners) sends the link, and
+  one place and read in none. Now the checkout queues a `CUSTOMER_INVITATION_EMAIL` outbox row (PROD-13b;
+  it was an async listener on `OrderPlacedEvent` until then) and `OrderEmailComposer` builds the link, and
   `POST /api/customer/auth/accept-invitation` takes token + password, activates, and **consumes the token**.
   Expiry comes from `invitation_sent_at` + `app.customer-invitation.ttl-days` (30) — no migration, the
   column was already there. Rate-limited by IP; **not** by account, because what arrives is a token, not
@@ -399,9 +401,9 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
     what contains the real risk: notifying an order **emits a tax document**, and the receiver's
     idempotency contract is still unconfirmed, which is exactly why `app.pos.retry.enabled` was already
     off. Having the retry contained while the emission itself ran by default was incoherent.
-  - **The outbound cut is in `PosOrderNotifier.notifyOrder`, not in the listener**: it's the single
-    outbound chokepoint, so it also covers `PosNotificationRetryJob`, which calls it directly. It returns
-    `true` (nothing pending) — a `false` would queue the order for retry, the opposite of being off.
+  - **The outbound cut is in `PosOrderNotifier`, at both ends of the outbox** (PROD-13b):
+    `companiesToNotify` returns nothing when it's off, so `markPaid` queues no sale, and `prepare` skips a
+    row queued before it was switched off, without touching `PosClient`.
     Inbound, `/api/sync/**` and `/api/webhooks/pos/**` answer 404 through the gate filter.
   - **Connecting the POS now requires the webhook secret**, like F17 requires credentials to enable
     Stripe. The connection used to go `active = true` unconditionally with the secret left as `""`, and
@@ -626,6 +628,42 @@ product could not be initialized and the stock-failure note could not be added t
 the products up front, and `appendHistory` writes through the repository when the collection isn't loaded.
 No test caught it because they all passed orders that were already in memory; `StockRecoveryTest` drives the
 real listener.
+
+**Post-commit effects that go to the network leave through a durable outbox** (PROD-13b). Registering the sale
+in the POS and the three order emails (placed, confirmed, customer invitation) used to be `@Async`
+`AFTER_COMMIT` listeners on in-memory executors: a crash or a redeploy lost whatever was queued, and the POS
+retry only looked at `sync_attempts >= 1`, so a sale whose process died before the first attempt **never
+reached the POS** (the stock master). Now each effect is an `outbox_messages` row (V25) written **in the same
+transaction** as the fact — `CheckoutServiceImpl.checkout` (new orders only, not the F15 reuse) via
+`OutboxService.enqueueOrderPlaced`, and `OrderStatusServiceImpl.markPaid` via `enqueuePaymentConfirmed`, never
+on its early returns — as a plain INSERT against a UNIQUE `dedup_key`, so a double enqueue aborts the second
+transaction. One `POS_ORDER` row **per company** (key = `PosOrderPayloadMapper.idempotencyKey`), so one
+company failing no longer re-sends to the other. `OutboxDispatcher` delivers them every 10 s
+(`app.outbox.*`) on two channels (POS, mail), each under its own `AdvisoryLock` (`…003`, `…004`), triggered by
+`OutboxScheduler` (a separate bean so tests can switch it off). Per row: **claim** (`PENDING→IN_FLIGHT`,
+`attempts+1`) committed in `OutboxStore` *before* the network call (the `RefundIntentStore` pattern), content
+built in a short read-only transaction in a separate bean, the call outside any transaction, and the outcome
+written conditionally on `(IN_FLIGHT, attempts)`. **What gets retried depends on whether the effect could have
+arrived**: `PosClient.notifyOrder` now returns a typed `PosDelivery` — `NOT_SENT` (no connection, connect
+timeout, 408/429) is retried with backoff (1→30 min) until `give-up-after-hours`; `UNCERTAIN` (read timeout,
+5xx, 409, a process that died mid-call = an `IN_FLIGHT` row older than `in-flight-timeout-seconds`) becomes
+`FAILED` + Sentry **unless `app.pos.retry.enabled`**, because without POS-1's idempotency a resend emits a
+second tax document; `REJECTED` (other 4xx) fails at once. Mail retries what's uncertain (a duplicate email
+is a nuisance, not a document). Both re-check state at send time: no sale or "thanks" for an order cancelled
+or refunded since payment, no "order received" once it's paid, no invitation with accounts off (PROD-07). One
+company's failure stops its remaining rows for that run, not the whole batch. Manual review is Sentry + the
+SQL in V25's comment (the F12 precedent). `EmailService.deliver` is the non-swallowing variant the outbox
+needs; `send()` stays for synchronous callers. `orders.pos_synced`/`sync_attempts`/`last_sync_error` were
+dropped (V25 keeps their failures as `FAILED` rows), and `AsyncConfig`, `PosNotificationRetryJob`,
+`OrderPlacedEvent` and the four listeners are gone; `StockDecrementListener` stays synchronous. Shutdown waits
+for work in flight (`spring.task.scheduling.shutdown.*`, `timeout-per-shutdown-phase=30s`, which must cover
+POS connect + read timeouts). **Two traps that came with it**: `findByProductId` / `PosConnection.findByStoreId`
+return `Optional` over non-unique columns and would have thrown *inside the payment transaction* —
+`companiesToNotify` uses `findByProductIdIn` and an existence query; and **F03 was only half closed**: callers
+load the order before `markPaid` in the same transaction, and `findByIdForUpdate` returned that cached,
+unrefreshed instance, so two simultaneous confirmations both saw `PENDING`. `findForUpdateOrThrow` now does
+`flush()` → lock → `refresh()` (`ConcurrentPaymentConfirmationTest`). Deploy without overlapping instances: an
+old one still writes the dropped columns.
 
 Both gaps that used to be listed here are now closed. `PosWebhookServiceImpl.handleStockUpdated` no longer overwrites stock blindly: it uses `ProductRepository.setStockIfUnchanged`, conditioned on the `oldStock` the POS says it saw, so a concurrent web sale can't be erased — a mismatch is reported as a divergence (same wording and Sentry alert as `PosOrderNotifier.checkStockDivergence`, which already treats our own decrement as the authority for web stock) instead of written (F13). And marking an order paid from the admin panel now goes through `OrderStatusService.markPaid`, so it publishes `PaymentConfirmedEvent` and does decrement stock (F07).
 
@@ -912,11 +950,12 @@ login (`/admin/login`) is separate and fully functional.
   real schema — worth knowing about if similar patterns show up elsewhere:
   - `AttributeValueRepository` had a typo'd derived query name (`finByAttributeId...` instead of
     `findByAttributeId...`).
-  - `PosNotificationListener` and `StockDecrementListener` combined
+  - `PosNotificationListener` (gone since PROD-13b) and `StockDecrementListener` combined
     `@TransactionalEventListener(phase = AFTER_COMMIT)` with a plain `@Transactional`, which
     Spring 7 now rejects at startup — both need
     `@Transactional(propagation = Propagation.REQUIRES_NEW)`. If you add another `AFTER_COMMIT`
-    listener that also needs a transaction, use the same pattern.
+    listener that also needs a transaction, use the same pattern — but anything that goes to the
+    network belongs in the outbox, not in a listener.
 - **Testing**: **530 backend tests across 100 classes** (as of PROD-13a) (JUnit + `IntegrationTestSupport`,
   one Spring-managed transaction per test, auto-rolled-back — `AFTER_COMMIT` listeners never fire
   under this setup, which is intentional) and **142 frontend tests across 32 files** (Vitest +
@@ -939,8 +978,13 @@ login (`/admin/login`) is separate and fully functional.
     constructor — `PosPolicyFixture` has the three combinations that matter.
   - **Package-visible builder methods to assert outbound payloads** without SMTP or network:
     `MercadoPagoServiceImpl.buildPreferenceRequest`, `PaymentServiceImpl.buildSessionParams`,
-    `CustomerInvitationEmailListener.body`, `UserServiceImpl.invitationBody`. That's why those
+    `OrderEmailComposer.invitationBody`, `UserServiceImpl.invitationBody`. That's why those
     tests live in the service's own package.
+  - **The outbox scheduler is off in tests** (`app.outbox.scheduler.enabled=false` in surefire,
+    `pom.xml`): it runs every few seconds, and every cached context would dispatch over the shared
+    database and steal the rows a test is checking. Tests call `OutboxDispatcher.dispatch(channel)`
+    directly; `OutboxCrashRecoveryTest` is the committed-transaction model, with `@MockitoBean` for
+    `PosClient` and `EmailService`.
   - **Tokens are read from the database, not a mailbox.** There is no SMTP in tests and
     `EmailServiceImpl` logs and skips, so `PasswordResetTest`, `CustomerInvitationTest` and
     `AdminInvitationTest` all query the row. When a test needs to age a timestamp the service

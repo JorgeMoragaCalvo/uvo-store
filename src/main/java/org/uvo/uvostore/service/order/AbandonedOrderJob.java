@@ -72,7 +72,7 @@ public class AbandonedOrderJob {
     private void cancelOne(Order order) {
         try {
             // Cada orden con el tenant de SU tienda: un job no tiene petición, así que nadie lo ha puesto
-            // por él. Mismo patrón que PosNotificationRetryJob.
+            // por él. Mismo patrón que la conciliación de pagos y el outbox.
             TenantContext.runWithin(order.getStore(), () -> orderStatusService.markCancelled(order.getId()));
         } catch (Exception e) {
             // Una orden que revienta no puede llevarse por delante a las demás de la tanda.

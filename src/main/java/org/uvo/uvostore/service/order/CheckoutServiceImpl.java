@@ -1,7 +1,6 @@
 package org.uvo.uvostore.service.order;
 
 import org.uvo.uvostore.service.BusinessException;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.uvo.uvostore.entity.catalog.Product;
@@ -27,7 +26,7 @@ import org.uvo.uvostore.repository.ShippingRateRepository;
 import org.uvo.uvostore.service.catalog.EffectivePrice;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.customer.CustomerService;
-import org.uvo.uvostore.service.order.event.OrderPlacedEvent;
+import org.uvo.uvostore.service.outbox.OutboxService;
 import org.uvo.uvostore.service.settings.SettingValues;
 import org.uvo.uvostore.service.shipping.ShippingOption;
 
@@ -60,7 +59,7 @@ public class CheckoutServiceImpl implements CheckoutService {
     private final ProductVariationRepository variationRepository;
     private final SettingRepository settingRepository;
     private final PaymentGatewayConfigRepository paymentGatewayConfigRepository;
-    private final ApplicationEventPublisher applicationEventPublisher;
+    private final OutboxService outboxService;
     private final ShippingMethodRepository shippingMethodRepository;
     private final ShippingRateRepository shippingRateRepository;
     private final int retryWindowMinutes;
@@ -75,7 +74,7 @@ public class CheckoutServiceImpl implements CheckoutService {
             ProductVariationRepository variationRepository,
             SettingRepository settingRepository,
             PaymentGatewayConfigRepository paymentGatewayConfigRepository,
-            ApplicationEventPublisher applicationEventPublisher,
+            OutboxService outboxService,
             ShippingMethodRepository shippingMethodRepository,
             ShippingRateRepository shippingRateRepository,
             @org.springframework.beans.factory.annotation.Value("${app.abandoned-orders.retry-window-minutes:60}") int retryWindowMinutes) {
@@ -88,7 +87,7 @@ public class CheckoutServiceImpl implements CheckoutService {
         this.variationRepository = variationRepository;
         this.settingRepository = settingRepository;
         this.paymentGatewayConfigRepository = paymentGatewayConfigRepository;
-        this.applicationEventPublisher = applicationEventPublisher;
+        this.outboxService = outboxService;
         this.shippingMethodRepository = shippingMethodRepository;
         this.shippingRateRepository = shippingRateRepository;
         this.retryWindowMinutes = retryWindowMinutes;
@@ -137,8 +136,8 @@ public class CheckoutServiceImpl implements CheckoutService {
         if (retried.isPresent()) {
             Order existing = retried.get();
             // No se vuelve a cotizar ni a reclamar el cupón: la reserva ya es de esta orden, y su total es
-            // el precio que el cliente aceptó hace un momento. Tampoco se publica OrderPlacedEvent otra
-            // vez, que mandaría un segundo "recibimos tu pedido".
+            // el precio que el cliente aceptó hace un momento. Tampoco se encola otro acuse de recibo, que
+            // mandaría un segundo "recibimos tu pedido".
             return new OrderConfirmation(existing.getId(), existing.getOrderNumber(), existing.getTotal());
         }
 
@@ -181,8 +180,6 @@ public class CheckoutServiceImpl implements CheckoutService {
         order.setFulfillmentStatus(FulfillmentStatus.UNFULFILLED);
         order.setPaymentMethod(org.uvo.uvostore.entity.order.enums.PaymentMethodType.valueOf(command.paymentMethod().toUpperCase()));
         order.setCustomerNotes(command.customerNotes());
-        order.setPosSynced(false);
-        order.setSyncAttempts(0);
 
         Address address = buildAddress(command);
         order.setShippingAddress(address);
@@ -227,10 +224,11 @@ public class CheckoutServiceImpl implements CheckoutService {
             couponService.recordUsage(order.getCoupon(), saved, customer);
         }
 
-        // F07: el pedido se ha hecho, no se ha pagado. De este evento cuelga solo el acuse de recibo;
-        // la notificación al POS —que emite un documento tributario— y el correo de compra confirmada
-        // esperan a PaymentConfirmedEvent, que publica markPaid.
-        applicationEventPublisher.publishEvent(new OrderPlacedEvent(saved.getId()));
+        // F07: el pedido se ha hecho, no se ha pagado. De aquí cuelgan solo el acuse de recibo y, con las
+        // cuentas encendidas, la invitación; la venta al POS —que emite un documento tributario— y el correo
+        // de compra confirmada los encola markPaid. PROD-13b: en el outbox y en esta misma transacción, así
+        // que si el checkout se deshace no sale ningún correo, y si se confirma sale aunque el proceso caiga.
+        outboxService.enqueueOrderPlaced(saved, customer);
 
         return new OrderConfirmation(saved.getId(), saved.getOrderNumber(), saved.getTotal());
     }

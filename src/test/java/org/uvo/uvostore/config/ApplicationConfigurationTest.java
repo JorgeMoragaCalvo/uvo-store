@@ -4,19 +4,15 @@ import jakarta.persistence.EntityManagerFactory;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.task.TaskSchedulingProperties;
 import org.springframework.boot.web.server.autoconfigure.ServerProperties;
 import org.springframework.boot.web.server.Shutdown;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.JavaMailSenderImpl;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
-import org.uvo.uvostore.config.AsyncConfig;
 import org.uvo.uvostore.support.IntegrationTestSupport;
 
-import java.util.List;
+import java.time.Duration;
 import java.util.Properties;
-import java.util.concurrent.ThreadPoolExecutor;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -37,12 +33,6 @@ class ApplicationConfigurationTest extends IntegrationTestSupport {
     private JavaMailSender mailSender;
     @Autowired
     private TaskSchedulingProperties taskSchedulingProperties;
-    @Autowired
-    @Qualifier(AsyncConfig.POS_EXECUTOR)
-    private ThreadPoolTaskExecutor posExecutor;
-    @Autowired
-    @Qualifier(AsyncConfig.MAIL_EXECUTOR)
-    private ThreadPoolTaskExecutor mailExecutor;
 
     @Test
     @DisplayName("El apagado es ordenado, no un corte en seco")
@@ -75,29 +65,24 @@ class ApplicationConfigurationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("El planificador tiene más de un hilo para sus cuatro trabajos")
+    @DisplayName("El planificador tiene más de un hilo para sus cinco trabajos")
     void theSchedulerIsNotASingleThread() {
-        // R1. El default de Spring es 1, y hay cuatro @Scheduled: PosNotificationRetryJob,
-        // PaymentReconciliationService, AbandonedOrderJob y StockRecoveryJob. Con un solo hilo, el que se
-        // quedara esperando a una pasarela lenta dejaba a los demás sin correr, sin error y sin log.
+        // R1. El default de Spring es 1, y hay cinco @Scheduled: PaymentReconciliationService,
+        // AbandonedOrderJob, StockRecoveryJob y los dos canales del outbox (OutboxScheduler, PROD-13b). Con
+        // un solo hilo, el que se quedara esperando a una pasarela lenta o a un POS que no contesta dejaba a
+        // los demás sin correr, sin error y sin log.
         assertThat(taskSchedulingProperties.getPool().getSize()).isGreaterThan(1);
     }
 
     @Test
-    @DisplayName("Cada integración tiene su propio pool, y ninguno descarta trabajo")
-    void eachIntegrationHasItsOwnBoundedExecutor() {
-        // R1. Dos executors y no uno es un mamparo: un POS caído que llene su cola no puede dejar al
-        // correo sin hilos. Y CallerRunsPolicy es lo que garantiza que una cola llena degrade a lento
-        // en vez de a perdido — descartar una notificación al POS la deja invisible para el reintento,
-        // que selecciona por syncAttempts >= 1.
-        for (ThreadPoolTaskExecutor executor : List.of(posExecutor, mailExecutor)) {
-            assertThat(executor.getThreadPoolExecutor().getRejectedExecutionHandler())
-                    .isInstanceOf(ThreadPoolExecutor.CallerRunsPolicy.class);
-            assertThat(executor.getThreadPoolExecutor().getQueue().remainingCapacity())
-                    .as("la cola tiene que ser acotada, no infinita")
-                    .isLessThan(Integer.MAX_VALUE);
-        }
-        assertThat(posExecutor).isNotSameAs(mailExecutor);
+    @DisplayName("Al apagar, el planificador espera a lo que está en vuelo")
+    void theSchedulerWaitsForWorkInFlightOnShutdown() {
+        // PROD-13b. Por defecto Spring no espera: una venta al POS cortada a medias por un redespliegue
+        // queda huérfana, y una huérfana del POS es revisión manual (no se sabe si llegó). El plazo tiene
+        // que cubrir una llamada entera: 5s de conexión + 20s de lectura (app.pos.*-timeout-ms).
+        assertThat(taskSchedulingProperties.getShutdown().isAwaitTermination()).isTrue();
+        assertThat(taskSchedulingProperties.getShutdown().getAwaitTerminationPeriod())
+                .isGreaterThanOrEqualTo(Duration.ofSeconds(25));
     }
 
     @Test

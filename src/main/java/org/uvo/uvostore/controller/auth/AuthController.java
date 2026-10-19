@@ -268,7 +268,7 @@ public class AuthController {
      * habría servido allí: {@code adminResetPassword} resuelve el tenant por él {@code Host}.
      *
      * <p>Visible en el paquete para poder afirmar sobre el cuerpo sin enviar nada, igual que
-     * {@code UserServiceImpl.invitationBody} y {@code CustomerInvitationEmailListener.body}: en los tests no
+     * {@code UserServiceImpl.invitationBody} y {@code OrderEmailComposer.invitationBody}: en los tests no
      * hay SMTP y {@code EmailServiceImpl} registra y omite el envío.
      */
     String resetPasswordBody(Store store, String token) {

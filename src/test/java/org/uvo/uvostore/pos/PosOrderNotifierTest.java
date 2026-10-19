@@ -5,16 +5,17 @@ import org.junit.jupiter.api.Test;
 import org.uvo.uvostore.entity.catalog.Product;
 import org.uvo.uvostore.entity.order.Order;
 import org.uvo.uvostore.entity.order.OrderItem;
+import org.uvo.uvostore.entity.order.enums.OrderStatus;
+import org.uvo.uvostore.entity.order.enums.PaymentStatus;
 import org.uvo.uvostore.entity.pos.PosConnection;
 import org.uvo.uvostore.entity.pos.ProductSyncMapping;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.repository.PosConnectionRepository;
 import org.uvo.uvostore.repository.ProductSyncMappingRepository;
-import org.uvo.uvostore.service.pos.PosClient;
 import org.uvo.uvostore.service.pos.PosOrderNotifier;
-import org.uvo.uvostore.service.pos.PosOrderPayload;
 import org.uvo.uvostore.service.pos.PosOrderPayloadMapper;
+import org.uvo.uvostore.service.pos.PosSaleRequest;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -24,137 +25,133 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * G2. {@code Order.posSynced} y {@code Order.syncAttempts} existían en la tabla y los inicializaba
- * el checkout, pero ningún código los leía ni los actualizaba: una notificación al POS que fallaba
- * no dejaba más rastro que una línea de log, así que no había forma de saber qué órdenes no llegaron
- * a la plataforma SII ni de reintentarlas.
+ * PROD-13b. Las dos mitades del registro de una venta en el POS: a qué empresas va (dentro de la
+ * transacción del pago) y qué se le envía a cada una (al despachar la fila del outbox).
  *
- * <p>Test unitario y no de integración porque {@code notifyOrder} es {@code REQUIRES_NEW}: bajo la
- * transacción con rollback de {@code IntegrationTestSupport} abriría una transacción nueva que no
- * vería las fixtures. Lo que se comprueba aquí —qué se escribe en la orden según cómo responda el
- * POS— no necesita base de datos.
+ * <p>Unitario porque lo que se comprueba —qué decide el notificador según la orden y los mapeos— no necesita
+ * base de datos. El recorrido completo con transacciones de verdad está en {@code OutboxCrashRecoveryTest}.
  */
 class PosOrderNotifierTest {
 
     private final OrderRepository orderRepository = mock(OrderRepository.class);
     private final ProductSyncMappingRepository mappingRepository = mock(ProductSyncMappingRepository.class);
     private final PosConnectionRepository connectionRepository = mock(PosConnectionRepository.class);
-    private final PosClient posClient = mock(PosClient.class);
 
-    // PROD-12: con la política habilitada, porque lo que mide esta clase es qué se escribe en la orden
-    // según responda el POS. Que no se notifique nada cuando está apagada es PosNotifierDisabledTest.
+    // PROD-12: con la política habilitada. Que no se encole ni se envíe nada cuando está apagada es
+    // PosNotifierDisabledTest.
     private final PosOrderNotifier notifier = new PosOrderNotifier(
-            orderRepository, mappingRepository, connectionRepository, posClient, new PosOrderPayloadMapper(),
+            orderRepository, mappingRepository, connectionRepository, new PosOrderPayloadMapper(),
             PosPolicyFixture.enabled(), 3);
 
     @Test
-    @DisplayName("Una notificación correcta marca la orden como sincronizada y cuenta el intento")
-    void aSuccessfulNotificationIsRecordedOnTheOrder() {
-        Order order = orderWithOneItem();
-        givenOneSyncedProduct(order, 42L);
-        when(posClient.notifyOrder(any(), any(PosOrderPayload.class))).thenReturn(Map.of("ok", true));
-
-        boolean result = notifier.notifyOrder(order.getId());
-
-        assertThat(result).isTrue();
-        assertThat(order.isPosSynced()).isTrue();
-        assertThat(order.getSyncAttempts()).isEqualTo(1);
-        assertThat(order.getLastSyncError()).isNull();
-    }
-
-    @Test
-    @DisplayName("Si el POS falla, la orden queda sin sincronizar, con el intento contado y el error escrito")
-    void aFailedNotificationLeavesTheOrderPending() {
-        Order order = orderWithOneItem();
-        givenOneSyncedProduct(order, 42L);
-        when(posClient.notifyOrder(any(), any(PosOrderPayload.class)))
-                .thenThrow(new RuntimeException("502 Bad Gateway"));
-
-        boolean result = notifier.notifyOrder(order.getId());
-
-        // Esto es lo que hace posible el reintento: sin syncAttempts ni posSynced escritos, la orden
-        // era indistinguible de una que nunca tuvo nada que notificar.
-        assertThat(result).isFalse();
-        assertThat(order.isPosSynced()).isFalse();
-        assertThat(order.getSyncAttempts()).isEqualTo(1);
-        assertThat(order.getLastSyncError()).contains("502 Bad Gateway");
-    }
-
-    @Test
-    @DisplayName("Cada intento suma: dos fallos seguidos dejan syncAttempts en 2")
-    void everyAttemptIsCounted() {
-        Order order = orderWithOneItem();
-        givenOneSyncedProduct(order, 42L);
-        when(posClient.notifyOrder(any(), any(PosOrderPayload.class)))
-                .thenThrow(new RuntimeException("timeout"));
-
-        notifier.notifyOrder(order.getId());
-        notifier.notifyOrder(order.getId());
-
-        // El tope de reintentos del job se apoya en esta cuenta; si no subiera, reintentaría para
-        // siempre una orden que nunca va a entrar.
-        assertThat(order.getSyncAttempts()).isEqualTo(2);
-    }
-
-    @Test
-    @DisplayName("Una orden sin productos sincronizados no cuenta intentos: no hay nada que reintentar")
-    void anOrderWithNothingToSyncNeverCountsAnAttempt() {
-        Order order = orderWithOneItem();
-        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
-        when(mappingRepository.findByProductId(any())).thenReturn(Optional.empty());
-        when(connectionRepository.findByStoreId(any())).thenReturn(Optional.empty());
-
-        boolean result = notifier.notifyOrder(order.getId());
-
-        // syncAttempts en 0 es justo lo que mantiene estas órdenes fuera del job de reintento.
-        assertThat(result).isTrue();
-        assertThat(order.getSyncAttempts()).isZero();
-    }
-
-    @Test
-    @DisplayName("Con dos empresas, si una falla la orden NO se da por sincronizada")
-    void anOrderIsOnlySyncedWhenEveryCompanyAnswered() {
+    @DisplayName("Las empresas salen de los mapeos, sin repetir y ordenadas")
+    void companiesComeFromTheMappings() {
         Order order = orderWithTwoItems();
         Product first = order.getItems().get(0).getProduct();
         Product second = order.getItems().get(1).getProduct();
+        when(mappingRepository.findByProductIdIn(any())).thenReturn(List.of(
+                mapping(second, 2L, 200L), mapping(first, 1L, 100L), mapping(second, 1L, 201L)));
 
+        assertThat(notifier.companiesToNotify(order)).containsExactly(1L, 2L);
+    }
+
+    @Test
+    @DisplayName("Un producto mapeado a dos empresas no rompe la confirmación del pago")
+    void aProductMappedToTwoCompaniesIsFine() {
+        // El caso que tumbaba la transacción del pago: findByProductId devolvía un Optional sobre una
+        // columna que no es única y lanzaba IncorrectResultSizeDataAccessException. Ahora es una lista.
+        Order order = orderWithOneItem();
+        Product product = order.getItems().getFirst().getProduct();
+        when(mappingRepository.findByProductIdIn(any())).thenReturn(List.of(
+                mapping(product, 1L, 100L), mapping(product, 2L, 200L)));
+
+        assertThat(notifier.companiesToNotify(order)).containsExactly(1L, 2L);
+    }
+
+    @Test
+    @DisplayName("Una orden sin productos sincronizados no va a ninguna empresa")
+    void anOrderWithNothingToSyncGoesNowhere() {
+        Order order = orderWithOneItem();
+        when(mappingRepository.findByProductIdIn(any())).thenReturn(List.of());
+        when(connectionRepository.existsActiveForStore(anyLong())).thenReturn(false);
+
+        assertThat(notifier.companiesToNotify(order)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Al despachar, solo van las líneas de esa empresa, con su id externo")
+    void eachCompanyGetsOnlyItsOwnLines() {
+        Order order = paid(orderWithTwoItems());
+        Product first = order.getItems().get(0).getProduct();
+        Product second = order.getItems().get(1).getProduct();
         when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
-        when(mappingRepository.findByProductId(first.getId())).thenReturn(Optional.of(mapping(first, 1L, 100L)));
-        when(mappingRepository.findByProductId(second.getId())).thenReturn(Optional.of(mapping(second, 2L, 200L)));
+        when(connectionRepository.findByCompanyId(1L)).thenReturn(Optional.of(connection(1L, true)));
         when(mappingRepository.findByProductIdAndCompanyId(first.getId(), 1L)).thenReturn(Optional.of(mapping(first, 1L, 100L)));
-        when(mappingRepository.findByProductIdAndCompanyId(second.getId(), 2L)).thenReturn(Optional.of(mapping(second, 2L, 200L)));
-        when(mappingRepository.findByProductIdAndCompanyId(first.getId(), 2L)).thenReturn(Optional.empty());
         when(mappingRepository.findByProductIdAndCompanyId(second.getId(), 1L)).thenReturn(Optional.empty());
-        when(connectionRepository.findByCompanyId(1L)).thenReturn(Optional.of(connection(1L)));
-        when(connectionRepository.findByCompanyId(2L)).thenReturn(Optional.of(connection(2L)));
-        when(connectionRepository.findByStoreId(any())).thenReturn(Optional.of(connection(1L)));
-        when(posClient.notifyOrder(any(), any(PosOrderPayload.class)))
-                .thenReturn(Map.of("ok", true))
-                .thenThrow(new RuntimeException("la segunda empresa no responde"));
 
-        boolean result = notifier.notifyOrder(order.getId());
+        PosSaleRequest request = notifier.prepare(order.getId(), 1L);
 
-        // Darla por sincronizada con la primera dejaría a la segunda empresa sin su documento y
-        // fuera del reintento, que es exactamente la pérdida silenciosa que G2 viene a cerrar.
-        assertThat(result).isFalse();
-        assertThat(order.isPosSynced()).isFalse();
+        assertThat(request.kind()).isEqualTo(PosSaleRequest.Kind.READY);
+        assertThat(request.connection().getCompanyId()).isEqualTo(1L);
+        assertThat(request.payload().idempotencyKey()).isEqualTo(PosOrderPayloadMapper.idempotencyKey(order.getOrderNumber(), 1L));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> items = (List<Map<String, Object>>) request.payload().body().get("items");
+        assertThat(items).singleElement().satisfies(item -> assertThat(item.get("product_id")).isEqualTo(100L));
+    }
+
+    @Test
+    @DisplayName("Una orden cancelada o reembolsada después del pago no se envía")
+    void aSaleUndoneSinceThePaymentIsSkipped() {
+        // Entre el pago y el envío pueden pasar horas si el POS está caído. Un documento tributario por una
+        // venta que ya se deshizo es justo lo que no puede salir.
+        Order cancelled = paid(orderWithOneItem());
+        cancelled.setStatus(OrderStatus.CANCELLED);
+        when(orderRepository.findById(cancelled.getId())).thenReturn(Optional.of(cancelled));
+
+        PosSaleRequest request = notifier.prepare(cancelled.getId(), 1L);
+
+        assertThat(request.kind()).isEqualTo(PosSaleRequest.Kind.SKIP);
+        assertThat(request.reason()).contains("ya no está pagada");
+        verify(connectionRepository, never()).findByCompanyId(any());
+
+        Order refunded = paid(orderWithOneItem());
+        refunded.setPaymentStatus(PaymentStatus.REFUNDED);
+        when(orderRepository.findById(refunded.getId())).thenReturn(Optional.of(refunded));
+        assertThat(notifier.prepare(refunded.getId(), 1L).kind()).isEqualTo(PosSaleRequest.Kind.SKIP);
+    }
+
+    @Test
+    @DisplayName("Sin conexión activa no sale nada, y por eso se puede reintentar")
+    void noActiveConnectionIsNotSent() {
+        Order order = paid(orderWithOneItem());
+        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(connectionRepository.findByCompanyId(1L)).thenReturn(Optional.of(connection(1L, false)));
+
+        PosSaleRequest request = notifier.prepare(order.getId(), 1L);
+
+        assertThat(request.kind()).isEqualTo(PosSaleRequest.Kind.NOT_SENT);
+        assertThat(request.reason()).contains("company_id=1");
+    }
+
+    @Test
+    @DisplayName("Si la orden ya no tiene productos de esa empresa, no hay nada que enviar")
+    void noLinesForTheCompanyIsSkipped() {
+        Order order = paid(orderWithOneItem());
+        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(connectionRepository.findByCompanyId(1L)).thenReturn(Optional.of(connection(1L, true)));
+        when(mappingRepository.findByProductIdAndCompanyId(any(), any())).thenReturn(Optional.empty());
+
+        assertThat(notifier.prepare(order.getId(), 1L).kind()).isEqualTo(PosSaleRequest.Kind.SKIP);
     }
 
     // --- fixtures ---------------------------------------------------------------------------------
-
-    private void givenOneSyncedProduct(Order order, Long companyId) {
-        Product product = order.getItems().getFirst().getProduct();
-        ProductSyncMapping mapping = mapping(product, companyId, 999L);
-        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
-        when(mappingRepository.findByProductId(product.getId())).thenReturn(Optional.of(mapping));
-        when(mappingRepository.findByProductIdAndCompanyId(product.getId(), companyId)).thenReturn(Optional.of(mapping));
-        when(connectionRepository.findByCompanyId(companyId)).thenReturn(Optional.of(connection(companyId)));
-        when(connectionRepository.findByStoreId(any())).thenReturn(Optional.of(connection(companyId)));
-    }
 
     private static ProductSyncMapping mapping(Product product, Long companyId, Long externalId) {
         ProductSyncMapping mapping = new ProductSyncMapping();
@@ -164,13 +161,19 @@ class PosOrderNotifierTest {
         return mapping;
     }
 
-    private static PosConnection connection(Long companyId) {
+    private static PosConnection connection(Long companyId, boolean active) {
         PosConnection connection = new PosConnection();
         connection.setCompanyId(companyId);
         connection.setApiUrl("https://pos.invalid/api/v1");
         connection.setApiKey("k");
-        connection.setActive(true);
+        connection.setActive(active);
         return connection;
+    }
+
+    private static Order paid(Order order) {
+        order.setPaymentStatus(PaymentStatus.PAID);
+        order.setStatus(OrderStatus.PROCESSING);
+        return order;
     }
 
     private static Order orderWithOneItem() {

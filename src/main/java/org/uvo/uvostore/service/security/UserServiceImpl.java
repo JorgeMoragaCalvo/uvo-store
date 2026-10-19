@@ -185,7 +185,7 @@ public class UserServiceImpl implements UserService {
     /**
      * Visible en el paquete para poder afirmar sobre el cuerpo sin enviar nada: en los tests no hay SMTP y
      * {@code EmailServiceImpl} registra y omite el envío. Mismo recurso que
-     * {@code CustomerInvitationEmailListener.body} y {@code MercadoPagoServiceImpl.buildPreferenceRequest}.
+     * {@code OrderEmailComposer.invitationBody} y {@code MercadoPagoServiceImpl.buildPreferenceRequest}.
      */
     String invitationBody(User user, Store store) {
         return "Hola " + user.getName() + ",\n\n"

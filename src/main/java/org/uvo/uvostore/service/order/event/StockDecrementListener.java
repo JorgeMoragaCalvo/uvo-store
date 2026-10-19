@@ -36,12 +36,13 @@ public class StockDecrementListener {
     }
 
     /**
-     * R1. <b>Este se queda en el hilo de la petición, y es deliberado.</b> Los otros dos listeners
-     * AFTER_COMMIT pasaron a un executor porque salen a la red a hablar con un tercero; esto solo toca
-     * la base y es rápido. Moverlo abriría una ventana entre "pago confirmado" y "stock descontado" en
-     * la que dos compras del último artículo se cruzan y las dos quedan vendidas. Lo que se sacó del
-     * hilo es la red, no la corrección — si alguien le pone {@code @Async} aquí,
-     * {@code AsyncListenerDispatchTest} falla.
+     * R1. <b>Este se queda en el hilo de la petición, y es deliberado.</b> Los otros efectos del pago
+     * salieron de él porque van a la red a hablar con un tercero —primero a un executor (R1), ahora al
+     * outbox (PROD-13b)—; esto solo toca la base y es rápido. Moverlo abriría una ventana entre "pago
+     * confirmado" y "stock descontado" en la que dos compras del último artículo se cruzan y las dos
+     * quedan vendidas. Lo que se sacó del hilo es la red, no la corrección — si alguien le pone
+     * {@code @Async} aquí, {@code AsyncListenerDispatchTest} falla. Y si el proceso muere antes de que
+     * corra, lo recoge {@code StockRecoveryJob} (PROD-13a).
      */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.REQUIRES_NEW)

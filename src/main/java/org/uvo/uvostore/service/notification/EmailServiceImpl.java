@@ -13,6 +13,9 @@ import org.springframework.stereotype.Service;
 // integration in this project (Chilexpress/Webpay/MercadoPago): if it isn't configured, log and
 // skip instead of throwing, so a caller like checkout or password reset never breaks because mail
 // isn't set up.
+//
+// PROD-13b: deliver() is the honest version, for the outbox — it reports what happened instead of
+// swallowing it. send() is deliver() with the failure swallowed, for the synchronous callers.
 @Service
 public class EmailServiceImpl implements EmailService {
 
@@ -32,21 +35,27 @@ public class EmailServiceImpl implements EmailService {
 
     @Override
     public void send(String to, String subject, String body) {
-        if (mailHost == null || mailHost.isBlank()) {
-            log.warn("Correo no enviado (SMTP no configurado) to={} subject={}", to, subject);
-            return;
-        }
-
         try {
-            SimpleMailMessage message = new SimpleMailMessage();
-            message.setFrom(fromAddress);
-            message.setTo(to);
-            message.setSubject(subject);
-            message.setText(body);
-            mailSender.send(message);
-            log.info("Correo enviado to={} subject={}", to, subject);
-        } catch (Exception e) {
+            deliver(to, subject, body);
+        } catch (RuntimeException e) {
             log.error("Error enviando correo to={} subject={} error={}", to, subject, e.getMessage());
         }
+    }
+
+    @Override
+    public Delivery deliver(String to, String subject, String body) {
+        if (mailHost == null || mailHost.isBlank()) {
+            log.warn("Correo no enviado (SMTP no configurado) to={} subject={}", to, subject);
+            return Delivery.NOT_CONFIGURED;
+        }
+
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(fromAddress);
+        message.setTo(to);
+        message.setSubject(subject);
+        message.setText(body);
+        mailSender.send(message);
+        log.info("Correo enviado to={} subject={}", to, subject);
+        return Delivery.SENT;
     }
 }

@@ -65,7 +65,7 @@ class AbandonedOrderJobTest {
     @Test
     @DisplayName("Una orden que revienta no se lleva por delante a las demás de la tanda")
     void oneFailureDoesNotStopTheBatch() {
-        // Es el mismo criterio que PosNotificationRetryJob: el lote tiene que terminar.
+        // Es el mismo criterio que el resto de trabajos programados: el lote tiene que terminar.
         Order first = pendingOrder(1L);
         Order second = pendingOrder(2L);
         when(orderRepository.findAbandonedPending(any(), any())).thenReturn(List.of(first, second));
