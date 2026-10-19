@@ -75,11 +75,11 @@ class ApplicationConfigurationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("El planificador tiene más de un hilo para sus dos trabajos")
+    @DisplayName("El planificador tiene más de un hilo para sus cuatro trabajos")
     void theSchedulerIsNotASingleThread() {
-        // R1. El default de Spring es 1, y hay dos @Scheduled: PosNotificationRetryJob y
-        // PaymentReconciliationService. Con un solo hilo, el que se quedara esperando a una pasarela
-        // lenta dejaba al otro sin correr, sin error y sin log.
+        // R1. El default de Spring es 1, y hay cuatro @Scheduled: PosNotificationRetryJob,
+        // PaymentReconciliationService, AbandonedOrderJob y StockRecoveryJob. Con un solo hilo, el que se
+        // quedara esperando a una pasarela lenta dejaba a los demás sin correr, sin error y sin log.
         assertThat(taskSchedulingProperties.getPool().getSize()).isGreaterThan(1);
     }
 

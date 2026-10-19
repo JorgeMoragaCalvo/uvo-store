@@ -62,8 +62,8 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
   case". `multitenancy/RepositoryTenantScopeTest` now enforces it for every repository whose entity has a
   `store` field: each declared method must mention the store, take a `Long` id (`id`, `customerId`,
   `companyId`… — a lookup by a record, or by its parent, already inside one store) or be listed in
-  `GLOBAL_ON_PURPOSE` **with the reason it is safe**. The ten that are: three random UNIQUE tokens, four
-  keys issued by a payment gateway, and three scheduled jobs that deliberately walk every store. Adding a
+  `GLOBAL_ON_PURPOSE` **with the reason it is safe**. The eleven that are: three random UNIQUE tokens, four
+  keys issued by a payment gateway, and four scheduled jobs that deliberately walk every store. Adding a
   global query is possible; it just has to be written down. Three of those are flagged in the test as
   *not store-checked by their caller* (`UserRepository.findByPasswordResetToken` and Stripe's two
   `findByStripe…Id`) — a known gap, not an endorsement. For Stripe it is wider than the repository:
