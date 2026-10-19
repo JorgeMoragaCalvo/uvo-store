@@ -16,6 +16,7 @@ import org.uvo.uvostore.service.order.OrderStatusService;
 import org.uvo.uvostore.support.IntegrationTestSupport;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -124,6 +125,20 @@ class OrderPaymentTransitionsTest extends IntegrationTestSupport {
         assertThat(orderRepository.findById(order.getId()).orElseThrow().getPaymentStatus())
                 .as("PAID es lo que RefundService exige para poder devolver el dinero")
                 .isEqualTo(PaymentStatus.PAID);
+    }
+
+    @Test
+    @DisplayName("Confirmar el pago anota cuándo se pagó; un fallo no lo anota")
+    void markingPaidRecordsWhenItWasPaid() {
+        // PROD-13a: paid_at es la referencia de StockRecoveryJob. Una orden PAID sin fecha de pago no
+        // la vería nunca el barrido, que es justo el hueco que ese job viene a cerrar.
+        Instant before = Instant.now().minusSeconds(1);
+        Order paid = paidOrder();
+        Order failed = pendingOrder();
+        orderStatusService.markPaymentFailed(failed.getId());
+
+        assertThat(paid.getPaidAt()).isNotNull().isAfter(before);
+        assertThat(orderRepository.findById(failed.getId()).orElseThrow().getPaidAt()).isNull();
     }
 
     // --- fixtures ----------------------------------------------------------------------------------

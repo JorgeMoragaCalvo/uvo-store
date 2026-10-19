@@ -173,6 +173,11 @@ public class Order {
     @Column(name = "total_weight", precision = 10, scale = 2)
     private BigDecimal totalWeight;
 
+    // PROD-13a: lo escribe markPaid. Es la referencia del barrido de stock (StockRecoveryJob), que deja
+    // un margen tras el pago antes de tocar la orden para no competir con StockDecrementListener.
+    @Column(name = "paid_at")
+    private Instant paidAt;
+
     @Column(name = "shipped_at")
     private Instant shippedAt;
 

@@ -603,9 +603,29 @@ Java, and saving it back lets two concurrent payments both sell the last unit. T
 this up with `CHECK (stock >= 0)` on both tables (V13). All of the order-lifecycle stock movement
 lives in `OrderInventoryService`, guarded by `orders.stock_applied`/`stock_restored`, because four
 separate paths can cancel an order and a second cancellation would otherwise invent inventory.
-`StockConcurrencyTest` is the only test in the project that runs real concurrent threads — it
-deliberately does not extend `IntegrationTestSupport`, whose per-test transaction would hide the
+`StockConcurrencyTest` and `StockRecoveryTest` are the tests that run real concurrent threads — they
+deliberately do not extend `IntegrationTestSupport`, whose per-test transaction would hide the
 race.
+
+**A paid order whose stock never moved is swept up** (PROD-13a). The decrement runs in
+`StockDecrementListener`, after the payment commits and on the request thread on purpose; a process that
+dies in between used to leave the order `PAID` with `stock_applied = false` forever, since reconciliation
+only looks at `PENDING`. `StockRecoveryJob` (on by default, `app.stock-recovery.*`) picks those orders up
+once `paid_at` (V24, written by `markPaid`) is older than `after-minutes`, and every hit leaves a note in
+`order_status_history` plus a Sentry message. Running it alongside the listener is safe because the
+`stock_applied` guard is now a **claim**, not a read: `OrderRepository.claimStockApplication` is a
+conditional UPDATE inside the same transaction as the decrements, so of two concurrent callers only one
+decrements. Keep `order.setStockApplied(true)` on the entity as well: `Order` has no `@DynamicUpdate`, so the
+final `save` writes every column and would put `false` back over the claim. The pg advisory lock that
+reconciliation used is now `service/AdvisoryLock`, shared by both jobs (keys `7_312_025_001` and `…002`).
+**Trap fixed along the way**: `decrementStock` carries `clearAutomatically`, so after the first line the order
+and its lines are detached. With an order loaded by `findById` (the listener's case), the next line's LAZY
+product could not be initialized and the stock-failure note could not be added to the uninitialized
+`statusHistory`: either one threw `LazyInitializationException` and rolled the whole decrement back —
+**every paid order with two or more simple products decremented nothing**. `applyOrderStock` now initializes
+the products up front, and `appendHistory` writes through the repository when the collection isn't loaded.
+No test caught it because they all passed orders that were already in memory; `StockRecoveryTest` drives the
+real listener.
 
 Both gaps that used to be listed here are now closed. `PosWebhookServiceImpl.handleStockUpdated` no longer overwrites stock blindly: it uses `ProductRepository.setStockIfUnchanged`, conditioned on the `oldStock` the POS says it saw, so a concurrent web sale can't be erased — a mismatch is reported as a divergence (same wording and Sentry alert as `PosOrderNotifier.checkStockDivergence`, which already treats our own decrement as the authority for web stock) instead of written (F13). And marking an order paid from the admin panel now goes through `OrderStatusService.markPaid`, so it publishes `PaymentConfirmedEvent` and does decrement stock (F07).
 
@@ -897,7 +917,7 @@ login (`/admin/login`) is separate and fully functional.
     Spring 7 now rejects at startup — both need
     `@Transactional(propagation = Propagation.REQUIRES_NEW)`. If you add another `AFTER_COMMIT`
     listener that also needs a transaction, use the same pattern.
-- **Testing**: **480 backend `@Test` methods across 89 classes** (JUnit + `IntegrationTestSupport`,
+- **Testing**: **530 backend tests across 100 classes** (as of PROD-13a) (JUnit + `IntegrationTestSupport`,
   one Spring-managed transaction per test, auto-rolled-back — `AFTER_COMMIT` listeners never fire
   under this setup, which is intentional) and **142 frontend tests across 32 files** (Vitest +
   React Testing Library, `npm run test`), both wired into CI (`.github/workflows/ci.yml`) and the

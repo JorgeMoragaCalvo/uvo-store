@@ -5,6 +5,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -124,6 +125,37 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
             order by o.createdAt asc
             """)
     List<Order> findAbandonedPending(@Param("notAfter") Instant notAfter, Pageable pageable);
+
+    /**
+     * PROD-13a. El reclamo del descuento de stock de una orden: la marca se pone en la misma sentencia
+     * que la comprueba, así que de dos llamadas simultáneas (el listener del pago y el barrido) solo una
+     * afecta la fila — la otra espera el cerrojo de fila, re-evalúa el WHERE y devuelve 0. Mismo
+     * razonamiento que {@code ProductRepository.decrementStock} en C5.
+     *
+     * <p>Sin {@code clearAutomatically}: quien llama tiene la orden gestionada y todavía tiene que
+     * recorrer sus líneas, que son perezosas.
+     */
+    @Modifying(flushAutomatically = true)
+    @Query("update Order o set o.stockApplied = true where o.id = :id and o.stockApplied = false")
+    int claimStockApplication(@Param("id") Long id);
+
+    /**
+     * PROD-13a. Órdenes cobradas cuyo stock no llegó a descontarse: el proceso murió entre el commit de
+     * {@code markPaid} y {@code StockDecrementListener}. El margen ({@code notAfter} sobre
+     * {@code paidAt}) es para no competir con el listener de un pago recién confirmado — competir no
+     * descontaría dos veces (lo impide el reclamo), pero alertaría de una anomalía que no existe.
+     *
+     * <p>{@code join fetch o.store} porque lo consume un job, sin sesión, que fija el tenant con ella.
+     */
+    @Query("""
+            select o from Order o
+            join fetch o.store
+            where o.paymentStatus = org.uvo.uvostore.entity.order.enums.PaymentStatus.PAID
+              and o.stockApplied = false
+              and o.paidAt < :notAfter
+            order by o.paidAt asc
+            """)
+    List<Order> findPaidWithoutStockApplied(@Param("notAfter") Instant notAfter, Pageable pageable);
 
     // Admin\Shipping\{Zones,Methods}\Index delete guards — refuse to delete a zone/method that
     // still has orders referencing it.

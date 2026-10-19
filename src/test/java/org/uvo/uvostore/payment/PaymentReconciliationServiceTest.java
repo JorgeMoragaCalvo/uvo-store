@@ -15,6 +15,7 @@ import org.uvo.uvostore.entity.order.enums.PaymentStatus;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.security.TenantContext;
+import org.uvo.uvostore.service.AdvisoryLock;
 import org.uvo.uvostore.service.order.OrderStatusServiceImpl;
 import org.uvo.uvostore.service.order.PaymentService;
 import org.uvo.uvostore.service.order.PaymentVerificationResult;
@@ -77,7 +78,7 @@ class PaymentReconciliationServiceTest {
         when(lockResult.getBoolean(1)).thenReturn(true);
 
         service = new PaymentReconciliationService(orderRepository, paymentService, webpayService,
-                mercadoPagoService, dataSource, 15, 24, 50);
+                mercadoPagoService, new AdvisoryLock(dataSource), 15, 24, 50);
 
         serviceLogger = (Logger) LoggerFactory.getLogger(PaymentReconciliationService.class);
         logs = new ListAppender<>();

@@ -15,6 +15,7 @@ import org.uvo.uvostore.service.order.event.PaymentConfirmedEvent;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.util.NoSuchElementException;
 
 @Service
@@ -70,7 +71,9 @@ public class OrderStatusServiceImpl implements OrderStatusService {
             order.setStripePaymentIntentId(paymentReference);
         }
         order.setPaymentStatus(PaymentStatus.PAID);
+        order.setPaidAt(Instant.now());
         order.setStatus(OrderStatus.PROCESSING);
+        // PROD-13a: V24 usa este texto exacto para rellenar paid_at en las órdenes anteriores.
         appendHistory(order, OrderStatus.PROCESSING, "Pago confirmado");
         Order saved = orderRepository.save(order);
         // Ports event(new PaymentConfirmed($order)) — StockDecrementListener reacts to this
