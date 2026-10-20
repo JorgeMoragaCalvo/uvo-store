@@ -173,25 +173,21 @@ public class Order {
     @Column(name = "total_weight", precision = 10, scale = 2)
     private BigDecimal totalWeight;
 
+    // PROD-13a: lo escribe markPaid. Es la referencia del barrido de stock (StockRecoveryJob), que deja
+    // un margen tras el pago antes de tocar la orden para no competir con StockDecrementListener.
+    @Column(name = "paid_at")
+    private Instant paidAt;
+
     @Column(name = "shipped_at")
     private Instant shippedAt;
 
     @Column(name = "delivered_at")
     private Instant deliveredAt;
 
-    @Column(name = "pos_synced", nullable = false)
-    @Builder.Default
-    private boolean posSynced = false;
-
+    // PROD-13b: pos_synced, sync_attempts y last_sync_error se fueron en V25. Qué se envió al POS, cuántas
+    // veces y con qué error vive ahora en outbox_messages, una fila por empresa.
     @Column(name = "pos_order_id")
     private String posOrderId;
-
-    @Column(name = "sync_attempts", nullable = false)
-    @Builder.Default
-    private int syncAttempts = 0;
-
-    @Column(name = "last_sync_error", columnDefinition = "text")
-    private String lastSyncError;
 
     // C5: stock moves on payment confirmation and comes back on cancellation, and four different
     // paths can cancel an order (OrderStatusService.markCancelled/markPaymentFailed,

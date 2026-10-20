@@ -65,12 +65,12 @@ class RepositoryTenantScopeTest {
                     "id de sesión que emite Stripe; PaymentServiceImpl no filtra por tienda después (anotado)"),
             Map.entry("OrderRepository.findByStripePaymentIntentId",
                     "id de PaymentIntent que emite Stripe; PaymentServiceImpl no filtra por tienda después (anotado)"),
-            Map.entry("OrderRepository.findPendingPosNotification",
-                    "trabajo programado: recorre todas las tiendas y fija el tenant por orden"),
             Map.entry("OrderRepository.findPendingPaymentsToReconcile",
                     "trabajo programado: recorre todas las tiendas y fija el tenant por orden"),
             Map.entry("OrderRepository.findAbandonedPending",
-                    "trabajo programado: recorre todas las tiendas y fija el tenant por orden")));
+                    "trabajo programado: recorre todas las tiendas y fija el tenant por orden"),
+            Map.entry("OrderRepository.findPaidWithoutStockApplied",
+                    "trabajo programado (StockRecoveryJob): recorre todas las tiendas y fija el tenant por orden")));
 
     @Test
     @DisplayName("Toda consulta de un repositorio de tienda está acotada o es una global justificada")

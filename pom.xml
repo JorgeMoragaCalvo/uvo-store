@@ -240,6 +240,12 @@
                         <app.public-url.platform-domain>localhost</app.public-url.platform-domain>
                         <app.public-url.storefront>http://{host}</app.public-url.storefront>
                         <app.public-url.api>http://{host}</app.public-url.api>
+                        <!-- PROD-13b: el reloj del outbox apagado. Corre cada pocos segundos, y cada contexto
+                             de Spring que la suite guarda en caché tendría el suyo despachando sobre la misma
+                             base: se quedaría con las filas que un test está comprobando, o con el cerrojo
+                             consultivo, y la llamada directa del test no haría nada. Los tests llaman a
+                             OutboxDispatcher a mano, que es lo que se quiere medir. -->
+                        <app.outbox.scheduler.enabled>false</app.outbox.scheduler.enabled>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>

@@ -5,11 +5,11 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import org.uvo.uvostore.entity.order.Order;
-import org.uvo.uvostore.entity.tenant.Store;
 
 import java.time.Instant;
 import java.util.List;
@@ -40,16 +40,6 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
     @Query("select o from Order o where o.id = :id")
     Optional<Order> findByIdForUpdate(@Param("id") Long id);
 
-    /**
-     * R1. Solo la tienda de una orden, para el trabajo que corre en un hilo de pool. {@code Order.store}
-     * es LAZY, así que leerlo desde {@code findById} fuera de transacción revienta; y abrir una
-     * transacción alrededor mantendría una conexión de Hikari tomada durante toda la llamada de red que
-     * viene después, que es justo la forma de agotar el pool que esto quiere evitar. Una consulta y se
-     * cierra.
-     */
-    @Query("select o.store from Order o where o.id = :id")
-    Optional<Store> findStoreByOrderId(@Param("id") Long id);
-
     // PROD-17b. Se quitaron findByStatus, findByPaymentStatus, findTop10ByOrderByCreatedAtDesc,
     // findByStatusAndCreatedAtAfter, countByPosSyncedFalse y findByPosOrderId: ninguna filtraba por
     // tienda y ninguna tenía llamadores (eran los scopes de Laravel portados tal cual). Las dos primeras
@@ -58,30 +48,9 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
     // comprobar la tienda de la orden: así lo hacen el seguimiento, MercadoPago y Webpay.
     List<Order> findByCustomerIdOrderByCreatedAtDesc(Long customerId);
 
-    // G2: órdenes que intentaron notificarse al POS y no lo consiguieron. El `syncAttempts >= 1` no
-    // es decorativo — deja fuera a las órdenes que nunca tuvieron nada que notificar (ninguna línea
-    // con ProductSyncMapping), que también tienen posSynced=false y reintentarlas no haría nada.
-    // El `join fetch o.store` no es una optimización: quien consume esto es un job, fuera de toda
-    // petición y por tanto sin sesión abierta, y lo primero que hace con cada orden es leer su
-    // tienda para fijar el tenant. Sin el fetch, eso es un LazyInitializationException.
-    // F07: y solo órdenes pagadas. Notificar al POS emite un documento tributario, así que una orden
-    // sin cobrar no tiene nada que emitir. Tras mover la notificación al pago confirmado ninguna orden
-    // impaga llega ya a syncAttempts >= 1 — pero las que quedaron con intentos de cuando la
-    // notificación colgaba de la creación sí se reintentarían. La condición deja escrito el requisito
-    // en vez de confiar en que nadie vuelva a colgar la notificación del evento equivocado.
-    @Query("""
-            select o from Order o
-            join fetch o.store
-            where o.posSynced = false
-              and o.paymentStatus = org.uvo.uvostore.entity.order.enums.PaymentStatus.PAID
-              and o.syncAttempts >= 1
-              and o.syncAttempts < :maxAttempts
-              and o.createdAt < :notAfter
-            order by o.createdAt asc
-            """)
-    List<Order> findPendingPosNotification(@Param("maxAttempts") int maxAttempts,
-                                           @Param("notAfter") Instant notAfter,
-                                           Pageable pageable);
+    // PROD-13b: findPendingPosNotification (G2) se quitó con el reintento que la usaba. Solo veía órdenes con
+    // syncAttempts >= 1, así que una venta cuyo proceso murió antes del primer intento no la veía nadie; ahora
+    // cada venta al POS es una fila del outbox desde el commit del pago (OutboxMessageRepository).
 
     // G1: órdenes con el pago sin resolver que ya tienen identificador en la pasarela, es decir, las
     // que se pueden ir a preguntar. Se saltan a propósito las que tienen nota de descuadre de monto:
@@ -124,6 +93,37 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
             order by o.createdAt asc
             """)
     List<Order> findAbandonedPending(@Param("notAfter") Instant notAfter, Pageable pageable);
+
+    /**
+     * PROD-13a. El reclamo del descuento de stock de una orden: la marca se pone en la misma sentencia
+     * que la comprueba, así que de dos llamadas simultáneas (el listener del pago y el barrido) solo una
+     * afecta la fila — la otra espera el cerrojo de fila, re-evalúa el WHERE y devuelve 0. Mismo
+     * razonamiento que {@code ProductRepository.decrementStock} en C5.
+     *
+     * <p>Sin {@code clearAutomatically}: quien llama tiene la orden gestionada y todavía tiene que
+     * recorrer sus líneas, que son perezosas.
+     */
+    @Modifying(flushAutomatically = true)
+    @Query("update Order o set o.stockApplied = true where o.id = :id and o.stockApplied = false")
+    int claimStockApplication(@Param("id") Long id);
+
+    /**
+     * PROD-13a. Órdenes cobradas cuyo stock no llegó a descontarse: el proceso murió entre el commit de
+     * {@code markPaid} y {@code StockDecrementListener}. El margen ({@code notAfter} sobre
+     * {@code paidAt}) es para no competir con el listener de un pago recién confirmado — competir no
+     * descontaría dos veces (lo impide el reclamo), pero alertaría de una anomalía que no existe.
+     *
+     * <p>{@code join fetch o.store} porque lo consume un job, sin sesión, que fija el tenant con ella.
+     */
+    @Query("""
+            select o from Order o
+            join fetch o.store
+            where o.paymentStatus = org.uvo.uvostore.entity.order.enums.PaymentStatus.PAID
+              and o.stockApplied = false
+              and o.paidAt < :notAfter
+            order by o.paidAt asc
+            """)
+    List<Order> findPaidWithoutStockApplied(@Param("notAfter") Instant notAfter, Pageable pageable);
 
     // Admin\Shipping\{Zones,Methods}\Index delete guards — refuse to delete a zone/method that
     // still has orders referencing it.

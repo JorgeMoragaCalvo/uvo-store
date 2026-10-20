@@ -1,6 +1,7 @@
 package org.uvo.uvostore.service.order;
 
 import io.sentry.Sentry;
+import jakarta.persistence.EntityManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -12,9 +13,11 @@ import org.uvo.uvostore.entity.order.enums.OrderStatus;
 import org.uvo.uvostore.entity.order.enums.PaymentStatus;
 import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.service.order.event.PaymentConfirmedEvent;
+import org.uvo.uvostore.service.outbox.OutboxService;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.util.NoSuchElementException;
 
 @Service
@@ -33,12 +36,17 @@ public class OrderStatusServiceImpl implements OrderStatusService {
     private final OrderRepository orderRepository;
     private final ApplicationEventPublisher applicationEventPublisher;
     private final OrderInventoryService orderInventoryService;
+    private final OutboxService outboxService;
+    private final EntityManager entityManager;
 
     public OrderStatusServiceImpl(OrderRepository orderRepository, ApplicationEventPublisher applicationEventPublisher,
-                                  OrderInventoryService orderInventoryService) {
+                                  OrderInventoryService orderInventoryService, OutboxService outboxService,
+                                  EntityManager entityManager) {
         this.orderRepository = orderRepository;
         this.applicationEventPublisher = applicationEventPublisher;
         this.orderInventoryService = orderInventoryService;
+        this.outboxService = outboxService;
+        this.entityManager = entityManager;
     }
 
     @Override
@@ -70,9 +78,14 @@ public class OrderStatusServiceImpl implements OrderStatusService {
             order.setStripePaymentIntentId(paymentReference);
         }
         order.setPaymentStatus(PaymentStatus.PAID);
+        order.setPaidAt(Instant.now());
         order.setStatus(OrderStatus.PROCESSING);
+        // PROD-13a: V24 usa este texto exacto para rellenar paid_at en las órdenes anteriores.
         appendHistory(order, OrderStatus.PROCESSING, "Pago confirmado");
         Order saved = orderRepository.save(order);
+        // PROD-13b: la venta al POS sale del outbox, escrita en ESTA transacción. Si se deshace, no queda
+        // nada que enviar; si se confirma, se envía aunque el proceso muera justo después.
+        outboxService.enqueuePaymentConfirmed(saved);
         // Ports event(new PaymentConfirmed($order)) — StockDecrementListener reacts to this
         // AFTER_COMMIT, same as Laravel's queued listener running after the request completes.
         applicationEventPublisher.publishEvent(new PaymentConfirmedEvent(saved.getId()));
@@ -203,9 +216,20 @@ public class OrderStatusServiceImpl implements OrderStatusService {
      * F03. Para lo que cambia {@code paymentStatus}, leer y escribir sin cerrojo no basta: dos
      * webhooks simultáneos leerían los dos el mismo estado y el candado de {@code canFail} no vería
      * nada raro. Con el bloqueo, el segundo espera y encuentra el estado que dejó el primero.
+     *
+     * <p>PROD-13b: eso último no era cierto. Casi todos los llamadores (la verificación de Stripe, los
+     * webhooks, Webpay, MercadoPago, el panel) cargan la orden ANTES, en su misma transacción, y
+     * {@code findByIdForUpdate} bloquea la fila pero devuelve la instancia que ya estaba en la sesión, sin
+     * refrescarla: el segundo esperaba el cerrojo y, al obtenerlo, seguía viendo PENDING. Dos confirmaciones
+     * simultáneas del mismo pago pasaban así la guarda, y eran dos documentos tributarios y dos correos. El
+     * {@code refresh} relee la fila ya con el cerrojo tomado. El {@code flush} va antes para no perder lo que
+     * el llamador hubiera cambiado y no volcado: {@code refresh} lo descartaría.
      */
     private Order findForUpdateOrThrow(Long orderId) {
-        return orderRepository.findByIdForUpdate(orderId)
+        entityManager.flush();
+        Order order = orderRepository.findByIdForUpdate(orderId)
                 .orElseThrow(() -> new NoSuchElementException("Order " + orderId + " not found"));
+        entityManager.refresh(order);
+        return order;
     }
 }

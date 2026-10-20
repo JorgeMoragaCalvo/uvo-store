@@ -5,9 +5,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.uvo.uvostore.entity.order.Order;
+import org.uvo.uvostore.entity.order.OrderItem;
+import org.uvo.uvostore.entity.order.enums.OrderStatus;
+import org.uvo.uvostore.entity.order.enums.PaymentStatus;
 import org.uvo.uvostore.entity.pos.PosConnection;
 import org.uvo.uvostore.entity.pos.ProductSyncMapping;
 import org.uvo.uvostore.repository.OrderRepository;
@@ -16,21 +20,25 @@ import org.uvo.uvostore.repository.ProductSyncMappingRepository;
 
 import java.util.List;
 import java.util.Map;
-import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * La notificación de una orden a UvoPOS, extraída de {@code PosNotificationListener} en G2: ahora
- * tiene dos llamadores —el listener {@code AFTER_COMMIT} y el reintento programado
- * ({@link PosNotificationRetryJob})— y duplicar esta lógica en el job sería la forma más rápida de
- * que las dos versiones se separaran.
+ * Lo que el e-commerce sabe de cómo registrar una venta en UvoPOS, partido en las dos mitades del outbox
+ * (PROD-13b):
  *
- * <p>G2 añade además la contabilidad que faltaba. {@code Order.posSynced} y {@code Order.syncAttempts}
- * existían desde la migración y los inicializaba el checkout, pero <b>ningún código los leía ni los
- * actualizaba</b>: una notificación fallida no dejaba más rastro que una línea de log, así que no
- * había forma de saber qué órdenes no llegaron al POS ni de reintentarlas.
+ * <ul>
+ *   <li><b>Al confirmar el pago</b>, dentro de su transacción: a qué empresas hay que enviarla
+ *       ({@link #companiesToNotify}). Una fila del outbox por empresa.</li>
+ *   <li><b>Al despachar</b>, cada fila por su cuenta: qué enviar ({@link #prepare}) y, si el POS respondió,
+ *       comparar el stock que dice tener con el nuestro ({@link #checkStockDivergence}). La llamada de red la
+ *       hace el despachador entre las dos, fuera de toda transacción.</li>
+ * </ul>
+ *
+ * <p>Antes (G2) esto notificaba a todas las empresas de una vez y contaba el resultado en
+ * {@code orders.sync_attempts}: si fallaba una, el reintento volvía a enviar a las que ya habían respondido.
+ * Con una fila por empresa, cada una se entrega, se reintenta o falla por separado.
  */
 @Service
 public class PosOrderNotifier {
@@ -40,157 +48,103 @@ public class PosOrderNotifier {
     private final OrderRepository orderRepository;
     private final ProductSyncMappingRepository mappingRepository;
     private final PosConnectionRepository posConnectionRepository;
-    private final PosClient posClient;
     private final PosOrderPayloadMapper payloadMapper;
     private final PosIntegrationPolicy posPolicy;
     private final int divergenceAlertThreshold;
 
     public PosOrderNotifier(OrderRepository orderRepository, ProductSyncMappingRepository mappingRepository,
-                            PosConnectionRepository posConnectionRepository, PosClient posClient,
-                            PosOrderPayloadMapper payloadMapper, PosIntegrationPolicy posPolicy,
+                            PosConnectionRepository posConnectionRepository, PosOrderPayloadMapper payloadMapper,
+                            PosIntegrationPolicy posPolicy,
                             @Value("${app.pos.stock-divergence-alert-threshold:3}") int divergenceAlertThreshold) {
         this.orderRepository = orderRepository;
         this.mappingRepository = mappingRepository;
         this.posConnectionRepository = posConnectionRepository;
-        this.posClient = posClient;
         this.payloadMapper = payloadMapper;
         this.posPolicy = posPolicy;
         this.divergenceAlertThreshold = divergenceAlertThreshold;
     }
 
     /**
-     * Notifica la orden a todas las empresas que tengan productos suyos sincronizados, y deja
-     * escrito el resultado en la propia orden. REQUIRES_NEW porque el llamador puede ser un listener
-     * AFTER_COMMIT —donde ya no hay transacción viva— y porque cada orden del job de reintento debe
-     * ser independiente de las demás.
+     * Las empresas del POS que tienen productos en esta orden, ordenadas. Corre dentro de la transacción
+     * que confirma el pago, así que <b>no puede lanzar por datos raros</b>: una excepción aquí desharía la
+     * confirmación entera (el pago cobrado quedaría PENDING). Por eso solo usa consultas que devuelven
+     * listas o existencias, nunca un {@code Optional} sobre una columna que no es única.
      *
-     * @return true si no quedó nada pendiente: o se notificó a todas las empresas, o no había nada
-     *         que notificar.
+     * <p>PROD-12: con la integración apagada —de plataforma o de tienda— devuelve vacío, así que no se
+     * encola nada y no se emite ningún documento.
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public boolean notifyOrder(Long orderId) {
-        Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new NoSuchElementException("Order " + orderId + " not found"));
-
-        // PROD-12. El corte va aquí y no en PosNotificationListener a propósito: este método es el único
-        // cuello de botella de salida, así que cubre también a PosNotificationRetryJob —que lo llama
-        // directamente, con su propia bandera— y "no se emite ningún documento tributario" queda cierto
-        // por cualquier camino, no solo por el del pago confirmado.
-        //
-        // Devuelve true: no hay nada pendiente ni que reintentar. Un false metería la orden en la cola
-        // del reintento, que es el sentido opuesto de tener la integración apagada.
+    public List<Long> companiesToNotify(Order order) {
         if (!posPolicy.isEnabledFor(order.getStore())) {
-            log.debug("Integración POS deshabilitada — no se notifica la orden order_id={} store_id={}",
-                    orderId, order.getStore() == null ? null : order.getStore().getId());
-            return true;
+            log.debug("Integración POS deshabilitada — no se encola la venta order_id={}", order.getId());
+            return List.of();
         }
 
-        List<ProductSyncMapping> mappings = order.getItems().stream()
-                .map(item -> mappingRepository.findByProductId(item.getProduct().getId()))
-                .flatMap(Optional::stream)
-                .toList();
-
-        reportIncompleteCoverage(order, mappings.size());
-
-        Set<Long> companyIds = mappings.stream()
-                .map(ProductSyncMapping::getCompanyId)
+        Set<Long> productIds = order.getItems().stream()
+                .map(item -> item.getProduct().getId())
                 .collect(Collectors.toSet());
-
-        if (companyIds.isEmpty()) {
-            // syncAttempts se queda en 0 a propósito: no se intentó nada. Es lo que mantiene estas
-            // órdenes fuera del job de reintento, que solo mira las que sí llegaron a intentarlo.
-            log.info("Orden sin productos sincronizados, no se notifica a POS order_id={}", order.getId());
-            return true;
+        if (productIds.isEmpty()) {
+            return List.of();
         }
 
-        order.setSyncAttempts(order.getSyncAttempts() + 1);
-
-        boolean allNotified = true;
-        String lastError = null;
-        for (Long companyId : companyIds) {
-            String error = notifyOneCompany(order, companyId);
-            if (error != null) {
-                allNotified = false;
-                lastError = error;
-            }
+        List<ProductSyncMapping> mappings = mappingRepository.findByProductIdIn(productIds);
+        Set<Long> mappedProducts = mappings.stream()
+                .map(mapping -> mapping.getProduct().getId())
+                .collect(Collectors.toSet());
+        long unmappedItems = order.getItems().stream()
+                .filter(item -> !mappedProducts.contains(item.getProduct().getId()))
+                .count();
+        if (unmappedItems > 0) {
+            reportIncompleteCoverage(order, unmappedItems);
         }
 
-        // Una orden con dos empresas solo se da por sincronizada cuando las dos respondieron: si se
-        // marcara con la primera, la segunda empresa se quedaría sin su documento y sin reintento.
-        order.setPosSynced(allNotified);
-        order.setLastSyncError(lastError);
-        orderRepository.save(order);
-
-        return allNotified;
-    }
-
-    /** @return null si se notificó bien, o el mensaje de error si no. */
-    private String notifyOneCompany(Order order, Long companyId) {
-        try {
-            PosConnection connection = posConnectionRepository.findByCompanyId(companyId)
-                    .filter(PosConnection::isActive)
-                    .orElse(null);
-            if (connection == null) {
-                log.warn("Conexión POS no encontrada, orden no notificada order_id={} company_id={}", order.getId(), companyId);
-                return "Conexión POS no encontrada o inactiva (company_id=" + companyId + ")";
-            }
-
-            List<PosOrderItem> items = order.getItems().stream()
-                    .map(item -> mappingRepository.findByProductIdAndCompanyId(item.getProduct().getId(), companyId)
-                            .map(mapping -> new PosOrderItem(mapping.getExternalId(), item.getQuantity(),
-                                    item.getPrice(), item.getSubtotal(), item.getTaxAmount())))
-                    .flatMap(Optional::stream)
-                    .toList();
-
-            if (items.isEmpty()) {
-                log.info("No hay productos sincronizados en esta orden para company_id={} order_id={}", companyId, order.getId());
-                return null;
-            }
-
-            Map<String, Object> response = posClient.notifyOrder(connection, payloadMapper.toPayload(order, companyId, items));
-            log.info("Orden notificada a POS exitosamente order_id={} order_number={} company_id={} response={}",
-                    order.getId(), order.getOrderNumber(), companyId, response);
-
-            checkStockDivergence(response, companyId);
-            return null;
-        } catch (Exception e) {
-            // Se sigue tragando la excepción: el llamador puede ser un listener AFTER_COMMIT, donde
-            // relanzar no consigue nada porque la transacción ya se confirmó. Lo que cambia en G2 es
-            // que ya no muere aquí — va a Sentry y queda escrita en la orden, que es lo que permite
-            // reintentarla. Antes, una plataforma SII caída era una línea de log que nadie miraba.
-            log.error("Error notificando orden a POS order_id={} company_id={} error={}", order.getId(), companyId, e.getMessage());
-            Sentry.captureException(e);
-            return e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
-        }
+        return mappings.stream()
+                .map(ProductSyncMapping::getCompanyId)
+                .distinct()
+                .sorted()
+                .toList();
     }
 
     /**
-     * G3.2, la mitad que sí se puede arreglar sin decidir nada de negocio. Si una orden tiene ítems
-     * sin {@code ProductSyncMapping} se notifica solo una parte —y si no tiene ninguno, no se
-     * notifica nada—, con lo que el documento tributario sale incompleto o no sale. Qué hacer con
-     * eso (¿rechazar la venta? ¿emitir parcial?) es decisión de negocio y sigue abierta; el
-     * comportamiento no cambia. Lo que cambia es que deja rastro: hoy no se enteraba nadie.
+     * Lo que hay que enviar a una empresa, armado en una transacción de lectura corta: la llamada de red
+     * va después y fuera de ella, para no tener una conexión de Hikari tomada mientras el POS responde.
      *
-     * <p>Solo alerta si la tienda tiene una conexión POS activa. Sin ese filtro, cada orden de cada
-     * tienda que no usa POS —que es la mayoría— generaría un evento, y la alerta se volvería el
-     * ruido que nadie mira, que es exactamente el problema que intenta resolver.
+     * <p>Vuelve a comprobar todo lo que pudo cambiar desde el pago. Entre el pago y el envío ahora pueden
+     * pasar minutos u horas (un POS caído), y en ese tiempo la orden se puede cancelar o reembolsar, o el
+     * POS apagarse: ninguno de esos casos debe terminar en un documento tributario.
      */
-    private void reportIncompleteCoverage(Order order, int mappedItems) {
-        int totalItems = order.getItems().size();
-        if (mappedItems >= totalItems) {
-            return;
+    @Transactional(readOnly = true)
+    public PosSaleRequest prepare(Long orderId, Long companyId) {
+        Order order = orderRepository.findById(orderId).orElse(null);
+        if (order == null) {
+            return PosSaleRequest.skip("La orden ya no existe");
         }
-        boolean storeUsesPos = posConnectionRepository.findByStoreId(order.getStore().getId())
-                .filter(PosConnection::isActive)
-                .isPresent();
-        if (!storeUsesPos) {
-            return;
+        if (order.getPaymentStatus() != PaymentStatus.PAID
+                || order.getStatus() == OrderStatus.CANCELLED || order.getStatus() == OrderStatus.REFUNDED) {
+            return PosSaleRequest.skip("La orden ya no está pagada (pago " + order.getPaymentStatus()
+                    + ", estado " + order.getStatus() + "): no se registra una venta deshecha");
+        }
+        if (!posPolicy.isEnabledFor(order.getStore())) {
+            return PosSaleRequest.skip("Integración POS deshabilitada");
         }
 
-        String message = "Orden notificada al POS de forma incompleta: %d de %d ítems sin ProductSyncMapping (order_number=%s)"
-                .formatted(totalItems - mappedItems, totalItems, order.getOrderNumber());
-        log.warn(message);
-        Sentry.captureMessage(message);
+        PosConnection connection = posConnectionRepository.findByCompanyId(companyId)
+                .filter(PosConnection::isActive)
+                .orElse(null);
+        if (connection == null) {
+            // Nada salió hacia el POS, así que reintentar es seguro: quizá la conexión se reactive.
+            return PosSaleRequest.notSent("Conexión POS no encontrada o inactiva (company_id=" + companyId + ")");
+        }
+
+        List<PosOrderItem> items = order.getItems().stream()
+                .map(item -> mappingRepository.findByProductIdAndCompanyId(item.getProduct().getId(), companyId)
+                        .map(mapping -> toPosItem(item, mapping)))
+                .flatMap(Optional::stream)
+                .toList();
+        if (items.isEmpty()) {
+            return PosSaleRequest.skip("La orden ya no tiene productos de la empresa " + companyId);
+        }
+
+        return PosSaleRequest.ready(connection, payloadMapper.toPayload(order, companyId, items));
     }
 
     /**
@@ -204,8 +158,12 @@ public class PosOrderNotifier {
      * pisarla. Queda marcado como cambio de semántica para que se pueda revisar — la alternativa
      * (que mande el POS) es defendible, pero entonces hay que quitar el descuento propio, no
      * dejarlos compitiendo.
+     *
+     * <p>PROD-13b: corre después de dar la venta por entregada, en su propia transacción de lectura. Un
+     * fallo aquí no puede convertir en dudosa una venta que el POS ya confirmó.
      */
-    private void checkStockDivergence(Map<String, Object> response, Long companyId) {
+    @Transactional(readOnly = true)
+    public void checkStockDivergence(Map<String, Object> response, Long companyId) {
         Object data = response == null ? null : response.get("data");
         if (!(data instanceof Map<?, ?> dataMap)) {
             return;
@@ -244,5 +202,50 @@ public class PosOrderNotifier {
                 }
             });
         }
+    }
+
+    private static PosOrderItem toPosItem(OrderItem item, ProductSyncMapping mapping) {
+        return new PosOrderItem(mapping.getExternalId(), item.getQuantity(), item.getPrice(), item.getSubtotal(),
+                item.getTaxAmount());
+    }
+
+    /**
+     * G3.2, la mitad que sí se puede arreglar sin decidir nada de negocio. Si una orden tiene ítems
+     * sin {@code ProductSyncMapping} se notifica solo una parte —y si no tiene ninguno, no se
+     * notifica nada—, con lo que el documento tributario sale incompleto o no sale. Qué hacer con
+     * eso (¿rechazar la venta? ¿emitir parcial?) es decisión de negocio y sigue abierta; el
+     * comportamiento no cambia. Lo que cambia es que deja rastro: hoy no se enteraba nadie.
+     *
+     * <p>Solo alerta si la tienda tiene una conexión POS activa. Sin ese filtro, cada orden de cada
+     * tienda que no usa POS —que es la mayoría— generaría un evento, y la alerta se volvería el
+     * ruido que nadie mira, que es exactamente el problema que intenta resolver.
+     *
+     * <p>PROD-13b: el aviso sale después del commit. Esto corre dentro de la transacción del pago, y si
+     * algo posterior la deshace, la alerta sería de una venta que no ocurrió.
+     */
+    private void reportIncompleteCoverage(Order order, long unmappedItems) {
+        if (!posConnectionRepository.existsActiveForStore(order.getStore().getId())) {
+            return;
+        }
+
+        String message = "Orden notificada al POS de forma incompleta: %d de %d ítems sin ProductSyncMapping (order_number=%s)"
+                .formatted(unmappedItems, order.getItems().size(), order.getOrderNumber());
+        afterCommit(() -> {
+            log.warn(message);
+            Sentry.captureMessage(message);
+        });
+    }
+
+    private static void afterCommit(Runnable action) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            action.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                action.run();
+            }
+        });
     }
 }

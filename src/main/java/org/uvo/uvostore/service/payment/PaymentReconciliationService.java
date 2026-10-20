@@ -13,15 +13,11 @@ import org.uvo.uvostore.entity.order.enums.PaymentMethodType;
 import org.uvo.uvostore.entity.order.enums.PaymentStatus;
 import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.security.TenantContext;
+import org.uvo.uvostore.service.AdvisoryLock;
 import org.uvo.uvostore.service.order.OrderStatusServiceImpl;
 import org.uvo.uvostore.service.order.PaymentService;
 import org.uvo.uvostore.service.order.PaymentVerificationResult;
 
-import javax.sql.DataSource;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -36,8 +32,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * <p><b>Pregunta, no cobra.</b> La diferencia importa: Webpay usa {@code status()} y nunca
  * {@code commit()} —confirmar aquí una transacción que el cliente abandonó le cobraría—, y el paso a
  * {@code PAID} siempre va por {@code orderStatusService.markPaid}, que es idempotente y verifica el
- * monto desde M4. Por eso este trabajo sí va activado por defecto, al revés que
- * {@code PosNotificationRetryJob}: aquí no hay documentos tributarios que duplicar.
+ * monto desde M4. Por eso este trabajo sí va activado por defecto, al revés que el reintento de las
+ * ventas inciertas al POS ({@code app.pos.retry.enabled}): aquí no hay documentos tributarios que duplicar.
  *
  * <p>La otra mitad es la alerta: una orden que sigue pendiente pasadas
  * {@code app.reconciliation.stale-hours} ya no es un webhook que se retrasa, es algo que hay que
@@ -51,7 +47,8 @@ public class PaymentReconciliationService {
 
     /**
      * Clave del cerrojo consultivo. Es un número arbitrario pero fijo: lo único que importa es que
-     * no lo use ningún otro {@code pg_advisory_lock} de la base.
+     * no lo use ningún otro {@code pg_advisory_lock} de la base ({@code StockRecoveryJob} usa la
+     * siguiente).
      */
     private static final long ADVISORY_LOCK_KEY = 7_312_025_001L;
 
@@ -59,14 +56,14 @@ public class PaymentReconciliationService {
     private final PaymentService paymentService;
     private final WebpayService webpayService;
     private final MercadoPagoService mercadoPagoService;
-    private final DataSource dataSource;
+    private final AdvisoryLock advisoryLock;
     private final int afterMinutes;
     private final int staleHours;
     private final int batchSize;
 
     public PaymentReconciliationService(OrderRepository orderRepository, PaymentService paymentService,
                                         WebpayService webpayService, MercadoPagoService mercadoPagoService,
-                                        DataSource dataSource,
+                                        AdvisoryLock advisoryLock,
                                         @Value("${app.reconciliation.after-minutes:15}") int afterMinutes,
                                         @Value("${app.reconciliation.stale-hours:24}") int staleHours,
                                         @Value("${app.reconciliation.batch-size:50}") int batchSize) {
@@ -74,7 +71,7 @@ public class PaymentReconciliationService {
         this.paymentService = paymentService;
         this.webpayService = webpayService;
         this.mercadoPagoService = mercadoPagoService;
-        this.dataSource = dataSource;
+        this.advisoryLock = advisoryLock;
         this.afterMinutes = afterMinutes;
         this.staleHours = staleHours;
         this.batchSize = batchSize;
@@ -83,31 +80,7 @@ public class PaymentReconciliationService {
     @Scheduled(fixedDelayString = "${app.reconciliation.interval-ms:600000}",
             initialDelayString = "${app.reconciliation.interval-ms:600000}")
     public void reconcilePendingPayments() {
-        // El cerrojo se pide sobre una conexión propia y se mantiene toda la corrida: pg_advisory_lock
-        // es de sesión, así que pedirlo y soltarlo por JdbcTemplate daría dos conexiones distintas del
-        // pool y no protegería nada. Con app.storage.driver=s3 ya no vale suponer una sola instancia.
-        Connection lockConnection;
-        try {
-            lockConnection = dataSource.getConnection();
-        } catch (SQLException e) {
-            log.error("No se pudo abrir conexión para el cerrojo de conciliación: {}", e.getMessage());
-            Sentry.captureException(e);
-            return;
-        }
-
-        try {
-            if (!tryLock(lockConnection)) {
-                log.debug("Otra instancia está conciliando pagos; esta corrida no hace nada");
-                return;
-            }
-            try {
-                runOnce();
-            } finally {
-                unlock(lockConnection);
-            }
-        } finally {
-            closeQuietly(lockConnection);
-        }
+        advisoryLock.runExclusively(ADVISORY_LOCK_KEY, "conciliación de pagos", this::runOnce);
     }
 
     private void runOnce() {
@@ -181,35 +154,4 @@ public class PaymentReconciliationService {
         Sentry.captureMessage(detail + " [order_number=" + order.getOrderNumber() + "]");
     }
 
-    private boolean tryLock(Connection connection) {
-        try (PreparedStatement statement = connection.prepareStatement("select pg_try_advisory_lock(?)")) {
-            statement.setLong(1, ADVISORY_LOCK_KEY);
-            try (ResultSet rs = statement.executeQuery()) {
-                return rs.next() && rs.getBoolean(1);
-            }
-        } catch (SQLException e) {
-            log.error("No se pudo pedir el cerrojo de conciliación: {}", e.getMessage());
-            Sentry.captureException(e);
-            return false;
-        }
-    }
-
-    private void unlock(Connection connection) {
-        try (PreparedStatement statement = connection.prepareStatement("select pg_advisory_unlock(?)")) {
-            statement.setLong(1, ADVISORY_LOCK_KEY);
-            statement.execute();
-        } catch (SQLException e) {
-            // Cerrar la conexión suelta igualmente los cerrojos de sesión, así que esto no deja el
-            // trabajo bloqueado para siempre; se registra porque no debería pasar.
-            log.warn("No se pudo soltar el cerrojo de conciliación: {}", e.getMessage());
-        }
-    }
-
-    private void closeQuietly(Connection connection) {
-        try {
-            connection.close();
-        } catch (SQLException e) {
-            log.warn("No se pudo cerrar la conexión del cerrojo de conciliación: {}", e.getMessage());
-        }
-    }
 }

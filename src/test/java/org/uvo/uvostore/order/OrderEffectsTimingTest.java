@@ -9,16 +9,19 @@ import org.springframework.test.context.event.RecordApplicationEvents;
 import org.uvo.uvostore.entity.catalog.Product;
 import org.uvo.uvostore.entity.order.Order;
 import org.uvo.uvostore.entity.order.enums.PaymentStatus;
+import org.uvo.uvostore.entity.outbox.OutboxMessage;
+import org.uvo.uvostore.entity.outbox.enums.OutboxType;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.OrderRepository;
+import org.uvo.uvostore.repository.OutboxMessageRepository;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.order.AdminOrderService;
 import org.uvo.uvostore.service.order.OrderStatusService;
-import org.uvo.uvostore.service.order.event.OrderPlacedEvent;
 import org.uvo.uvostore.service.order.event.PaymentConfirmedEvent;
 import org.uvo.uvostore.support.IntegrationTestSupport;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -32,11 +35,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * correo de "Gracias por tu compra". Un checkout abandonado emitía la boleta de una venta que no
  * ocurrió y le daba las gracias a quien no había pagado.
  *
- * <p>Se comprueba sobre los eventos publicados y no sobre los oyentes porque los oyentes son
- * {@code AFTER_COMMIT} y bajo la transacción con rollback de {@code IntegrationTestSupport} no llegan
- * a ejecutarse nunca — algo deliberado del andamiaje, no una limitación que convenga sortear aquí. La
- * otra mitad de la cadena, a qué evento está enganchado cada oyente, la fija
- * {@code AsyncListenerDispatchTest}; entre los dos cubren el camino entero.
+ * <p>PROD-13b: los efectos que salen a la red ya no cuelgan de eventos sino del outbox, escritos en la misma
+ * transacción, así que esto se comprueba sobre las filas que deja cada paso. Del evento de pago confirmado
+ * sigue colgando el descuento de stock, y por eso se sigue mirando también.
  */
 @RecordApplicationEvents
 class OrderEffectsTimingTest extends IntegrationTestSupport {
@@ -49,6 +50,8 @@ class OrderEffectsTimingTest extends IntegrationTestSupport {
     private AdminOrderService adminOrderService;
     @Autowired
     private OrderRepository orderRepository;
+    @Autowired
+    private OutboxMessageRepository outboxRepository;
 
     @AfterEach
     void clearTenant() {
@@ -56,33 +59,32 @@ class OrderEffectsTimingTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("Un pedido sin pagar no emite documento al POS ni correo de compra")
+    @DisplayName("Un pedido sin pagar solo encola el acuse de recibo: ni venta al POS ni correo de compra")
     void placingAnOrderDoesNotTriggerTheSaleEffects() throws Exception {
         Store store = storeWithProduct();
 
-        checkout(store);
+        Order order = checkout(store);
 
-        assertThat(events.stream(OrderPlacedEvent.class))
-                .as("el acuse de recibo del pedido sí sale")
-                .hasSize(1);
-        assertThat(events.stream(PaymentConfirmedEvent.class))
-                .as("los efectos de venta (POS y correo de compra) cuelgan de este evento, y no hay pago")
-                .isEmpty();
+        assertThat(types(order))
+                .as("el acuse de recibo del pedido sí sale; la venta y el correo de compra esperan al pago")
+                .containsExactly(OutboxType.ORDER_PLACED_EMAIL);
+        assertThat(events.stream(PaymentConfirmedEvent.class)).isEmpty();
     }
 
     @Test
-    @DisplayName("Al confirmarse el pago sí se disparan")
+    @DisplayName("Al confirmarse el pago se encola el correo de compra")
     void confirmingThePaymentTriggersThem() throws Exception {
         Store store = storeWithProduct();
         Order order = checkout(store);
 
         orderStatusService.markPaid(order.getId(), "pay_1", order.getTotal());
 
+        assertThat(types(order)).containsExactly(OutboxType.ORDER_PLACED_EMAIL, OutboxType.ORDER_CONFIRMATION_EMAIL);
         assertThat(events.stream(PaymentConfirmedEvent.class)).hasSize(1);
     }
 
     @Test
-    @DisplayName("Confirmar dos veces no emite dos documentos")
+    @DisplayName("Confirmar dos veces no encola dos veces")
     void confirmingTwiceDoesNotEmitTwice() throws Exception {
         // Un segundo documento tributario por la misma venta es justamente lo que obliga a tener
         // desactivado el reintento del POS. La guarda de markPaid es lo que lo impide.
@@ -92,17 +94,19 @@ class OrderEffectsTimingTest extends IntegrationTestSupport {
         orderStatusService.markPaid(order.getId(), "pay_1", order.getTotal());
         orderStatusService.markPaid(order.getId(), "pay_1", order.getTotal());
 
+        assertThat(types(order)).containsOnlyOnce(OutboxType.ORDER_CONFIRMATION_EMAIL);
         assertThat(events.stream(PaymentConfirmedEvent.class)).hasSize(1);
     }
 
     @Test
-    @DisplayName("Cancelar un pedido sin pagar no dispara nada")
+    @DisplayName("Cancelar un pedido sin pagar no encola nada más")
     void cancellingAnUnpaidOrderTriggersNothing() throws Exception {
         Store store = storeWithProduct();
         Order order = checkout(store);
 
         orderStatusService.markCancelled(order.getId());
 
+        assertThat(types(order)).containsExactly(OutboxType.ORDER_PLACED_EMAIL);
         assertThat(events.stream(PaymentConfirmedEvent.class)).isEmpty();
     }
 
@@ -119,14 +123,21 @@ class OrderEffectsTimingTest extends IntegrationTestSupport {
 
         adminOrderService.updatePaymentStatus(order.getId(), "PAID");
 
+        assertThat(types(order)).contains(OutboxType.ORDER_CONFIRMATION_EMAIL);
         assertThat(events.stream(PaymentConfirmedEvent.class))
-                .as("sin este evento no hay ni stock descontado ni documento ni correo")
+                .as("sin este evento no hay stock descontado")
                 .hasSize(1);
         assertThat(orderRepository.findById(order.getId()).orElseThrow().getPaymentStatus())
                 .isEqualTo(PaymentStatus.PAID);
     }
 
     // --- fixtures ----------------------------------------------------------------------------------
+
+    private List<OutboxType> types(Order order) {
+        return outboxRepository.findByOrderIdOrderByIdAsc(order.getId()).stream()
+                .map(OutboxMessage::getType)
+                .toList();
+    }
 
     private Store storeWithProduct() {
         Store store = createStore("effects");
