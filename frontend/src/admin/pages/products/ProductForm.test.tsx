@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { toast } from 'sonner'
 import ProductForm from './ProductForm'
 import adminApi from '@/admin/services/adminApi'
-import type { ProductDto, ProductImageDto } from '@/admin/types/admin'
+import type { PosOwnedField, ProductDto, ProductImageDto } from '@/admin/types/admin'
 
 const navigateMock = vi.fn()
 
@@ -19,6 +20,7 @@ vi.mock('@/admin/services/adminApi', () => ({
   default: {
     products: {
       getById: vi.fn(),
+      posOwnership: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
       removeImage: vi.fn(),
@@ -88,6 +90,7 @@ describe('ProductForm', () => {
     navigateMock.mockClear()
     vi.clearAllMocks()
     vi.mocked(adminApi.categories.list).mockResolvedValue([])
+    vi.mocked(adminApi.products.posOwnership).mockResolvedValue({ lockedFields: [] })
   })
 
   it('lets you upload a photo while editing, and sends it in the update', async () => {
@@ -153,5 +156,110 @@ describe('ProductForm', () => {
 
     const [formData] = vi.mocked(adminApi.products.create).mock.calls[0]
     expect((formData.get('featuredImage') as File).name).toBe('portada.png')
+  })
+})
+
+// POS-2. Lo que gestiona UvoPOS sale bloqueado y no se envía: el backend lo conserva. Reenviar el valor leído
+// al cargar la página haría que un stock movido por una venta se rechazara como un cambio que nadie hizo.
+describe('ProductForm with a product synced with UvoPOS', () => {
+  beforeEach(() => {
+    navigateMock.mockClear()
+    vi.clearAllMocks()
+    vi.mocked(adminApi.categories.list).mockResolvedValue([])
+    vi.mocked(adminApi.products.getById).mockResolvedValue(product({ description: 'Del POS' }))
+    vi.mocked(adminApi.products.update).mockResolvedValue(product())
+  })
+
+  function lock(...fields: PosOwnedField[]) {
+    vi.mocked(adminApi.products.posOwnership).mockResolvedValue({ lockedFields: fields })
+  }
+
+  async function save() {
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: /^guardar$/i }))
+    return vi.mocked(adminApi.products.update).mock.calls[0][1]
+  }
+
+  it('locks the fields UvoPOS manages and leaves them out of the update', async () => {
+    lock('sku', 'price', 'stock', 'manageStock')
+
+    const user = userEvent.setup()
+    renderForm('/admin/products/7/edit')
+
+    const shortDescription = await screen.findByLabelText(/^descripción corta$/i)
+    expect(screen.getByLabelText(/^sku$/i)).toBeDisabled()
+    expect(screen.getByLabelText(/^precio$/i)).toBeDisabled()
+    expect(screen.getByLabelText(/^stock$/i)).toBeDisabled()
+    expect(screen.getByRole('switch', { name: /gestionar stock/i })).toBeDisabled()
+    expect(screen.getAllByText('Lo gestiona UvoPOS')).toHaveLength(4)
+    expect(screen.getByLabelText(/^nombre$/i)).toBeEnabled()
+
+    await user.type(shortDescription, 'Texto comercial')
+    const formData = await save()
+
+    for (const field of ['sku', 'price', 'stock', 'manageStock']) {
+      expect(formData.has(field), field).toBe(false)
+    }
+    expect(formData.get('shortDescription')).toBe('Texto comercial')
+    expect(formData.get('isFeatured')).toBe('false')
+    expect(formData.get('name')).toBe('Producto con foto')
+  })
+
+  it('locks the name and the description only when their flags are on', async () => {
+    lock('name', 'description', 'sku')
+
+    renderForm('/admin/products/7/edit')
+
+    expect(await screen.findByLabelText(/^nombre$/i)).toBeDisabled()
+    expect(screen.getByLabelText(/^descripción$/i)).toBeDisabled()
+    expect(screen.getByLabelText(/^precio$/i)).toBeEnabled()
+
+    const formData = await save()
+    expect(formData.has('name')).toBe(false)
+    expect(formData.has('description')).toBe(false)
+    expect(formData.get('price')).toBe('19990')
+  })
+
+  it('leaves a product without a mapping fully editable', async () => {
+    lock()
+
+    renderForm('/admin/products/7/edit')
+
+    expect(await screen.findByLabelText(/^precio$/i)).toBeEnabled()
+    expect(screen.queryByText('Lo gestiona UvoPOS')).not.toBeInTheDocument()
+
+    const formData = await save()
+    for (const field of ['name', 'description', 'sku', 'price', 'stock', 'manageStock']) {
+      expect(formData.has(field), field).toBe(true)
+    }
+  })
+
+  it('does not ask about UvoPOS when creating a product', async () => {
+    renderForm('/admin/products/new')
+
+    expect(await screen.findByLabelText(/^precio$/i)).toBeEnabled()
+    expect(adminApi.products.posOwnership).not.toHaveBeenCalled()
+  })
+
+  it('shows the backend message when the update is rejected', async () => {
+    lock('price')
+    const message = 'Este producto se sincroniza con UvoPOS: el precio se cambia en el POS, no en el panel.'
+    vi.mocked(adminApi.products.update).mockRejectedValue({ message })
+
+    renderForm('/admin/products/7/edit')
+    await screen.findByLabelText(/^precio$/i)
+    await save()
+
+    await vi.waitFor(() => expect(toast.error).toHaveBeenCalledWith(message))
+  })
+
+  it('falls back to no locks if it cannot ask, and says so', async () => {
+    // El backend sigue rechazando los cambios a lo que es del POS; el formulario solo pierde el aviso previo.
+    vi.mocked(adminApi.products.posOwnership).mockRejectedValue({ message: 'boom' })
+
+    renderForm('/admin/products/7/edit')
+
+    expect(await screen.findByLabelText(/^precio$/i)).toBeEnabled()
+    expect(toast.error).toHaveBeenCalledWith('No se pudo saber qué campos gestiona UvoPOS')
   })
 })

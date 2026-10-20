@@ -18,6 +18,8 @@ import org.uvo.uvostore.entity.catalog.Product;
 import org.uvo.uvostore.entity.catalog.enums.ProductType;
 import org.uvo.uvostore.service.catalog.AdminProductSearchCriteria;
 import org.uvo.uvostore.service.catalog.AdminProductStatsDto;
+import org.uvo.uvostore.service.catalog.PosCatalogOwnership;
+import org.uvo.uvostore.service.catalog.PosOwnershipDto;
 import org.uvo.uvostore.service.catalog.ProductCreateCommand;
 import org.uvo.uvostore.service.catalog.ProductDto;
 import org.uvo.uvostore.service.catalog.ProductImageService;
@@ -41,12 +43,14 @@ public class AdminProductController {
     private final ProductService productService;
     private final ProductQueryService productQueryService;
     private final ProductImageService productImageService;
+    private final PosCatalogOwnership posCatalogOwnership;
 
     public AdminProductController(ProductService productService, ProductQueryService productQueryService,
-                                  ProductImageService productImageService) {
+                                  ProductImageService productImageService, PosCatalogOwnership posCatalogOwnership) {
         this.productService = productService;
         this.productQueryService = productQueryService;
         this.productImageService = productImageService;
+        this.posCatalogOwnership = posCatalogOwnership;
     }
 
     @GetMapping
@@ -82,6 +86,13 @@ public class AdminProductController {
     @PreAuthorize("hasAuthority('products.view')")
     public ProductDto show(@PathVariable Long id) {
         return productQueryService.getById(id);
+    }
+
+    // POS-2: qué campos bloquea el formulario. El PUT hace cumplir lo mismo por su cuenta.
+    @GetMapping("/{id}/pos-ownership")
+    @PreAuthorize("hasAuthority('products.view')")
+    public PosOwnershipDto posOwnership(@PathVariable Long id) {
+        return posCatalogOwnership.forProduct(id);
     }
 
     @PostMapping(consumes = "multipart/form-data")

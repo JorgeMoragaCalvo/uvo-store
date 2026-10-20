@@ -12,8 +12,10 @@ import org.uvo.uvostore.security.TenantContext;
 
 import java.math.BigDecimal;
 import java.security.SecureRandom;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Set;
 
 @Service
 public class ProductServiceImpl implements ProductService {
@@ -21,14 +23,17 @@ public class ProductServiceImpl implements ProductService {
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
     private final ProductImageService productImageService;
+    private final PosCatalogOwnership posOwnership;
 
     public ProductServiceImpl(
             ProductRepository productRepository,
             CategoryRepository categoryRepository,
-            ProductImageService productImageService) {
+            ProductImageService productImageService,
+            PosCatalogOwnership posOwnership) {
         this.productRepository = productRepository;
         this.categoryRepository = categoryRepository;
         this.productImageService = productImageService;
+        this.posOwnership = posOwnership;
     }
 
     @Override
@@ -36,12 +41,13 @@ public class ProductServiceImpl implements ProductService {
     public Product createSimpleProduct(ProductCreateCommand command) {
         Product product = new Product();
         product.setStore(TenantContext.requireCurrent());
-        applyCommonFields(product, command);
+        // Un producto nuevo no tiene mapeo: nada es del POS todavía.
+        applyCommonFields(product, command, EnumSet.noneOf(PosOwnedField.class));
         product.setProductType(ProductType.SIMPLE);
         product.setSku(command.sku());
         product.setPrice(command.price());
         product.setStock(command.stock() != null ? command.stock() : 0);
-        product.setManageStock(command.manageStock());
+        product.setManageStock(command.manageStock() == null || command.manageStock());
         Product saved = productRepository.save(product);
         persistImages(saved, command.featuredImage(), command.images());
         return saved;
@@ -52,7 +58,7 @@ public class ProductServiceImpl implements ProductService {
     public Product createVariableProduct(ProductCreateCommand command, List<VariationCommand> variations) {
         Product product = new Product();
         product.setStore(TenantContext.requireCurrent());
-        applyCommonFields(product, command);
+        applyCommonFields(product, command, EnumSet.noneOf(PosOwnedField.class));
         // ProductCreate.php::save() (lines 172-176) — variable products get a synthetic
         // "VAR-XXXXXXXX" SKU and price=0/stock=0/manageStock=false.
         product.setProductType(ProductType.VARIABLE);
@@ -82,12 +88,23 @@ public class ProductServiceImpl implements ProductService {
         Product product = productRepository.findById(productId)
             .filter(p -> p.getStore().getId().equals(TenantContext.requireStoreId()))
             .orElseThrow(() -> new NoSuchElementException("Product " + productId + " not found"));
-        applyCommonFields(product, command);
+        // POS-2: antes de tocar nada. Si rechazara después, el producto ya estaría cambiado en la sesión (y la
+        // consulta de mapeos lo volcaría) y las imágenes de abajo ya estarían en disco.
+        Set<PosOwnedField> posOwned = posOwnership.checkUpdate(product, command);
+        applyCommonFields(product, command, posOwned);
         if (product.getProductType() == ProductType.SIMPLE) {
-            product.setSku(command.sku());
-            product.setPrice(command.price());
-            product.setStock(command.stock() != null ? command.stock() : 0);
-            product.setManageStock(command.manageStock());
+            if (!posOwned.contains(PosOwnedField.SKU)) {
+                product.setSku(command.sku());
+            }
+            if (!posOwned.contains(PosOwnedField.PRICE)) {
+                product.setPrice(command.price());
+            }
+            if (!posOwned.contains(PosOwnedField.STOCK)) {
+                product.setStock(command.stock() != null ? command.stock() : 0);
+            }
+            if (!posOwned.contains(PosOwnedField.MANAGE_STOCK) && command.manageStock() != null) {
+                product.setManageStock(command.manageStock());
+            }
         }
         Product saved = productRepository.save(product);
         // The update path used to drop featuredImage/images on the floor even though ProductRequest
@@ -131,12 +148,22 @@ public class ProductServiceImpl implements ProductService {
 
     // Ports the base $data array ProductCreate.php::save() builds before the simple/variable
     // branch (lines 143-163) — every field there applies to both product types.
-    private void applyCommonFields(Product product, ProductCreateCommand command) {
-        product.setName(command.name());
-        product.setSlug(slugify(command.name()));
+    //
+    // POS-2: lo que está en posOwned lo escribe UvoPOS y aquí se deja como está. Con el nombre bloqueado
+    // tampoco se recalcula el slug, que el webhook deriva del nombre.
+    private void applyCommonFields(Product product, ProductCreateCommand command, Set<PosOwnedField> posOwned) {
+        if (!posOwned.contains(PosOwnedField.NAME)) {
+            product.setName(command.name());
+            product.setSlug(slugify(command.name()));
+        }
         product.setShortDescription(command.shortDescription());
-        product.setDescription(command.description());
-        product.setPosProductId(command.posProductId());
+        if (!posOwned.contains(PosOwnedField.DESCRIPTION)) {
+            product.setDescription(command.description());
+        }
+        // POS-2: el formulario no lo envía, así que cada guardado lo borraba. Es identidad del POS.
+        if (command.posProductId() != null) {
+            product.setPosProductId(command.posProductId());
+        }
         product.setActive(command.active());
         product.setFeatured(command.isFeatured());
         product.setMetaTitle(command.metaTitle());

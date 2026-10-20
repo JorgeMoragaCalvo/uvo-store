@@ -665,6 +665,27 @@ unrefreshed instance, so two simultaneous confirmations both saw `PENDING`. `fin
 `flush()` → lock → `refresh()` (`ConcurrentPaymentConfirmationTest`). Deploy without overlapping instances: an
 old one still writes the dropped columns.
 
+**The admin panel doesn't edit what UvoPOS owns** (POS-2). It used to ignore `ProductSyncMapping`: an admin could
+change a synced product's price or stock, the change never reached the POS and the next sync overwrote it.
+`service/catalog/PosCatalogOwnership` decides it with the same rule the `product.updated` webhook applies:
+only `ACTIVE` mappings count; `syncPrice` locks the price, `syncStock` the stock **and** `manageStock`,
+`syncName` the name (and so the slug), `syncDescription` `description` only — `shortDescription` is the web's
+"commercial description" — and **any active mapping locks the SKU** (no flag; it's the product's identity in
+the POS). Two companies lock the union of their flags. It does **not** depend on `PosIntegrationPolicy`: a
+mapping can only be born through the inbound surface, so the product came from the POS. `updateProduct` calls
+`checkUpdate` **before touching the product** (after, the mapping query would flush the modified entity and the
+images would already be on disk): a locked field that arrives **null is kept**, one that arrives equal passes
+(`compareTo` for money, blank = null), one that differs is a `BusinessException` naming every such field. The
+form leaves locked fields out on purpose — a stock read when the page loaded may have moved since — so
+`manageStock` is now a `Boolean` (a missing primitive fails multipart binding with a vague 400). Variations of a
+mapped product are rejected (add, update, delete), guarded by the variation's **real** parent: the controller
+ignores the `{productId}` in the path. `posProductId` is no longer overwritten with null on every save. The
+form reads `GET /api/admin/products/{id}/pos-ownership` (`products.view`; kept out of `ProductDto`, which the
+public API also serves). **Creating products stays allowed even in a store with the POS as master** — the
+user's call, against the original acceptance criterion; such a product has no mapping, its sales don't reach
+the POS and trip `PosOrderNotifier`'s coverage alert (`PosMasterStoreProductCreationTest` pins this).
+`PosSyncServiceImpl` still ignores the flags and the status; that's POS-3.
+
 Both gaps that used to be listed here are now closed. `PosWebhookServiceImpl.handleStockUpdated` no longer overwrites stock blindly: it uses `ProductRepository.setStockIfUnchanged`, conditioned on the `oldStock` the POS says it saw, so a concurrent web sale can't be erased — a mismatch is reported as a divergence (same wording and Sentry alert as `PosOrderNotifier.checkStockDivergence`, which already treats our own decrement as the authority for web stock) instead of written (F13). And marking an order paid from the admin panel now goes through `OrderStatusService.markPaid`, so it publishes `PaymentConfirmedEvent` and does decrement stock (F07).
 
 **POS webhooks can't be replayed** (F21). HMAC plus a ±300s freshness window proves a request is authentic

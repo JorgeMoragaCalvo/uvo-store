@@ -33,7 +33,8 @@ public record ProductCreateCommand(
         String sku,
         BigDecimal price,
         Integer stock,
-        boolean manageStock,
+        // null: al crear cuenta como true (el valor por defecto); al actualizar conserva el guardado.
+        Boolean manageStock,
         MultipartFile featuredImage,
         List<MultipartFile> images
 ) {
