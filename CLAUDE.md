@@ -715,6 +715,45 @@ closes:
 Pinned by `pos/PosOrderedInputsTest` and `pos/PosCatalogRaceTest`. The race tests use committed transactions,
 three single-threaded with a `REQUIRES_NEW` in the middle, and one with a second thread that proves the lock.
 
+**Divergences with the POS are reconciled** (POS-4). Before, a divergence was only seen when an order was notified
+or a webhook arrived; a lost event diverged forever. `service/pos/PosReconciliationService` compares each ACTIVE
+mapping's stock and catalog with what the POS says and corrects towards the POS. It runs every
+`app.pos.reconciliation.interval-ms` (15 min; `PosReconciliationJob`, `AdvisoryLock` `…005`, only with
+`app.pos.enabled`) and on demand from **Ajustes > POS > "Resincronizar ahora"** (`POST /api/admin/pos/resync`,
+`settings.manage`, synchronous, returns a `PosReconciliationSummary`; 400 if the store's sync is off or there's no
+active connection). The resync covers mapped products only — the user's call; new POS products still arrive via
+`/api/sync/product`.
+- **The bulk read is a proposed contract** (POS-1 isn't done and `uvopos-app` has none of the integration):
+  `PosClient.readCatalog` → `POST /api/v1/products/snapshot` with `{"product_ids": [...]}` (a batch,
+  `app.pos.reconciliation.batch-size`, 200), same headers as `orders/external`. It expects
+  `{"data": [{product_id, version, stock_web, price, name, description}]}` — all POS-owned fields, for POS-3's
+  reason. Parsing is per field and lenient (`PosCatalogSnapshot`); a failed read never throws and stops only that
+  connection.
+- **A web sale in flight is never undone.** Our stock has already deducted it; the POS hasn't got it. A product is
+  in flight if a `POS_ORDER` outbox row of that company is `PENDING`/`IN_FLIGHT`/`FAILED` for an order with it,
+  **or** a `PAID` order with `stock_applied = false` contains it. The second case: the POS may already have the
+  sale while our decrement is still pending, and correcting first would let `StockRecoveryJob` deduct it twice.
+  Per batch:
+  1. A read-only snapshot, with stock as a **value** and the in-flight set.
+  2. The POS read, outside any transaction.
+  3. Only products not in flight are corrected, with `setStockIfUnchanged(snapshotStock → posStock)`, one short
+     transaction each.
+  A sale that starts after the snapshot moves the stock, so the UPDATE misses and the product waits for the next
+  pass. A sale `SENT` before the snapshot was already in the POS when it was read. That assumes the POS applies a
+  sale when it acknowledges it, and it's noted for POS-1.
+- **Catalog** goes through `PosCatalogWriter.reconcile`. It applies an **equal** version too: the read is the POS's
+  current state, so a difference at the same version is local drift. A lower version is still `STALE`, so a read
+  older than an applied event never reverts it.
+- **Reporting.** One `sync_webhook_logs` row per connection and pass (`pos.reconciliation`, payload with
+  `trigger`, counts and up to 50 ids each; `FAILED` if the read failed). One Sentry message, only if something was
+  corrected, missing in the POS, failed or errored. Products in flight are logged only, since that's transient.
+  A product the POS no longer returns is only reported, not paused.
+- **Known gap:** `SettingsServiceImpl` sets a connection's `apiUrl` only when it creates it. Changing the POS URL
+  in the panel later doesn't reach the connection, so reconciliation and sales keep using the old one.
+
+Pinned by `pos/PosReconciliationTest` (POS mocked with `@MockitoBean`, batches of 2) and `pos/PosCatalogReadTest`
+(real sockets).
+
 Both gaps that used to be listed here are now closed. `PosWebhookServiceImpl.handleStockUpdated` no longer overwrites stock blindly: it uses `ProductRepository.setStockIfUnchanged`, conditioned on the `oldStock` the POS says it saw, so a concurrent web sale can't be erased — a mismatch is reported as a divergence (same wording and Sentry alert as `PosOrderNotifier.checkStockDivergence`, which already treats our own decrement as the authority for web stock) instead of written (F13). And marking an order paid from the admin panel now goes through `OrderStatusService.markPaid`, so it publishes `PaymentConfirmedEvent` and does decrement stock (F07).
 
 **POS webhooks can't be replayed** (F21). HMAC plus a ±300s freshness window proves a request is authentic

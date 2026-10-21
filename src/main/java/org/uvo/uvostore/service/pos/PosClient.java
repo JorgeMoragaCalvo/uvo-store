@@ -15,6 +15,8 @@ import java.net.ConnectException;
 import java.net.NoRouteToHostException;
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
+import java.util.Collection;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -74,6 +76,41 @@ public class PosClient {
                     : PosDelivery.uncertain("Fallo de red durante el envío: " + describe(rootCause(e)));
         } catch (RuntimeException e) {
             return PosDelivery.uncertain("Error inesperado durante el envío: " + describe(e));
+        }
+    }
+
+    /**
+     * POS-4. Lo que el POS tiene de estos productos (contrato propuesto, ver {@link PosCatalogSnapshot}), para la
+     * conciliación.
+     *
+     * <p>No clasifica los fallos como {@link #notifyOrder}: es una lectura, repetirla no tiene efectos, y la
+     * conciliación solo necesita saber si tiene datos o no. Tampoco lanza: un POS caído no puede tumbar la pasada
+     * de las demás empresas.
+     */
+    public PosCatalogSnapshot readCatalog(PosConnection connection, Collection<Long> externalIds) {
+        try {
+            String url = buildEndpointUrl(connection, "products/snapshot");
+            return restClient.post()
+                    .uri(url)
+                    .header("Authorization", "Bearer " + connection.getApiKey())
+                    .header("X-Company-ID", String.valueOf(connection.getCompanyId()))
+                    .header("User-Agent", "UvoStore/1.0")
+                    .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                    .accept(org.springframework.http.MediaType.APPLICATION_JSON)
+                    .body(Map.of("product_ids", List.copyOf(externalIds)))
+                    .exchangeForRequiredValue((request, response) -> {
+                        HttpStatusCode status = response.getStatusCode();
+                        if (!status.is2xxSuccessful()) {
+                            return PosCatalogSnapshot.failed("El POS respondió HTTP " + status.value()
+                                    + " a la lectura del catálogo");
+                        }
+                        Map<String, Object> body = readLeniently(response);
+                        return body == null
+                                ? PosCatalogSnapshot.failed("El POS respondió con un cuerpo ilegible")
+                                : PosCatalogSnapshot.parse(body);
+                    });
+        } catch (RuntimeException e) {
+            return PosCatalogSnapshot.failed("No se pudo leer el catálogo del POS: " + describe(rootCause(e)));
         }
     }
 

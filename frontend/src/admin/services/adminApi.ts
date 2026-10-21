@@ -27,6 +27,7 @@ import type {
   PaymentStatusDistributionDto,
   PermissionDto,
   PosOwnershipDto,
+  PosResyncSummary,
   ProductDto,
   ProductReportRowDto,
   ProductsSummaryDto,
@@ -305,6 +306,9 @@ export const adminApi = {
   generalSettings: {
     get: (): Promise<GeneralSettingsDto> => client.get('/settings/general'),
     update: (settings: GeneralSettingsUpdateRequest): Promise<GeneralSettingsDto> => client.put('/settings/general', settings),
+  },
+  pos: {
+    resync: (): Promise<PosResyncSummary> => client.post('/pos/resync'),
   },
   storeSettings: {
     get: (): Promise<StoreSettingsDto> => client.get('/settings/store'),
