@@ -165,7 +165,7 @@ class PosCrossTenantWriteTest extends IntegrationTestSupport {
     private String syncPayload(long companyId) {
         return """
                 {"companyId":%d,"externalId":%d,"sku":"POS-SKU-%d","name":"%s",\
-                "price":1990,"stock":5,"active":true}"""
+                "price":1990,"stock":5,"active":true,"version":1}"""
                 .formatted(companyId, nextSeq(), nextSeq(), INJECTED_NAME);
     }
 

@@ -25,12 +25,14 @@ public class ProductVariationServiceImpl implements ProductVariationService{
     private final AttributeValueRepository attributeValueRepository;
     private final ProductVariationAttributeRepository variationAttributeRepository;
     // needs a deleteByVariationId(Long) method, not yet listed in repositories.md
+    private final PosCatalogOwnership posOwnership;
 
-    public ProductVariationServiceImpl(ProductRepository productRepository, ProductVariationRepository variationRepository, AttributeValueRepository attributeValueRepository, ProductVariationAttributeRepository variationAttributeRepository) {
+    public ProductVariationServiceImpl(ProductRepository productRepository, ProductVariationRepository variationRepository, AttributeValueRepository attributeValueRepository, ProductVariationAttributeRepository variationAttributeRepository, PosCatalogOwnership posOwnership) {
         this.productRepository = productRepository;
         this.variationRepository = variationRepository;
         this.attributeValueRepository = attributeValueRepository;
         this.variationAttributeRepository = variationAttributeRepository;
+        this.posOwnership = posOwnership;
     }
 
     @Transactional
@@ -38,6 +40,8 @@ public class ProductVariationServiceImpl implements ProductVariationService{
         Product product = productRepository.findById(productId)
                 .filter(p -> p.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(()-> new NoSuchElementException("Product " + productId + " not found"));
+        // POS-2: recalculateParentAggregate reescribiría el precio y el stock que gestiona UvoPOS.
+        posOwnership.requireNotMapped(productId);
 
         ProductVariation variation = new ProductVariation();
         variation.setStore(TenantContext.requireCurrent());
@@ -58,6 +62,8 @@ public class ProductVariationServiceImpl implements ProductVariationService{
         ProductVariation variation = variationRepository.findById(variationId)
                 .filter(v -> v.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(()-> new NoSuchElementException("Product variation " + variationId + " not found"));
+        // POS-2: el producto de la variante, no el {productId} de la ruta, que el controlador no usa para buscar.
+        posOwnership.requireNotMapped(variation.getProduct().getId());
 
         variation.setSku(command.sku());
         variation.setPrice(command.price());
@@ -79,6 +85,7 @@ public class ProductVariationServiceImpl implements ProductVariationService{
                 .filter(v -> v.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(()-> new NoSuchElementException("Product variation " + variationId + " not found"));
         Long productId = variation.getProduct().getId();
+        posOwnership.requireNotMapped(productId);
 
         variationAttributeRepository.deleteByVariationId(variationId);
         variationRepository.delete(variation);

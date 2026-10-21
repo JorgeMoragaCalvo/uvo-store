@@ -29,7 +29,9 @@ public record ProductRequest(
         String sku,
         BigDecimal price,
         Integer stock,
-        boolean manageStock,
+        // POS-2: Boolean y no boolean. El formulario no envía los campos que gestiona UvoPOS, y un primitivo
+        // ausente no se enlaza: el multipart entero respondía 400 antes de llegar al servicio.
+        Boolean manageStock,
         MultipartFile featuredImage,
         List<MultipartFile> images
 ) {

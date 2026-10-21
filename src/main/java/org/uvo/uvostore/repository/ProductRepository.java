@@ -1,7 +1,9 @@
 package org.uvo.uvostore.repository;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -67,4 +69,14 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
         WHERE p.id = :id
         """)
     int recalculateStockFromVariations(@Param("id") Long id);
+
+    /**
+     * POS-3. El producto con su fila bloqueada hasta el final de la transacción, para {@code PosCatalogWriter}.
+     *
+     * <p>Devuelve la instancia que ya estuviera en la sesión <b>sin refrescarla</b> (la trampa de PROD-13b), así
+     * que quien la usa la refresca con el cerrojo ya tomado.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from Product p where p.id = :id")
+    Optional<Product> findByIdForUpdate(@Param("id") Long id);
 }

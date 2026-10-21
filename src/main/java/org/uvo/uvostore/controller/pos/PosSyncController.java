@@ -36,13 +36,18 @@ public class PosSyncController {
         PosRequestGuard.companyIdOf(connection, request.companyId());
         SyncProductCommand command = new SyncProductCommand(
                 request.externalId(), request.sku(), request.name(), request.description(),
-                request.price(), request.stock(), request.warehouseId(), request.categoryName(), request.active()
+                request.price(), request.stock(), request.warehouseId(), request.categoryName(), request.active(),
+                request.version()
         );
         SyncProductResult result = posSyncService.syncProduct(connection, command);
+        // POS-3. Un descarte también es 200: la petición se entendió y no tiene sentido reintentarla. applied y
+        // message dicen qué pasó.
         return Map.of(
                 "success", true,
-                "message", result.created() ? "Producto creado" : "Producto actualizado",
-                "product_id", result.productId()
+                "message", result.message(),
+                "product_id", result.productId(),
+                "applied", result.applied(),
+                "log_id", result.logId()
         );
     }
 }

@@ -26,6 +26,7 @@ import type {
   PaymentMethodsSummaryDto,
   PaymentStatusDistributionDto,
   PermissionDto,
+  PosOwnershipDto,
   ProductDto,
   ProductReportRowDto,
   ProductsSummaryDto,
@@ -140,6 +141,8 @@ export const adminApi = {
     list: (params: ProductListParams): Promise<Page<ProductDto>> => client.get('/products', { params }),
     stats: (): Promise<AdminProductStats> => client.get('/products/stats'),
     getById: (id: number): Promise<ProductDto> => client.get(`/products/${id}`),
+    // POS-2. Qué campos de este producto gestiona UvoPOS; el formulario los bloquea y no los envía.
+    posOwnership: (id: number): Promise<PosOwnershipDto> => client.get(`/products/${id}/pos-ownership`),
     create: (formData: FormData): Promise<ProductDto> =>
       client.post('/products', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
     update: (id: number, formData: FormData): Promise<ProductDto> =>

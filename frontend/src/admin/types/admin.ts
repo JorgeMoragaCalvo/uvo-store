@@ -45,6 +45,14 @@ export interface AdminProductStats {
   lowStock: number
 }
 
+// POS-2. Los campos de un producto que puede gestionar UvoPOS, con los mismos nombres que el formulario
+// envía al backend. Cuáles gestiona de verdad lo dicen los flags de su mapeo.
+export type PosOwnedField = 'name' | 'description' | 'sku' | 'price' | 'stock' | 'manageStock'
+
+export interface PosOwnershipDto {
+  lockedFields: PosOwnedField[]
+}
+
 export interface AddressDto {
   firstName: string | null
   lastName: string | null

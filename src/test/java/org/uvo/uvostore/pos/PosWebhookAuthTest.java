@@ -4,15 +4,20 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.uvo.uvostore.entity.pos.PosConnection;
+import org.uvo.uvostore.entity.pos.PosWebhookReceipt;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.PosConnectionRepository;
+import org.uvo.uvostore.repository.PosWebhookReceiptRepository;
 import org.uvo.uvostore.repository.SyncWebHookLogRepository;
+import org.uvo.uvostore.security.PosWebhookReplayGuard;
 import org.uvo.uvostore.support.IntegrationTestSupport;
 import org.uvo.uvostore.support.WithPosIntegration;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.HexFormat;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -39,6 +44,10 @@ class PosWebhookAuthTest extends IntegrationTestSupport {
     private PosConnectionRepository posConnectionRepository;
     @Autowired
     private SyncWebHookLogRepository webhookLogRepository;
+    @Autowired
+    private PosWebhookReceiptRepository receiptRepository;
+    @Autowired
+    private PosWebhookReplayGuard replayGuard;
 
     // --- webhooks: /api/webhooks/pos/** ------------------------------------------------------------
 
@@ -227,7 +236,7 @@ class PosWebhookAuthTest extends IntegrationTestSupport {
         String forged = hmac(payload + timestamp, "otro-secreto");
 
         // Tres intentos con una firma que no vale. Si el registro fuera antes de verificar el HMAC,
-        // cualquiera podría quemar la firma auténtica —o llenar la caché con basura— sin conocer el
+        // cualquiera podría quemar la firma auténtica —o llenar el registro con basura— sin conocer el
         // secreto.
         for (int attempt = 0; attempt < 3; attempt++) {
             mockMvc.perform(signedWebhook(connection, payload, timestamp, forged))
@@ -255,6 +264,78 @@ class PosWebhookAuthTest extends IntegrationTestSupport {
         mockMvc.perform(signedWebhook(connection, payload, oldTimestamp, hmac(payload + oldTimestamp, WEBHOOK_SECRET)))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error").value("EXPIRED_WEBHOOK"));
+    }
+
+    // --- POS-3: el guarda sobrevive a un reinicio ---------------------------------------------------
+
+    @Test
+    @DisplayName("Lo atendido antes de un reinicio sigue sin poder repetirse")
+    void aReplayIsRejectedEvenAfterARestart() throws Exception {
+        PosConnection connection = createConnection(true);
+        String payload = stockPayload(connection.getCompanyId());
+        String timestamp = String.valueOf(System.currentTimeMillis() / 1000);
+        String signature = hmac(payload + timestamp, WEBHOOK_SECRET);
+
+        // Lo que dejó en la base el proceso anterior al reinicio. Este proceso nunca vio la petición: con la
+        // caché en memoria de F21, la repetición pasaba.
+        receiptRepository.save(receipt(connection.getCompanyId(), signature, Instant.now()));
+
+        mockMvc.perform(signedWebhook(connection, payload, timestamp, signature))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error").value("REPLAYED_WEBHOOK"));
+    }
+
+    @Test
+    @DisplayName("La purga guarda cada firma mientras pueda seguir fresca, y no más")
+    void receiptsAreKeptWhileTheirSignatureCanStillBeFresh() {
+        long companyId = nextSeq();
+        // Un timestamp adelantado 300 s sigue fresco hasta 600 s después de recibido: a los 8 minutos todavía
+        // se podría repetir. La caché de F21 lo olvidaba a los 310 s.
+        PosWebhookReceipt stillFresh = receiptRepository.save(
+                receipt(companyId, "a".repeat(64), Instant.now().minus(Duration.ofMinutes(8))));
+        PosWebhookReceipt expired = receiptRepository.save(
+                receipt(companyId, "b".repeat(64), Instant.now().minus(Duration.ofMinutes(12))));
+
+        replayGuard.purgeExpired();
+
+        // existsById consulta la base: la purga es un DELETE masivo que no saca nada de la sesión.
+        assertThat(receiptRepository.existsById(stillFresh.getId())).isTrue();
+        assertThat(receiptRepository.existsById(expired.getId())).isFalse();
+    }
+
+    // --- POS-3: la versión es obligatoria -----------------------------------------------------------
+
+    @Test
+    @DisplayName("Un product.updated sin versión se rechaza: no habría cómo ordenarlo")
+    void productUpdatedWithoutAVersionIs400() throws Exception {
+        PosConnection connection = createConnection(true);
+        String payload = """
+                {"event":"product.updated","productId":1,"sku":"SKU-1","companyId":%d,\
+                "changedFields":["price"],"data":{"price":1990}}"""
+                .formatted(connection.getCompanyId());
+        String timestamp = String.valueOf(System.currentTimeMillis() / 1000);
+
+        mockMvc.perform(post("/api/webhooks/pos/product-updated")
+                        .header("X-Signature", hmac(payload + timestamp, WEBHOOK_SECRET))
+                        .header("X-Company-ID", String.valueOf(connection.getCompanyId()))
+                        .header("X-Timestamp", timestamp)
+                        .contentType("application/json")
+                        .content(payload))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("Una sincronización sin versión también")
+    void syncWithoutAVersionIs400() throws Exception {
+        PosConnection connection = createConnection(true);
+        String payload = syncPayload(connection.getCompanyId()).replace(",\"version\":1", "");
+
+        mockMvc.perform(post("/api/sync/product")
+                        .header("Authorization", "Bearer " + API_KEY)
+                        .header("X-Company-ID", String.valueOf(connection.getCompanyId()))
+                        .contentType("application/json")
+                        .content(payload))
+                .andExpect(status().isBadRequest());
     }
 
     // --- sincronización: /api/sync/** --------------------------------------------------------------
@@ -358,7 +439,7 @@ class PosWebhookAuthTest extends IntegrationTestSupport {
     private String syncPayload(long companyId) {
         return """
                 {"companyId":%d,"externalId":%d,"sku":"POS-SKU-%d","name":"Producto POS",\
-                "price":1990,"stock":5,"active":true}"""
+                "price":1990,"stock":5,"active":true,"version":1}"""
                 .formatted(companyId, nextSeq(), nextSeq());
     }
 
@@ -374,6 +455,14 @@ class PosWebhookAuthTest extends IntegrationTestSupport {
                 .header("X-Timestamp", timestamp)
                 .contentType("application/json")
                 .content(payload);
+    }
+
+    private static PosWebhookReceipt receipt(long companyId, String signature, Instant receivedAt) {
+        PosWebhookReceipt receipt = new PosWebhookReceipt();
+        receipt.setCompanyId(companyId);
+        receipt.setSignature(signature);
+        receipt.setReceivedAt(receivedAt);
+        return receipt;
     }
 
     private String hmac(String data, String secret) {

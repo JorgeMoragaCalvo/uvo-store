@@ -46,7 +46,7 @@ public class PosWebhookController {
                                               @Valid @RequestBody ProductUpdatedRequest request) {
         SyncWebhookLog log = posWebhookService.handleProductUpdated(new ProductUpdatePayload(
                 PosRequestGuard.companyIdOf(connection, request.companyId()), request.productId(),
-                request.sku(), request.data()));
+                request.sku(), request.version(), request.data()));
         return receivedResponse(log);
     }
 

@@ -15,6 +15,9 @@ public record SyncProductRequest(
         @NotNull Integer stock,
         Long warehouseId,
         String categoryName,
-        Boolean active
+        Boolean active,
+        // POS-3. Obligatoria: la versión del producto en el POS, que crece con cada cambio. Sin ella no hay
+        // forma de saber si lo que llega es más viejo que lo ya aplicado.
+        @NotNull Long version
 ) {
 }

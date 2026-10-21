@@ -10,12 +10,11 @@ import org.uvo.uvostore.entity.pos.PosConnection;
 import org.uvo.uvostore.entity.pos.ProductSyncMapping;
 import org.uvo.uvostore.entity.pos.SyncWebhookLog;
 import org.uvo.uvostore.entity.pos.enums.SyncStatus;
-import org.uvo.uvostore.entity.pos.enums.WebhookStatus;
 import org.uvo.uvostore.repository.PosConnectionRepository;
 import org.uvo.uvostore.repository.ProductRepository;
 import org.uvo.uvostore.repository.ProductSyncMappingRepository;
-import org.uvo.uvostore.repository.SyncWebHookLogRepository;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
@@ -29,17 +28,20 @@ public class PosWebhookServiceImpl implements PosWebhookService {
     // que es la otra.
     private static final Logger LOG = LoggerFactory.getLogger(PosWebhookServiceImpl.class);
 
-    private final SyncWebHookLogRepository webhookLogRepository;
     private final PosConnectionRepository posConnectionRepository;
     private final ProductSyncMappingRepository mappingRepository;
     private final ProductRepository productRepository;
+    private final PosCatalogWriter catalogWriter;
+    private final PosInboundLog inboundLog;
 
-    public PosWebhookServiceImpl(SyncWebHookLogRepository webhookLogRepository, PosConnectionRepository posConnectionRepository,
-                                  ProductSyncMappingRepository mappingRepository, ProductRepository productRepository) {
-        this.webhookLogRepository = webhookLogRepository;
+    public PosWebhookServiceImpl(PosConnectionRepository posConnectionRepository,
+                                  ProductSyncMappingRepository mappingRepository, ProductRepository productRepository,
+                                  PosCatalogWriter catalogWriter, PosInboundLog inboundLog) {
         this.posConnectionRepository = posConnectionRepository;
         this.mappingRepository = mappingRepository;
         this.productRepository = productRepository;
+        this.catalogWriter = catalogWriter;
+        this.inboundLog = inboundLog;
     }
 
     @Override
@@ -51,17 +53,17 @@ public class PosWebhookServiceImpl implements PosWebhookService {
         raw.put("old_stock", payload.oldStock());
         raw.put("new_stock", payload.newStock());
         raw.put("stock_web", payload.stockWeb());
-        SyncWebhookLog log = logWebhook(payload.companyId(), "stock.updated", raw);
+        SyncWebhookLog log = inboundLog.open(payload.companyId(), "stock.updated", raw);
 
         Optional<PosConnection> connection = posConnectionRepository.findByCompanyId(payload.companyId()).filter(PosConnection::isActive);
         if (connection.isEmpty()) {
-            return markFailed(log, "Conexión POS no encontrada");
+            return inboundLog.failed(log, "Conexión POS no encontrada");
         }
 
         Optional<ProductSyncMapping> mapping = mappingRepository.findByExternalIdAndCompanyId(payload.productId(), payload.companyId())
                 .filter(m -> m.getSyncStatus() == SyncStatus.ACTIVE && m.isSyncStock());
         if (mapping.isEmpty()) {
-            return markFailed(log, "No se pudo actualizar el stock");
+            return inboundLog.failed(log, "No se pudo actualizar el stock");
         }
 
         // F13. El stock se escribe solo si nadie lo ha movido desde que el POS lo leyó.
@@ -75,91 +77,78 @@ public class PosWebhookServiceImpl implements PosWebhookService {
         // PosOrderNotifier.checkStockDivergence —"el descuento propio es la autoridad sobre el stock web y
         // lo que responde el POS es una observación: si no coincide, se registra la divergencia en vez de
         // pisarla"—. Esta punta hacía justo lo contrario. Aquí se alinea con la otra.
-        Product product = mapping.get().getProduct();
-        int updated = productRepository.setStockIfUnchanged(product.getId(), payload.oldStock(), payload.stockWeb());
+        Long productId = mapping.get().getProduct().getId();
+        int updated = productRepository.setStockIfUnchanged(productId, payload.oldStock(), payload.stockWeb());
         if (updated == 0) {
             // Cero filas es el único dato de fiar: alguien movió el stock entre la lectura del POS y este
             // evento —una venta, o este mismo evento reenviado fuera de orden—. No se pisa: se informa.
-            return markDivergent(log, product, payload);
+            //
+            // Se vuelve a leer: el @Modifying limpia el contexto de persistencia, así que la instancia en
+            // memoria ya no dice nada fiable sobre el stock actual.
+            int currentStock = productRepository.findById(productId).map(Product::getStock).orElse(-1);
+            if (currentStock == payload.stockWeb()) {
+                // POS-3. El stock ya es el que pide el evento: llegó repetido (el POS lo reintentó, con otra firma)
+                // o ya estaba reflejado. No hay nada que corregir, y avisarlo como divergencia era una alerta
+                // falsa a Sentry por cada reintento.
+                return inboundLog.discarded(log, "El stock ya es %d: el evento llegó repetido o ya estaba reflejado."
+                        .formatted(currentStock));
+            }
+            return markDivergent(log, productId, currentStock, payload);
         }
-        markSynced(mapping.get());
+        // POS-3. Una actualización dirigida y no save(mapping): tras el clear de arriba el mapeo está
+        // desconectado, y el merge reescribiría todas sus columnas, la versión de catálogo incluida, con lo que
+        // se leyó antes de que otra entrada confirmara (ver ProductSyncMappingRepository.touchSynced).
+        mappingRepository.touchSynced(mapping.get().getId(), Instant.now());
 
-        return markSuccess(log);
+        return inboundLog.success(log);
     }
 
     @Override
     @Transactional
     public SyncWebhookLog handleProductUpdated(ProductUpdatePayload payload) {
-        SyncWebhookLog log = logWebhook(payload.companyId(), "product.updated", Map.of(
-                "product_id", payload.productId(), "sku", payload.sku(), "data", payload.data()));
+        SyncWebhookLog log = inboundLog.open(payload.companyId(), "product.updated", Map.of(
+                "product_id", payload.productId(), "sku", payload.sku(), "version", payload.version(),
+                "data", payload.data()));
 
         Optional<ProductSyncMapping> mapping = mappingRepository.findByExternalIdAndCompanyId(payload.productId(), payload.companyId())
                 .filter(m -> m.getSyncStatus() == SyncStatus.ACTIVE);
         if (mapping.isEmpty()) {
-            return markFailed(log, "No se pudo actualizar el producto");
+            return inboundLog.failed(log, "No se pudo actualizar el producto");
         }
 
-        ProductSyncMapping m = mapping.get();
-        Product product = m.getProduct();
+        // POS-3. Por el mismo camino que la sincronización: flags del mapeo, versión y cerrojo. Antes aplicaba
+        // lo último que llegaba aunque fuera más viejo que lo ya aplicado, y reescribía el producto entero con
+        // el stock que leyó al cargarlo.
         Map<String, Object> data = payload.data();
-        boolean changed = false;
+        PosCatalogWriter.Result result = catalogWriter.apply(mapping.get(), payload.version(), new PosCatalogFields(
+                text(data.get("name")), text(data.get("description")), price(data.get("price"))));
 
-        if (m.isSyncPrice() && data.get("price") != null) {
-            product.setPrice(new java.math.BigDecimal(data.get("price").toString()));
-            changed = true;
-        }
-        if (m.isSyncName() && data.get("name") != null) {
-            product.setName(data.get("name").toString());
-            product.setSlug(slugify(data.get("name").toString()));
-            changed = true;
-        }
-        if (m.isSyncDescription() && data.get("description") != null) {
-            product.setDescription(data.get("description").toString());
-            changed = true;
-        }
-
-        if (changed) {
-            productRepository.save(product);
-            markSynced(m);
-        }
-
-        return markSuccess(log);
+        return switch (result.outcome()) {
+            case APPLIED -> inboundLog.success(log);
+            case ALREADY_APPLIED, STALE -> inboundLog.discarded(log, result.message());
+            case INACTIVE -> inboundLog.failed(log, result.message());
+        };
     }
 
     @Override
     @Transactional
     public SyncWebhookLog handleStockAlert(StockAlertPayload payload) {
-        SyncWebhookLog log = logWebhook(payload.companyId(), "stock.alert", Map.of(
+        SyncWebhookLog log = inboundLog.open(payload.companyId(), "stock.alert", Map.of(
                 "product_id", payload.productId(), "sku", payload.sku(),
                 "current_stock", payload.currentStock(), "current_stock_web", payload.currentStockWeb(),
                 "alert_type", payload.alertType()));
         // "out_of_stock" alerts would notify an admin in the source app — no notification
         // channel is wired up yet, so this just logs the event (TODO in the Laravel source too).
-        return markSuccess(log);
+        return inboundLog.success(log);
     }
 
     @Override
     @Transactional
     public SyncWebhookLog handleProductCreated(ProductCreatedPayload payload) {
-        SyncWebhookLog log = logWebhook(payload.companyId(), "product.created", Map.of(
+        SyncWebhookLog log = inboundLog.open(payload.companyId(), "product.created", Map.of(
                 "product_id", payload.productId(), "sku", payload.sku(), "data", payload.data()));
         // Auto-creation from this event is a TODO in the Laravel source too — only logged.
-        return markSuccess(log);
-    }
-
-    private SyncWebhookLog logWebhook(Long companyId, String eventType, Map<String, Object> payload) {
-        SyncWebhookLog log = new SyncWebhookLog();
-        log.setCompanyId(companyId);
-        log.setEventType(eventType);
-        log.setStatus(WebhookStatus.RECEIVED);
-        log.setPayload(payload);
-        return webhookLogRepository.save(log);
-    }
-
-    private SyncWebhookLog markSuccess(SyncWebhookLog log) {
-        log.setStatus(WebhookStatus.SUCCESS);
-        log.setProcessedAt(Instant.now());
-        return webhookLogRepository.save(log);
+        return inboundLog.success(log);
     }
 
     /**
@@ -170,36 +159,20 @@ public class PosWebhookServiceImpl implements PosWebhookService {
      * que {@code PosOrderNotifier.checkStockDivergence} ya registra en el sentido contrario. Se informa
      * con las mismas palabras para que las dos mitades se puedan leer juntas.
      */
-    private SyncWebhookLog markDivergent(SyncWebhookLog log, Product product, StockUpdatePayload payload) {
-        // Se vuelve a leer: el @Modifying limpia el contexto de persistencia, así que la instancia en
-        // memoria ya no dice nada fiable sobre el stock actual — y ese número es justamente el dato del
-        // mensaje.
-        int currentStock = productRepository.findById(product.getId()).map(Product::getStock).orElse(-1);
+    private SyncWebhookLog markDivergent(SyncWebhookLog log, Long productId, int currentStock, StockUpdatePayload payload) {
         String message = ("Divergencia de stock con el POS: producto %d tiene %d en la tienda y el POS declaró"
                 + " haber visto %d antes de dejarlo en %d. No se sobrescribe.")
-                .formatted(product.getId(), currentStock, payload.oldStock(), payload.stockWeb());
+                .formatted(productId, currentStock, payload.oldStock(), payload.stockWeb());
         LOG.warn(message);
         Sentry.captureMessage(message);
-        return markFailed(log, message);
+        return inboundLog.failed(log, message);
     }
 
-    private SyncWebhookLog markFailed(SyncWebhookLog log, String error) {
-        log.setStatus(WebhookStatus.FAILED);
-        log.setErrorMessage(error);
-        log.setProcessedAt(Instant.now());
-        return webhookLogRepository.save(log);
+    private static String text(Object value) {
+        return value == null ? null : value.toString();
     }
 
-    private void markSynced(ProductSyncMapping mapping) {
-        mapping.setSyncStatus(SyncStatus.ACTIVE);
-        mapping.setSyncError(null);
-        mapping.setLastSyncedAt(Instant.now());
-        mappingRepository.save(mapping);
-    }
-
-    private static String slugify(String value) {
-        return value.trim().toLowerCase()
-                .replaceAll("[^a-z0-9]+", "-")
-                .replaceAll("(^-|-$)", "");
+    private static BigDecimal price(Object value) {
+        return value == null ? null : new BigDecimal(value.toString());
     }
 }
