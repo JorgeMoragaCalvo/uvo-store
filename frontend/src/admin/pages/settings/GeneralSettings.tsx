@@ -8,8 +8,9 @@ import { Switch } from '@/components/ui/switch'
 import { Card, CardContent } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import adminApi from '@/admin/services/adminApi'
 import { useAdminGeneralSettingsStore } from '@/admin/stores/useAdminGeneralSettingsStore'
-import type { GeneralSettingsDto, GeneralSettingsUpdateRequest } from '@/admin/types/admin'
+import type { GeneralSettingsDto, GeneralSettingsUpdateRequest, PosResyncSummary } from '@/admin/types/admin'
 
 function Field({
   id,
@@ -80,6 +81,70 @@ function SecretField({
   )
 }
 
+function resyncMessage(summary: PosResyncSummary): string {
+  const parts = [
+    `${summary.checked} productos revisados`,
+    `${summary.stockCorrected} con stock corregido`,
+    `${summary.catalogCorrected} con precio o datos corregidos`,
+  ]
+  const pending = summary.pendingInFlight + summary.changedMeanwhile
+  if (pending > 0) parts.push(`${pending} pendientes por ventas web en curso`)
+  if (summary.missingInPos > 0) parts.push(`${summary.missingInPos} que el POS no devolvió`)
+  if (summary.errors.length > 0) parts.push(`${summary.errors.length} con error`)
+  return `Resincronización terminada: ${parts.join(', ')}.`
+}
+
+// POS-4. Concilia ahora los productos sincronizados, con las mismas reglas que la pasada automática del
+// backend (PosReconciliationService). Usa el estado GUARDADO de la integración, no lo que esté sin guardar
+// en el formulario: el backend decide con lo guardado.
+function PosResync({ disabledReason }: { disabledReason: string | null }) {
+  const [running, setRunning] = useState(false)
+
+  async function handleResync() {
+    setRunning(true)
+    try {
+      const summary = await adminApi.pos.resync()
+      if (summary.failedConnections > 0) {
+        toast.error(`No se pudo leer el catálogo de UvoPOS: ${summary.errors[0] ?? 'motivo desconocido'}`)
+      } else {
+        toast.success(resyncMessage(summary))
+      }
+    } catch (err) {
+      const message = (err as { message?: string })?.message
+      toast.error(message ?? 'No se pudo resincronizar con UvoPOS')
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2 border-t pt-4">
+      <p className="text-sm font-medium">Resincronizar con UvoPOS</p>
+      <p className="text-sm text-muted-foreground">
+        Compara el stock y el precio de los productos sincronizados con lo que tiene el POS y corrige los que
+        difieran. Los productos con ventas web que el POS todavía no registró quedan para la próxima pasada
+        automática.
+      </p>
+      {disabledReason && (
+        <p id="pos-resync-hint" className="text-xs text-muted-foreground">
+          {disabledReason}
+        </p>
+      )}
+      <div>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={handleResync}
+          disabled={disabledReason !== null || running}
+          aria-describedby={disabledReason ? 'pos-resync-hint' : undefined}
+        >
+          {running ? 'Resincronizando…' : 'Resincronizar ahora'}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 export default function GeneralSettings() {
   const settings = useAdminGeneralSettingsStore((state) => state.settings)
   const loading = useAdminGeneralSettingsStore((state) => state.loading)
@@ -111,10 +176,13 @@ function toUpdateRequest(dto: GeneralSettingsDto): GeneralSettingsUpdateRequest 
 
 function GeneralSettingsForm({ initial }: { initial: GeneralSettingsDto }) {
   const update = useAdminGeneralSettingsStore((state) => state.update)
+  // Lo que está guardado en el backend, no lo que se está editando. posSyncEnabled va aquí por la
+  // resincronización, que decide con lo guardado.
   const [configured, setConfigured] = useState({
     stripeSecretKey: initial.stripeSecretKeyConfigured,
     posApiToken: initial.posApiTokenConfigured,
     posWebhookSecret: initial.posWebhookSecretConfigured,
+    posSyncEnabled: initial.posSyncEnabled,
   })
   const [form, setForm] = useState<GeneralSettingsUpdateRequest>(toUpdateRequest(initial))
   const [saving, setSaving] = useState(false)
@@ -133,6 +201,7 @@ function GeneralSettingsForm({ initial }: { initial: GeneralSettingsDto }) {
         stripeSecretKey: updated.stripeSecretKeyConfigured,
         posApiToken: updated.posApiTokenConfigured,
         posWebhookSecret: updated.posWebhookSecretConfigured,
+        posSyncEnabled: updated.posSyncEnabled,
       })
       set('stripeSecretKey', '')
       set('posApiToken', '')
@@ -322,6 +391,17 @@ function GeneralSettingsForm({ initial }: { initial: GeneralSettingsDto }) {
                     disabled={!initial.posIntegrationAvailable}
                   />
                 </div>
+                <PosResync
+                  disabledReason={
+                    !initial.posIntegrationAvailable
+                      ? 'Se habilita junto con la integración con UvoPOS.'
+                      : !configured.posApiToken
+                        ? 'Configura y guarda el token de la API del POS para poder resincronizar.'
+                        : !configured.posSyncEnabled
+                          ? 'Activa y guarda la sincronización con POS para poder resincronizar.'
+                          : null
+                  }
+                />
               </CardContent>
             </Card>
           </TabsContent>

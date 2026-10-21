@@ -1,5 +1,6 @@
 package org.uvo.uvostore.repository;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -35,4 +36,19 @@ public interface ProductSyncMappingRepository extends JpaRepository<ProductSyncM
     @Modifying(flushAutomatically = true)
     @Query("update ProductSyncMapping m set m.lastSyncedAt = :now, m.syncError = null, m.updatedAt = :now where m.id = :id")
     int touchSynced(@Param("id") Long id, @Param("now") Instant now);
+
+    /**
+     * POS-4. Un lote de mapeos activos de una empresa para la conciliación, con su producto. Keyset por id y no
+     * offset: entre un lote y el siguiente pueden nacer o pausarse mapeos, y con offset alguno se saltaría.
+     */
+    @Query("""
+            select m from ProductSyncMapping m
+            join fetch m.product
+            where m.companyId = :companyId
+              and m.syncStatus = org.uvo.uvostore.entity.pos.enums.SyncStatus.ACTIVE
+              and m.id > :afterId
+            order by m.id asc
+            """)
+    List<ProductSyncMapping> findActiveBatch(@Param("companyId") Long companyId, @Param("afterId") Long afterId,
+                                             Pageable pageable);
 }

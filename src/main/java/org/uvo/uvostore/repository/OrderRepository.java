@@ -12,6 +12,7 @@ import org.springframework.stereotype.Repository;
 import org.uvo.uvostore.entity.order.Order;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -124,6 +125,19 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
             order by o.paidAt asc
             """)
     List<Order> findPaidWithoutStockApplied(@Param("notAfter") Instant notAfter, Pageable pageable);
+
+    /**
+     * POS-4. De estos productos, los que están en una orden cobrada cuyo stock todavía no se descontó. La
+     * conciliación no los corrige: si el outbox ya envió la venta, el POS la descontó; si aquí se igualara el
+     * stock al del POS, el descuento pendiente (el listener o {@code StockRecoveryJob}) la restaría otra vez.
+     */
+    @Query("""
+            select distinct i.product.id from OrderItem i
+            where i.order.paymentStatus = org.uvo.uvostore.entity.order.enums.PaymentStatus.PAID
+              and i.order.stockApplied = false
+              and i.product.id in :productIds
+            """)
+    List<Long> findProductsWithStockPending(@Param("productIds") Collection<Long> productIds);
 
     // Admin\Shipping\{Zones,Methods}\Index delete guards — refuse to delete a zone/method that
     // still has orders referencing it.

@@ -61,6 +61,22 @@ public class PosCatalogWriter {
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public Result apply(ProductSyncMapping mapping, long version, PosCatalogFields fields) {
+        return write(mapping, version, fields, false);
+    }
+
+    /**
+     * POS-4. Lo mismo, para la conciliación: aplica también una versión <b>igual</b> a la aplicada.
+     *
+     * <p>La conciliación lee el estado del POS en ese momento. Si trae la misma versión que ya está aplicada y aun
+     * así los valores difieren, lo que se movió es lo de aquí, y el POS manda. Una versión <b>menor</b> sigue
+     * descartándose: la lectura salió antes de que llegara un evento que ya se aplicó, y no debe pisarlo.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public Result reconcile(ProductSyncMapping mapping, long version, PosCatalogFields fields) {
+        return write(mapping, version, fields, true);
+    }
+
+    private Result write(ProductSyncMapping mapping, long version, PosCatalogFields fields, boolean acceptSameVersion) {
         // El cerrojo del producto ordena todas las entradas de catálogo de ese producto: la segunda espera a que
         // la primera confirme, y entonces relee la versión. Sin él, dos eventos simultáneos leen los dos la
         // versión vieja y gana el que confirma último, sea el que sea.
@@ -88,7 +104,7 @@ public class PosCatalogWriter {
         }
 
         Long applied = mapping.getCatalogVersion();
-        if (applied != null && version <= applied) {
+        if (applied != null && (version < applied || (version == applied && !acceptSameVersion))) {
             return version == applied
                     ? new Result(Outcome.ALREADY_APPLIED, "Evento descartado: la versión %d ya estaba aplicada."
                             .formatted(version))

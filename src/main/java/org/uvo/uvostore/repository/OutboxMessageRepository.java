@@ -29,6 +29,27 @@ public interface OutboxMessageRepository extends JpaRepository<OutboxMessage, Lo
 
     List<OutboxMessage> findByOrderIdOrderByIdAsc(Long orderId);
 
+    /**
+     * POS-4. De estos productos, los que tienen una venta web que esta empresa del POS todavía no registró: su
+     * fila {@code POS_ORDER} sigue pendiente, en vuelo o fallida. Nuestro stock ya la descontó y el del POS no,
+     * así que la conciliación no debe corregirlos hacia el POS: desharía la venta.
+     *
+     * <p>{@code FAILED} cuenta igual: es una venta que el POS no tiene y que espera revisión manual (V25).
+     * {@code SENT} y {@code SKIPPED} no: la primera ya está en el POS, y la segunda no se va a enviar.
+     */
+    @Query("""
+            select distinct i.product.id from OrderItem i, OutboxMessage m
+            where m.order = i.order
+              and m.type = org.uvo.uvostore.entity.outbox.enums.OutboxType.POS_ORDER
+              and m.companyId = :companyId
+              and m.status in (org.uvo.uvostore.entity.outbox.enums.OutboxStatus.PENDING,
+                               org.uvo.uvostore.entity.outbox.enums.OutboxStatus.IN_FLIGHT,
+                               org.uvo.uvostore.entity.outbox.enums.OutboxStatus.FAILED)
+              and i.product.id in :productIds
+            """)
+    List<Long> findProductsWithUnregisteredSales(@Param("companyId") Long companyId,
+                                                 @Param("productIds") Collection<Long> productIds);
+
     @Query("""
             select m from OutboxMessage m
             join fetch m.order o

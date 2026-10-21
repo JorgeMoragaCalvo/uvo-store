@@ -70,7 +70,13 @@ class RepositoryTenantScopeTest {
             Map.entry("OrderRepository.findAbandonedPending",
                     "trabajo programado: recorre todas las tiendas y fija el tenant por orden"),
             Map.entry("OrderRepository.findPaidWithoutStockApplied",
-                    "trabajo programado (StockRecoveryJob): recorre todas las tiendas y fija el tenant por orden")));
+                    "trabajo programado (StockRecoveryJob): recorre todas las tiendas y fija el tenant por orden"),
+            Map.entry("OrderRepository.findProductsWithStockPending",
+                    "conciliación POS-4: recibe ids de productos ya acotados (los mapeos de una empresa, de una "
+                            + "tienda) y solo devuelve ids de esos mismos productos"),
+            Map.entry("PosConnectionRepository.findAllActive",
+                    "trabajo programado (PosReconciliationJob): recorre todas las tiendas; cada conexión trae la "
+                            + "suya y la integración se comprueba por tienda")));
 
     @Test
     @DisplayName("Toda consulta de un repositorio de tienda está acotada o es una global justificada")

@@ -527,6 +527,19 @@ export interface GeneralSettingsUpdateRequest extends Omit<GeneralSettingsDto, '
   posWebhookSecret: string
 }
 
+// POS-4. Mirrors PosReconciliationSummary — lo que devuelve "Resincronizar con UvoPOS".
+export interface PosResyncSummary {
+  checked: number
+  stockCorrected: number
+  catalogCorrected: number
+  // Distintos del POS pero con una venta web que el POS todavía no tiene: quedan para la próxima pasada.
+  pendingInFlight: number
+  changedMeanwhile: number
+  missingInPos: number
+  failedConnections: number
+  errors: string[]
+}
+
 // Mirrors StoreSettingsDto — branding (logo/colors) + home page section toggles.
 export interface StoreSettingsDto {
   id: number | null
