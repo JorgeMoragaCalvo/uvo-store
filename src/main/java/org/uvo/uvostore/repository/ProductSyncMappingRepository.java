@@ -1,9 +1,13 @@
 package org.uvo.uvostore.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.uvo.uvostore.entity.pos.ProductSyncMapping;
 import org.uvo.uvostore.entity.pos.enums.SyncStatus;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -19,4 +23,16 @@ public interface ProductSyncMappingRepository extends JpaRepository<ProductSyncM
     Optional<ProductSyncMapping> findByExternalIdAndCompanyId(Long externalId, Long companyId);
     Optional<ProductSyncMapping> findByProductIdAndCompanyId(Long productId, Long companyId);
     List<ProductSyncMapping> findByCompanyIdAndSyncStatus(Long companyId, SyncStatus status);
+
+    /**
+     * POS-3. Marca el mapeo como sincronizado sin tocar nada más.
+     *
+     * <p>El webhook de stock la usa en vez de {@code save}. Su {@code setStockIfUnchanged} limpia el contexto,
+     * así que su mapeo queda desconectado, y el merge de un {@code save} copiaría <b>todas</b> sus columnas:
+     * también una {@code catalog_version} leída antes de que otra entrada confirmara una más nueva. Tampoco fija
+     * {@code ACTIVE}: un mapeo pausado entretanto se quedaría reactivado.
+     */
+    @Modifying(flushAutomatically = true)
+    @Query("update ProductSyncMapping m set m.lastSyncedAt = :now, m.syncError = null, m.updatedAt = :now where m.id = :id")
+    int touchSynced(@Param("id") Long id, @Param("now") Instant now);
 }

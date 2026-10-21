@@ -684,7 +684,36 @@ form reads `GET /api/admin/products/{id}/pos-ownership` (`products.view`; kept o
 public API also serves). **Creating products stays allowed even in a store with the POS as master** — the
 user's call, against the original acceptance criterion; such a product has no mapping, its sales don't reach
 the POS and trip `PosOrderNotifier`'s coverage alert (`PosMasterStoreProductCreationTest` pins this).
-`PosSyncServiceImpl` still ignores the flags and the status; that's POS-3.
+The inbound side applies the same rule since POS-3 (below).
+
+**Inbound POS writes are ordered and idempotent** (POS-3). The sync used to overwrite name, slug, description,
+price, stock, active and category on every call, ignoring the flags, and reactivated a paused mapping;
+`product.updated` applied whatever arrived last, even if it was older. Now **one path writes a mapped product's
+catalog**: `service/pos/PosCatalogWriter`, used by both. It writes what the flags say (same rule as POS-2),
+only non-null values, only on an `ACTIVE` mapping, and only if the event's **`version`** is newer than
+`product_sync_mapping.catalog_version` (V26). `version` is **required** (400 without it) in `/api/sync/product`
+and in `product.updated`. It's the POS's number for the product, growing with each change, and the two inputs
+share it. An equal version is discarded as already applied, a lower one as stale; `NULL` (older mappings) accepts the first
+event. The version advances even if no field had its flag on. **Contract for POS-1:** with one version,
+`product.updated` must carry *all* POS-owned fields, not just the changed ones, or an older partial event that
+gets discarded loses its change until the next sync. User decisions: on an existing product the sync **never
+touches stock** (stock only enters via `stock.updated`, conditioned on `oldStock`); `active` and category are set
+**only on creation**, after which they're the web's. Discards are logged in `sync_webhook_logs` with the new
+status **`DISCARDED`** (no Sentry) and answered **200** so the POS doesn't retry; every sync call is logged now
+too (`product.sync`, via `PosInboundLog`), and its response carries `applied` and `log_id`. Three traps it
+closes:
+- **A catalog write could resurrect a sold unit.** `Product` has no `@DynamicUpdate`, so the full-row UPDATE
+  rewrote the stock read at load time over a web sale that committed meanwhile. The writer takes the product row
+  with `findByIdForUpdate` (`PESSIMISTIC_WRITE`) and then `refresh`es product and mapping, the PROD-13b pattern:
+  the lock makes `decrementStock` wait, and the refresh sees what committed before it. Product first, mapping
+  second, the same order as the stock webhook, to avoid deadlocks.
+- **The stock webhook could roll the version back.** `setStockIfUnchanged` clears the context, and the old
+  `save(mapping)` merged the detached mapping, every column included. It now calls
+  `mappingRepository.touchSynced`, a targeted update that also no longer forces `ACTIVE`.
+- **A repeated `stock.updated` was a false divergence alert**: if the conditional UPDATE misses but the stock
+  already equals `stockWeb`, it's `DISCARDED` ("ya reflejado"), not a divergence.
+Pinned by `pos/PosOrderedInputsTest` and `pos/PosCatalogRaceTest`. The race tests use committed transactions,
+three single-threaded with a `REQUIRES_NEW` in the middle, and one with a second thread that proves the lock.
 
 Both gaps that used to be listed here are now closed. `PosWebhookServiceImpl.handleStockUpdated` no longer overwrites stock blindly: it uses `ProductRepository.setStockIfUnchanged`, conditioned on the `oldStock` the POS says it saw, so a concurrent web sale can't be erased — a mismatch is reported as a divergence (same wording and Sentry alert as `PosOrderNotifier.checkStockDivergence`, which already treats our own decrement as the authority for web stock) instead of written (F13). And marking an order paid from the admin panel now goes through `OrderStatusService.markPaid`, so it publishes `PaymentConfirmedEvent` and does decrement stock (F07).
 
@@ -695,27 +724,19 @@ unchanged. `PosWebhookAuthFilter` now remembers what it already served, keyed by
 secret), so no change to the UvoPOS contract was needed. Two things to know:
 - The check runs **after** signature verification, deliberately. Recording first would let anyone burn the
   genuine signature or fill the store with garbage, without knowing the secret.
-- The store is a Caffeine cache expiring just past the freshness window — nothing older can be replayed
-  anyway, so there's no table to prune. **A restart inside those 300s loses the guard, and with more than
-  one instance each would remember its own**; the same issue as `TokenVersionService`'s cache, and the move is
-  to a table with `UNIQUE (company_id, signature_hash)` when that day comes.
+- **The store is a table since POS-3**, `pos_webhook_receipts` with `UNIQUE (company_id, signature)`, so the
+  guard survives a restart and holds across instances (it used to be a Caffeine cache). `PosWebhookReplayGuard`
+  records with one `INSERT … ON CONFLICT DO NOTHING` (1 = first time; two simultaneous replays can't both pass),
+  committed on its own because the filter runs outside any transaction. A scheduled purge
+  (`app.pos.webhook-receipts.purge-interval-ms`) deletes receipts older than **two** freshness windows plus a
+  minute. The window accepts a timestamp up to 300s *ahead* too, so a signature can stay fresh 600s after it
+  arrives — the old cache forgot it at 310s.
 
 What a replay actually did before this is worth recording because it is not what you'd guess: for
 `stock.updated` F13's conditional UPDATE already refused it (the stock is already the new value) — so no
 double-apply, but a **false divergence alert to Sentry** on every replay. `stock.alert`/`product.created`
-only log. The one that genuinely hurt was `product.updated`, which rewrites price/name/description
-unconditionally.
-
-Still open in the same area, two things:
-- `PosSyncServiceImpl` writes an absolute stock too, but it's the create-or-update of a whole product rather
-  than a reaction to an inventory movement, and it carries no `oldStock` to compare against — coordinating
-  that one is the next step.
-- **`product.updated` overwrites later edits.** A legitimate late or out-of-order webhook silently reverts an
-  admin's price correction — the same shape as the bug F13 fixed for stock, in the branch F13 didn't touch.
-  The replay guard bounds it to replays, not to late deliveries. The obvious fix (compare
-  `product.updatedAt` against `mapping.lastSyncedAt`) is too fragile to bolt on: `markSynced` and the
-  product `save` land milliseconds apart, so that comparison is already true right after a legitimate sync.
-  It needs per-field sync marks, or an `oldValue` in the payload like stock has.
+only log. The one that genuinely hurt was `product.updated`, which rewrote price/name/description
+unconditionally; POS-3 ordered it by version (above).
 
 `OpenApiConfig` wires springdoc — API docs at `/swagger-ui.html`, grouped into five surfaces
 (public/admin/customer/pos/platform) with a `bearerAuth` JWT scheme wired to the "Authorize"

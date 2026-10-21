@@ -117,6 +117,11 @@ public class ProductSyncMapping {
     @Column(name = "sync_metadata", columnDefinition = "jsonb")
     private Map<String, Object> syncMetadata;
 
+    // POS-3. La versión de catálogo ya aplicada; la escribe solo PosCatalogWriter, con el producto bloqueado.
+    // null = todavía ninguna.
+    @Column(name = "catalog_version")
+    private Long catalogVersion;
+
     // Non-standard: joined on PosConnection.companyId, not PosConnection.id.
     // No DB-level FK constraint backs this relationship (see companyId above) —
     // do not apply @OnDelete cascade behavior here, there's no referential
