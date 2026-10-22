@@ -37,6 +37,8 @@ import java.util.Map;
  *   <li>Si la clave debe ser única por orden o por orden y empresa. Aquí es por orden y empresa,
  *       porque una orden con productos de dos empresas genera dos documentos distintos y una clave
  *       compartida haría que el segundo se descartara como repetido.</li>
+ *   <li>POS-5: que una línea de variación identifique la variante con {@code variant_id}, junto al
+ *       {@code product_id} del producto.</li>
  * </ol>
  */
 @Component
@@ -75,6 +77,11 @@ public class PosOrderPayloadMapper {
     private static Map<String, Object> itemBody(PosOrderItem item) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("product_id", item.productId());
+        // POS-5. La variante vendida, solo en las líneas de variación: el POS descuenta el stock de esa talla, no el
+        // del producto. Una línea simple queda como antes, sin la clave, para no obligar al POS a leer un null.
+        if (item.variantId() != null) {
+            body.put("variant_id", item.variantId());
+        }
         body.put("quantity", item.quantity());
         body.put("price", amount(item.price()));
         body.put("subtotal", amount(item.subtotal()));

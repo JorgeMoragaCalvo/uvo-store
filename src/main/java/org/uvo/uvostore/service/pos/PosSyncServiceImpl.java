@@ -14,10 +14,12 @@ import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.CategoryRepository;
 import org.uvo.uvostore.repository.ProductRepository;
 import org.uvo.uvostore.repository.ProductSyncMappingRepository;
+import org.uvo.uvostore.service.BusinessException;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -27,15 +29,17 @@ public class PosSyncServiceImpl implements PosSyncService {
     private final CategoryRepository categoryRepository;
     private final ProductSyncMappingRepository mappingRepository;
     private final PosCatalogWriter catalogWriter;
+    private final PosVariantCatalog variantCatalog;
     private final PosInboundLog inboundLog;
 
     public PosSyncServiceImpl(ProductRepository productRepository, CategoryRepository categoryRepository,
                                ProductSyncMappingRepository mappingRepository, PosCatalogWriter catalogWriter,
-                               PosInboundLog inboundLog) {
+                               PosVariantCatalog variantCatalog, PosInboundLog inboundLog) {
         this.productRepository = productRepository;
         this.categoryRepository = categoryRepository;
         this.mappingRepository = mappingRepository;
         this.catalogWriter = catalogWriter;
+        this.variantCatalog = variantCatalog;
         this.inboundLog = inboundLog;
     }
 
@@ -51,6 +55,8 @@ public class PosSyncServiceImpl implements PosSyncService {
         // poner el companyId de otra tienda en el JSON para crear productos activos en su catálogo.
         Long companyId = connection.getCompanyId();
         Store store = connection.getStore();
+        // POS-5. Antes de abrir el registro, como la validación del cuerpo: es un 400, la petición está mal formada.
+        requireConsistent(command);
         SyncWebhookLog log = inboundLog.open(companyId, "product.sync", payloadOf(command));
 
         var existingMapping = mappingRepository.findByExternalIdAndCompanyId(command.externalId(), companyId);
@@ -67,14 +73,14 @@ public class PosSyncServiceImpl implements PosSyncService {
             ProductSyncMapping mapping = existingMapping.get();
             Long productId = mapping.getProduct().getId();
             PosCatalogWriter.Result result = catalogWriter.apply(mapping, command.version(),
-                    new PosCatalogFields(command.name(), command.description(), command.price()));
+                    new PosCatalogFields(command.name(), command.description(), command.price(), command.variants()));
 
             return switch (result.outcome()) {
                 case APPLIED -> new SyncProductResult(productId, false, true, "Producto actualizado",
                         inboundLog.success(log).getId());
                 case ALREADY_APPLIED, STALE -> new SyncProductResult(productId, false, false, result.message(),
                         inboundLog.discarded(log, result.message()).getId());
-                case INACTIVE -> new SyncProductResult(productId, false, false, result.message(),
+                case INACTIVE, MISMATCH -> new SyncProductResult(productId, false, false, result.message(),
                         inboundLog.failed(log, result.message()).getId());
             };
         }
@@ -86,19 +92,24 @@ public class PosSyncServiceImpl implements PosSyncService {
             category = getOrCreateCategory(store, command.categoryName());
         }
 
+        // POS-5. Un producto con variantes nace VARIABLE, y su padre resume las variantes: el precio de la más
+        // barata y la suma de los stocks, lo mismo que mantiene después PosVariantCatalog.
+        boolean variable = command.variants() != null;
         Product product = new Product();
         product.setStore(store);
         product.setName(command.name());
         product.setSlug(PosCatalogWriter.slugify(command.name()));
         product.setSku(command.sku());
         product.setDescription(command.description() == null ? "" : command.description());
-        product.setPrice(command.price());
-        product.setStock(command.stock());
+        product.setPrice(variable ? PosVariants.minPrice(command.variants()) : command.price());
+        product.setStock(variable
+                ? command.variants().stream().mapToInt(variant -> variant.stock() == null ? 0 : variant.stock()).sum()
+                : command.stock());
         product.setWeight(BigDecimal.ZERO);
         product.setCategory(category);
         product.setActive(command.active() == null || command.active());
         product.setFeatured(false);
-        product.setProductType(ProductType.SIMPLE);
+        product.setProductType(variable ? ProductType.VARIABLE : ProductType.SIMPLE);
         product.setManageStock(true);
         Product saved = productRepository.save(product);
 
@@ -117,8 +128,26 @@ public class PosSyncServiceImpl implements PosSyncService {
         mapping.setCatalogVersion(command.version());
         mapping.setLastSyncedAt(Instant.now());
         mappingRepository.save(mapping);
+        if (variable) {
+            variantCatalog.createAll(saved, mapping, command.variants());
+        }
 
         return new SyncProductResult(saved.getId(), true, true, "Producto creado", inboundLog.success(log).getId());
+    }
+
+    /**
+     * POS-5. Las variantes cumplen las reglas de {@link PosVariants}, y un producto sin variantes trae su precio y su
+     * stock, que ya no son obligatorios en el cuerpo porque un producto variable no los usa.
+     */
+    private static void requireConsistent(SyncProductCommand command) {
+        if (command.variants() != null) {
+            String invalid = PosVariants.validate(command.variants());
+            if (invalid != null) {
+                throw new BusinessException(invalid);
+            }
+        } else if (command.price() == null || command.stock() == null) {
+            throw new BusinessException("Un producto sin variantes tiene que traer price y stock.");
+        }
     }
 
     // HashMap y no Map.of: la descripción, la bodega, la categoría y el estado pueden no venir.
@@ -134,7 +163,23 @@ public class PosSyncServiceImpl implements PosSyncService {
         payload.put("warehouse_id", command.warehouseId());
         payload.put("category_name", command.categoryName());
         payload.put("active", command.active());
+        if (command.variants() != null) {
+            payload.put("variants", variantsPayload(command.variants()));
+        }
         return payload;
+    }
+
+    // Para el registro: lo que hace falta para leerlo después, en el mismo formato que el resto del payload.
+    static List<Map<String, Object>> variantsPayload(List<PosVariantFields> variants) {
+        return variants.stream().map(variant -> {
+            Map<String, Object> entry = new HashMap<>();
+            entry.put("variant_id", variant.variantId());
+            entry.put("sku", variant.sku());
+            entry.put("price", variant.price());
+            entry.put("stock", variant.stock());
+            entry.put("attributes", variant.attributes());
+            return entry;
+        }).toList();
     }
 
     private Category getOrCreateCategory(Store store, String name) {

@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.uvo.uvostore.entity.catalog.Product;
+import org.uvo.uvostore.entity.catalog.enums.ProductType;
 import org.uvo.uvostore.entity.pos.ProductSyncMapping;
 import org.uvo.uvostore.entity.pos.enums.SyncStatus;
 import org.uvo.uvostore.repository.ProductRepository;
@@ -29,6 +30,11 @@ import java.util.NoSuchElementException;
  * menor que la aplicada se descarta. El {@code product.updated} tiene que traer todos los campos del POS y no
  * solo los cambiados: con una sola versión, un evento parcial más viejo que se descarta perdería su cambio
  * hasta la siguiente sincronización.
+ *
+ * <p><b>Variantes</b> (POS-5): la versión del producto cubre también sus variantes, así que una entrada que las
+ * trae se ordena con las mismas reglas y las aplica {@link PosVariantCatalog} bajo el mismo cerrojo. En un producto
+ * variable el precio del padre no se escribe desde la entrada: resume el de sus variantes. Un producto simple aquí
+ * con variantes en el POS es un {@link Outcome#MISMATCH}: cambiar el tipo no se hace solo.
  */
 @Component
 public class PosCatalogWriter {
@@ -40,19 +46,26 @@ public class PosCatalogWriter {
         /** Ya estaba aplicada una versión más nueva: el evento llegó fuera de orden. */
         STALE,
         /** El mapeo no está {@code ACTIVE}: no se escribe, igual que en el webhook de stock. */
-        INACTIVE
+        INACTIVE,
+        /**
+         * POS-5. El producto es simple en la tienda y la entrada trae variantes. No se escribe nada: convertirlo
+         * tocaría las órdenes que ya lo referencian, y eso es una revisión a mano, no algo que haga una entrada.
+         */
+        MISMATCH
     }
 
     public record Result(Outcome outcome, String message) {
     }
 
     private final ProductRepository productRepository;
+    private final PosVariantCatalog variantCatalog;
 
     @PersistenceContext
     private EntityManager entityManager;
 
-    public PosCatalogWriter(ProductRepository productRepository) {
+    public PosCatalogWriter(ProductRepository productRepository, PosVariantCatalog variantCatalog) {
         this.productRepository = productRepository;
+        this.variantCatalog = variantCatalog;
     }
 
     /**
@@ -112,7 +125,14 @@ public class PosCatalogWriter {
                             .formatted(version, applied));
         }
 
-        if (mapping.isSyncPrice() && fields.price() != null) {
+        boolean variable = product.getProductType() == ProductType.VARIABLE;
+        if (fields.variants() != null && !variable) {
+            return new Result(Outcome.MISMATCH, ("El producto %d es simple en la tienda y el POS lo envía con "
+                    + "variantes: cambiar el tipo requiere revisión manual.").formatted(product.getId()));
+        }
+
+        // En un producto variable el precio del padre es el de su variante más barata (PosVariantCatalog).
+        if (mapping.isSyncPrice() && fields.price() != null && !variable) {
             product.setPrice(fields.price());
         }
         if (mapping.isSyncName() && fields.name() != null) {
@@ -121,6 +141,9 @@ public class PosCatalogWriter {
         }
         if (mapping.isSyncDescription() && fields.description() != null) {
             product.setDescription(fields.description());
+        }
+        if (variable && fields.variants() != null) {
+            variantCatalog.apply(product, mapping, fields.variants());
         }
 
         // La versión avanza aunque ningún campo tuviera su flag: es lo último que se sabe del producto, y un

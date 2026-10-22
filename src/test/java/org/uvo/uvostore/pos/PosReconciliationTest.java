@@ -8,6 +8,7 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.uvo.uvostore.entity.catalog.Category;
 import org.uvo.uvostore.entity.catalog.Product;
+import org.uvo.uvostore.entity.catalog.ProductVariation;
 import org.uvo.uvostore.entity.order.Order;
 import org.uvo.uvostore.entity.order.OrderItem;
 import org.uvo.uvostore.entity.order.enums.FulfillmentStatus;
@@ -27,12 +28,18 @@ import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.repository.OutboxMessageRepository;
 import org.uvo.uvostore.repository.PosConnectionRepository;
 import org.uvo.uvostore.repository.ProductSyncMappingRepository;
+import org.uvo.uvostore.repository.ProductVariationRepository;
+import org.uvo.uvostore.repository.ProductVariationSyncMappingRepository;
 import org.uvo.uvostore.repository.SyncWebHookLogRepository;
 import org.uvo.uvostore.service.BusinessException;
 import org.uvo.uvostore.service.pos.PosCatalogSnapshot;
 import org.uvo.uvostore.service.pos.PosClient;
 import org.uvo.uvostore.service.pos.PosReconciliationService;
 import org.uvo.uvostore.service.pos.PosReconciliationSummary;
+import org.uvo.uvostore.service.pos.PosSyncService;
+import org.uvo.uvostore.service.pos.PosVariantFields;
+import org.uvo.uvostore.service.pos.SyncProductCommand;
+import org.uvo.uvostore.service.pos.SyncProductResult;
 import org.uvo.uvostore.support.IntegrationTestSupport;
 import org.uvo.uvostore.support.WithPosIntegration;
 
@@ -42,6 +49,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -89,6 +97,12 @@ class PosReconciliationTest extends IntegrationTestSupport {
     private OrderRepository orderRepository;
     @Autowired
     private OutboxMessageRepository outboxRepository;
+    @Autowired
+    private PosSyncService posSyncService;
+    @Autowired
+    private ProductVariationSyncMappingRepository variantMappingRepository;
+    @Autowired
+    private ProductVariationRepository variationRepository;
 
     private Store store;
     private Category category;
@@ -315,6 +329,64 @@ class PosReconciliationTest extends IntegrationTestSupport {
         verify(posClient, times(2)).readCatalog(any(), any());
     }
 
+    // --- variantes (POS-5) ---------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("POS-5: el stock de una variante se corrige hacia el POS, y el padre vuelve a sumar")
+    void aVariantStockDivergenceIsCorrected() {
+        Variable variable = variable();
+        posSays(variableRow(variable, 1, null, 1, 9990, 2, 10990));
+
+        PosReconciliationSummary summary = reconciliation.reconcileStore(store);
+
+        assertThat(variationStock(variable, variable.m)).isEqualTo(1);
+        assertThat(variationStock(variable, variable.l)).isEqualTo(2);
+        assertThat(stock(variable.mapped)).isEqualTo(3);
+        assertThat(summary.stockCorrected()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("POS-5: las variantes de un producto con una venta todavía sin entregar al POS no se corrigen")
+    void aVariantWithAPendingSaleIsNotCorrected() {
+        Variable variable = variable();
+        saleOf(variable.mapped, true, OutboxStatus.PENDING);
+        posSays(variableRow(variable, 1, null, 5, 9990, 2, 10990));
+
+        PosReconciliationSummary summary = reconciliation.reconcileStore(store);
+
+        assertThat(variationStock(variable, variable.m)).isEqualTo(4);
+        assertThat(summary.pendingInFlight()).isEqualTo(1);
+        assertThat(summary.stockCorrected()).isZero();
+    }
+
+    @Test
+    @DisplayName("POS-5: un precio de variante distinto se corrige aunque la versión sea la misma")
+    void aVariantPriceDivergenceIsCorrected() {
+        Variable variable = variable();
+        posSays(variableRow(variable, 1, null, 4, 9990, 2, 11990));
+
+        PosReconciliationSummary summary = reconciliation.reconcileStore(store);
+
+        assertThat(variation(variable, variable.l).getPrice()).isEqualByComparingTo("11990");
+        assertThat(price(variable.mapped)).as("el padre sigue en la más barata").isEqualByComparingTo("9990");
+        assertThat(summary.catalogCorrected()).isEqualTo(1);
+        assertThat(summary.stockCorrected()).isZero();
+    }
+
+    @Test
+    @DisplayName("POS-5: el stock del padre de un producto variable no se compara: es la suma de sus variantes")
+    void theParentStockOfAVariableProductIsNotCompared() {
+        Variable variable = variable();
+        // Las variantes cuadran; el número del padre no significa nada para un producto variable.
+        posSays(variableRow(variable, 1, 99, 4, 9990, 2, 10990));
+
+        PosReconciliationSummary summary = reconciliation.reconcileStore(store);
+
+        assertThat(stock(variable.mapped)).isEqualTo(6);
+        assertThat(summary.stockCorrected()).isZero();
+        assertThat(summary.catalogCorrected()).isZero();
+    }
+
     // --- el botón del panel --------------------------------------------------------------------------
 
     @Test
@@ -450,6 +522,48 @@ class PosReconciliationTest extends IntegrationTestSupport {
 
     private static PosCatalogSnapshot.Row row(Mapped mapped, long version, int stockWeb, long price) {
         return new PosCatalogSnapshot.Row(mapped.externalId, version, stockWeb, BigDecimal.valueOf(price), null, null);
+    }
+
+    /** POS-5. Un producto del POS con dos variantes, M (9990, stock 4) y L (10990, stock 2), en la versión 1. */
+    private record Variable(Mapped mapped, long m, long l) {
+    }
+
+    private Variable variable() {
+        long externalId = nextSeq();
+        long m = nextSeq();
+        long l = nextSeq();
+        SyncProductResult result = posSyncService.syncProduct(connection, new SyncProductCommand(externalId,
+                "POL-" + externalId, "Polera " + externalId, null, null, null, null, null, true, 1,
+                List.of(variant(m, 4, 9990, "M"), variant(l, 2, 10990, "L"))));
+        Product product = productRepository.findById(result.productId()).orElseThrow();
+        ProductSyncMapping mapping = mappingRepository
+                .findByExternalIdAndCompanyId(externalId, connection.getCompanyId()).orElseThrow();
+        return new Variable(new Mapped(product, mapping, externalId), m, l);
+    }
+
+    // El SKU lleva el id de la variante: los SKU de variación son únicos por tienda.
+    private static PosVariantFields variant(long id, Integer stock, long price, String size) {
+        Map<String, String> attributes = new LinkedHashMap<>();
+        attributes.put("Talla", size);
+        attributes.put("Color", "Azul");
+        return new PosVariantFields(id, "POL-" + size + "-" + id, BigDecimal.valueOf(price), stock, attributes);
+    }
+
+    /** Lo que el POS dice del producto variable: la M y la L con su stock_web y su precio. */
+    private static PosCatalogSnapshot.Row variableRow(Variable variable, long version, Integer parentStock,
+                                                      int stockM, long priceM, int stockL, long priceL) {
+        return new PosCatalogSnapshot.Row(variable.mapped.externalId, version, parentStock, null, null, null,
+                List.of(variant(variable.m, stockM, priceM, "M"), variant(variable.l, stockL, priceL, "L")));
+    }
+
+    private ProductVariation variation(Variable variable, long variantId) {
+        return variantMappingRepository.findByMappingIdAndExternalVariantId(variable.mapped.mapping.getId(), variantId)
+                .orElseThrow()
+                .getVariation();
+    }
+
+    private int variationStock(Variable variable, long variantId) {
+        return variationRepository.findById(variation(variable, variantId).getId()).orElseThrow().getStock();
     }
 
     private static PosCatalogSnapshot snapshot(PosCatalogSnapshot.Row... rows) {

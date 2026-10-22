@@ -7,6 +7,8 @@ import org.junit.jupiter.api.Test;
 import org.uvo.uvostore.entity.pos.PosConnection;
 import org.uvo.uvostore.service.pos.PosCatalogSnapshot;
 import org.uvo.uvostore.service.pos.PosClient;
+import org.uvo.uvostore.service.pos.PosVariantFields;
+import org.uvo.uvostore.service.pos.PosVariants;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -15,6 +17,7 @@ import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -91,6 +94,34 @@ class PosCatalogReadTest {
         assertThat(row.version()).as("sin versión, el catálogo no se concilia").isNull();
         assertThat(row.stockWeb()).as("2.5 no es un stock").isNull();
         assertThat(row.price()).isEqualByComparingTo("9990");
+    }
+
+    @Test
+    @DisplayName("POS-5: las variantes de una fila se leen con la misma tolerancia")
+    void theVariantsOfARowAreParsed() throws IOException {
+        startServer(200, """
+                {"data":[
+                  {"product_id":11,"version":5,"variants":[
+                    {"variant_id":111,"sku":"POL-M","price":9990,"stock_web":4,"attributes":{"Talla":"M","Color":"Azul"}},
+                    {"variant_id":"112","sku":"POL-L","price":"10990","stock_web":"dos","attributes":{"Talla":"L"}},
+                    "esto no es una variante"
+                  ]},
+                  {"product_id":12,"version":6,"stock_web":3}
+                ]}""");
+
+        PosCatalogSnapshot snapshot = client.readCatalog(connection(), List.of(11L, 12L));
+
+        List<PosVariantFields> variants = snapshot.rows().get(11L).variants();
+        assertThat(variants).hasSize(3);
+        assertThat(variants.get(0)).isEqualTo(new PosVariantFields(111L, "POL-M", new BigDecimal("9990"), 4,
+                Map.of("Talla", "M", "Color", "Azul")));
+        assertThat(variants.get(1).variantId()).isEqualTo(112L);
+        assertThat(variants.get(1).stock()).as("un stock ilegible queda vacío, sin tumbar la fila").isNull();
+        assertThat(variants.get(2).variantId())
+                .as("una entrada ilegible queda como una variante vacía, para que la validación la rechace")
+                .isNull();
+        assertThat(PosVariants.validate(variants)).isNotNull();
+        assertThat(snapshot.rows().get(12L).variants()).as("un producto simple no trae variantes").isNull();
     }
 
     @Test

@@ -754,6 +754,68 @@ active connection). The resync covers mapped products only — the user's call; 
 Pinned by `pos/PosReconciliationTest` (POS mocked with `@MockitoBean`, batches of 2) and `pos/PosCatalogReadTest`
 (real sockets).
 
+**POS products can have variants** (POS-5). The integration used to know only simple products: the sync created
+`SIMPLE`, the mapping was per product, and a sale, a stock event or a reconciliation named the product, not the
+variation. The model is the usual one, **parent with variants** (the user's call: nobody knew yet whether UvoPOS
+has variants), and it's a **proposed contract** for POS-1, like the sale and the bulk read:
+- **Shape.** A variant is `{variantId, sku, price, stock, attributes: {"Talla": "M", …}}`. It comes in
+  `/api/sync/product` (`variants`, optional; with it, the parent's `price` and `stock` are optional and ignored,
+  without it they're required as before) and in `product.updated` (`data.variants`, same shape). The bulk read
+  returns `variants: [{variant_id, sku, price, stock_web, attributes}]` per row. `stock.updated` takes `variantId`,
+  **required** for a variable product. A variation line of the sale carries `variant_id`; a simple line doesn't
+  carry the key. A divergence result may carry `variant_id` too.
+- **One version per POS product covers its variants**, and every catalog input carries the **full** variant list
+  (POS-3's rule): a variant that doesn't come is gone from the POS.
+- **Validation is the same for the three inputs** (`PosVariants.validate`; 400 on sync before the log row, `FAILED` on
+  the webhook, an error in the reconciliation). The list can't be empty. Each variant needs id, sku, price and
+  non-empty attributes. All variants must have the **same attribute names**, and no two may share an id or a
+  combination. Names and values compare by slug, which is how they're stored. The storefront makes you pick a value
+  of every attribute and matches all of them (`ProductDetail.tsx`), so a variant that breaks those rules could
+  never be bought.
+- **Schema:** `product_variation_sync_mapping` (V27) hangs off `product_sync_mapping`, which keeps the company, the
+  flags and `catalog_version`. Its keys are `UNIQUE (mapping_id, external_variant_id)` and
+  `UNIQUE (mapping_id, product_variation_id)`. The sync creates the product `VARIABLE`, with each variation and its
+  attributes (`Attribute`/`AttributeValue` found or created by slug per store, like categories). The parent's
+  price is the cheapest variant and its stock the sum.
+- **Catalog updates** go through `PosCatalogWriter` → `PosVariantCatalog.apply`, under the same lock and version
+  rules:
+  - a known variant takes its price if `syncPrice`, and comes back to active;
+  - an unknown one is created, with its stock or 0;
+  - a mapped one that's missing is **deactivated**, never deleted (orders reference it) and its stock untouched;
+  - an existing variant's stock is **never** written here (POS-3);
+  - the parent is recomputed: stock is the sum of all variations, the same rule as
+    `recalculateStockFromVariations`, and price is the cheapest active one.
+  Variants for a product that's `SIMPLE` here are the new outcome **`MISMATCH`** (`FAILED`, nothing written, the
+  version doesn't advance): converting a type is manual. A variable product's event without `variants` skips them.
+- **Lock order: the parent before any of its variations, everywhere.** The writer locks the product and then
+  writes its variations. The sale did the opposite: `decrementVariation` took the variation, then
+  `recalculateStockFromVariations` the parent. The two together deadlocked, and `PosVariantLockOrderTest` gets
+  Postgres' `deadlock detected` without the fix. So `OrderInventoryService.decrementVariation` and
+  `restoreOrderStock` now call `findByIdForUpdate` on the parent first, and so do the variant stock webhook, the
+  reconciliation and the panel's `ProductVariationServiceImpl` (add, update, delete). With that, no variation of a
+  product moves while its parent is locked, which is also why the writer's in-Java sum is exact.
+- **Stock per variant:** `ProductVariationRepository.setStockIfUnchanged` (F13's conditional UPDATE), then the
+  parent's sum and `touchSynced`. A miss is `DISCARDED` if the value is already there, otherwise a divergence. Without
+  `variantId` on a variable product the event fails: writing the parent would break the sum.
+- **Sale:** `PosOrderNotifier.prepare` adds the variant to each variation line. A variation without a variant
+  mapping **isn't sent**, since the POS would deduct something else, and `companiesToNotify` counts it in the
+  coverage alert. `checkStockDivergence` compares a variant result with that variation. A product-level result for a
+  variable product is skipped: the parent is a sum, and comparing it would alert on every sale.
+- **Reconciliation:** for a variable product the parent's stock is never compared; each variant is, with
+  `stock_web`, locking the parent first. "In flight" stays per **product**, which is conservative: one size with a
+  pending sale delays its siblings a pass. The catalog differs on a variant price (with `syncPrice`), an unknown
+  variant, or a missing or reappearing one. Counts stay per product.
+- **POS-2 is unchanged.** A mapped product's variations are still rejected in the panel, since `VariationCommand`
+  only carries POS-owned fields. Only the message changed: they're created and changed in the POS.
+- **Out of scope:**
+  - changing a variant's attributes or SKU from the POS, since they're set at creation;
+  - per-variant images, because the panel has no variation UI;
+  - "in flight" per variation;
+  - two syncs creating the same attribute at once can hit its UNIQUE, as with categories.
+
+Pinned by `pos/PosVariantsTest`, the variant cases in `pos/PosReconciliationTest`, `pos/PosVariantLockOrderTest`
+(committed transactions, two threads) and the contract tests (`PosOrderPayloadMapperTest`, `PosCatalogReadTest`).
+
 Both gaps that used to be listed here are now closed. `PosWebhookServiceImpl.handleStockUpdated` no longer overwrites stock blindly: it uses `ProductRepository.setStockIfUnchanged`, conditioned on the `oldStock` the POS says it saw, so a concurrent web sale can't be erased — a mismatch is reported as a divergence (same wording and Sentry alert as `PosOrderNotifier.checkStockDivergence`, which already treats our own decrement as the authority for web stock) instead of written (F13). And marking an order paid from the admin panel now goes through `OrderStatusService.markPaid`, so it publishes `PaymentConfirmedEvent` and does decrement stock (F07).
 
 **POS webhooks can't be replayed** (F21). HMAC plus a ±300s freshness window proves a request is authentic

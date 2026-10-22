@@ -13,6 +13,7 @@ import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.repository.PosConnectionRepository;
 import org.uvo.uvostore.repository.ProductSyncMappingRepository;
+import org.uvo.uvostore.repository.ProductVariationSyncMappingRepository;
 import org.uvo.uvostore.service.pos.PosOrderNotifier;
 import org.uvo.uvostore.service.pos.PosOrderPayloadMapper;
 import org.uvo.uvostore.service.pos.PosSaleRequest;
@@ -42,12 +43,14 @@ class PosOrderNotifierTest {
 
     private final OrderRepository orderRepository = mock(OrderRepository.class);
     private final ProductSyncMappingRepository mappingRepository = mock(ProductSyncMappingRepository.class);
+    private final ProductVariationSyncMappingRepository variantMappingRepository =
+            mock(ProductVariationSyncMappingRepository.class);
     private final PosConnectionRepository connectionRepository = mock(PosConnectionRepository.class);
 
     // PROD-12: con la política habilitada. Que no se encole ni se envíe nada cuando está apagada es
     // PosNotifierDisabledTest.
     private final PosOrderNotifier notifier = new PosOrderNotifier(
-            orderRepository, mappingRepository, connectionRepository, new PosOrderPayloadMapper(),
+            orderRepository, mappingRepository, variantMappingRepository, connectionRepository, new PosOrderPayloadMapper(),
             PosPolicyFixture.enabled(), 3);
 
     @Test

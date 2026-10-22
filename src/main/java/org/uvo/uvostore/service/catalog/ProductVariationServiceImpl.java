@@ -35,9 +35,12 @@ public class ProductVariationServiceImpl implements ProductVariationService{
         this.posOwnership = posOwnership;
     }
 
+    // POS-5: las tres escrituras bloquean el producto padre antes de tocar la variación, que es el orden de todo lo
+    // que escribe variaciones (la venta en OrderInventoryService.decrementVariation). Con el orden contrario, editar
+    // una variación en el panel y vender otra del mismo producto podían quedar esperándose mutuamente.
     @Transactional
     public ProductVariation addVariation(Long productId, VariationCommand command) {
-        Product product = productRepository.findById(productId)
+        Product product = productRepository.findByIdForUpdate(productId)
                 .filter(p -> p.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(()-> new NoSuchElementException("Product " + productId + " not found"));
         // POS-2: recalculateParentAggregate reescribiría el precio y el stock que gestiona UvoPOS.
@@ -64,6 +67,7 @@ public class ProductVariationServiceImpl implements ProductVariationService{
                 .orElseThrow(()-> new NoSuchElementException("Product variation " + variationId + " not found"));
         // POS-2: el producto de la variante, no el {productId} de la ruta, que el controlador no usa para buscar.
         posOwnership.requireNotMapped(variation.getProduct().getId());
+        productRepository.findByIdForUpdate(variation.getProduct().getId());
 
         variation.setSku(command.sku());
         variation.setPrice(command.price());
@@ -86,6 +90,7 @@ public class ProductVariationServiceImpl implements ProductVariationService{
                 .orElseThrow(()-> new NoSuchElementException("Product variation " + variationId + " not found"));
         Long productId = variation.getProduct().getId();
         posOwnership.requireNotMapped(productId);
+        productRepository.findByIdForUpdate(productId);
 
         variationAttributeRepository.deleteByVariationId(variationId);
         variationRepository.delete(variation);

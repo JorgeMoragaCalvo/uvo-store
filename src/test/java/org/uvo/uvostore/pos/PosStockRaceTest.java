@@ -54,7 +54,7 @@ class PosStockRaceTest extends IntegrationTestSupport {
         assertThat(reloadStock(fixture.product)).isEqualTo(4);
 
         SyncWebhookLog log = posWebhookService.handleStockUpdated(
-                new StockUpdatePayload(fixture.companyId, fixture.externalId, "SKU-1", 5, 5, 5));
+                new StockUpdatePayload(fixture.companyId, fixture.externalId, null, "SKU-1", 5, 5, 5));
 
         assertThat(reloadStock(fixture.product))
                 .as("el absoluto del POS no puede resucitar una unidad vendida")
@@ -73,7 +73,7 @@ class PosStockRaceTest extends IntegrationTestSupport {
         Fixture fixture = syncedProduct(5);
 
         SyncWebhookLog log = posWebhookService.handleStockUpdated(
-                new StockUpdatePayload(fixture.companyId, fixture.externalId, "SKU-1", 5, 9, 9));
+                new StockUpdatePayload(fixture.companyId, fixture.externalId, null, "SKU-1", 5, 9, 9));
 
         assertThat(reloadStock(fixture.product)).isEqualTo(9);
         assertThat(log.getStatus()).isEqualTo(WebhookStatus.SUCCESS);
@@ -87,11 +87,11 @@ class PosStockRaceTest extends IntegrationTestSupport {
         Fixture fixture = syncedProduct(5);
 
         posWebhookService.handleStockUpdated(
-                new StockUpdatePayload(fixture.companyId, fixture.externalId, "SKU-1", 5, 3, 3));
+                new StockUpdatePayload(fixture.companyId, fixture.externalId, null, "SKU-1", 5, 3, 3));
         assertThat(reloadStock(fixture.product)).isEqualTo(3);
 
         SyncWebhookLog replay = posWebhookService.handleStockUpdated(
-                new StockUpdatePayload(fixture.companyId, fixture.externalId, "SKU-1", 5, 3, 3));
+                new StockUpdatePayload(fixture.companyId, fixture.externalId, null, "SKU-1", 5, 3, 3));
 
         assertThat(reloadStock(fixture.product)).isEqualTo(3);
         assertThat(replay.getStatus()).isNotEqualTo(WebhookStatus.SUCCESS);

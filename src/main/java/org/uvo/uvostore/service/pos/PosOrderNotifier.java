@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.uvo.uvostore.entity.catalog.enums.ProductType;
 import org.uvo.uvostore.entity.order.Order;
 import org.uvo.uvostore.entity.order.OrderItem;
 import org.uvo.uvostore.entity.order.enums.OrderStatus;
@@ -17,6 +18,7 @@ import org.uvo.uvostore.entity.pos.ProductSyncMapping;
 import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.repository.PosConnectionRepository;
 import org.uvo.uvostore.repository.ProductSyncMappingRepository;
+import org.uvo.uvostore.repository.ProductVariationSyncMappingRepository;
 
 import java.util.List;
 import java.util.Map;
@@ -47,17 +49,20 @@ public class PosOrderNotifier {
 
     private final OrderRepository orderRepository;
     private final ProductSyncMappingRepository mappingRepository;
+    private final ProductVariationSyncMappingRepository variantMappingRepository;
     private final PosConnectionRepository posConnectionRepository;
     private final PosOrderPayloadMapper payloadMapper;
     private final PosIntegrationPolicy posPolicy;
     private final int divergenceAlertThreshold;
 
     public PosOrderNotifier(OrderRepository orderRepository, ProductSyncMappingRepository mappingRepository,
+                            ProductVariationSyncMappingRepository variantMappingRepository,
                             PosConnectionRepository posConnectionRepository, PosOrderPayloadMapper payloadMapper,
                             PosIntegrationPolicy posPolicy,
                             @Value("${app.pos.stock-divergence-alert-threshold:3}") int divergenceAlertThreshold) {
         this.orderRepository = orderRepository;
         this.mappingRepository = mappingRepository;
+        this.variantMappingRepository = variantMappingRepository;
         this.posConnectionRepository = posConnectionRepository;
         this.payloadMapper = payloadMapper;
         this.posPolicy = posPolicy;
@@ -90,8 +95,15 @@ public class PosOrderNotifier {
         Set<Long> mappedProducts = mappings.stream()
                 .map(mapping -> mapping.getProduct().getId())
                 .collect(Collectors.toSet());
+        // POS-5. Una línea de variación solo se puede registrar si su variante está mapeada: si no, prepare() no la
+        // envía (el POS descontaría otra cosa), y aquí cuenta como no cubierta.
+        Set<Long> mappedVariations = mappings.isEmpty() ? Set.of() : variantMappingRepository
+                .findByMappingIdIn(mappings.stream().map(ProductSyncMapping::getId).toList()).stream()
+                .map(variantMapping -> variantMapping.getVariation().getId())
+                .collect(Collectors.toSet());
         long unmappedItems = order.getItems().stream()
-                .filter(item -> !mappedProducts.contains(item.getProduct().getId()))
+                .filter(item -> !mappedProducts.contains(item.getProduct().getId())
+                        || (item.getVariation() != null && !mappedVariations.contains(item.getVariation().getId())))
                 .count();
         if (unmappedItems > 0) {
             reportIncompleteCoverage(order, unmappedItems);
@@ -137,7 +149,7 @@ public class PosOrderNotifier {
 
         List<PosOrderItem> items = order.getItems().stream()
                 .map(item -> mappingRepository.findByProductIdAndCompanyId(item.getProduct().getId(), companyId)
-                        .map(mapping -> toPosItem(item, mapping)))
+                        .flatMap(mapping -> toPosItem(item, mapping)))
                 .flatMap(Optional::stream)
                 .toList();
         if (items.isEmpty()) {
@@ -184,29 +196,57 @@ public class PosOrderNotifier {
 
             Long externalId = Long.valueOf(productId.toString());
             int posStock = (int) Double.parseDouble(newStockWeb.toString());
+            Long variantId = PosCatalogSnapshot.asLong(result.get("variant_id"));
 
             mappingRepository.findByExternalIdAndCompanyId(externalId, companyId).ifPresent(mapping -> {
-                int ourStock = mapping.getProduct().getStock();
+                // POS-5. Un resultado de variante se compara con esa variación. El padre de un producto variable
+                // es la suma de sus variantes: compararlo con el stock de una talla avisaría en cada venta.
+                int ourStock;
+                String what;
+                if (variantId != null) {
+                    var variant = variantMappingRepository.findByMappingIdAndExternalVariantId(mapping.getId(), variantId);
+                    if (variant.isEmpty()) {
+                        return;
+                    }
+                    ourStock = variant.get().getVariation().getStock();
+                    what = "la variación %d del producto %d".formatted(variant.get().getVariation().getId(),
+                            mapping.getProduct().getId());
+                } else if (mapping.getProduct().getProductType() == ProductType.VARIABLE) {
+                    return;
+                } else {
+                    ourStock = mapping.getProduct().getStock();
+                    what = "producto %d".formatted(mapping.getProduct().getId());
+                }
                 int gap = Math.abs(ourStock - posStock);
                 if (gap == 0) {
                     return;
                 }
-                log.warn("Divergencia de stock con el POS: producto {} tiene {} en la tienda y {} según el POS (company_id={})",
-                        mapping.getProduct().getId(), ourStock, posStock, companyId);
+                log.warn("Divergencia de stock con el POS: {} tiene {} en la tienda y {} según el POS (company_id={})",
+                        what, ourStock, posStock, companyId);
                 // Una unidad de diferencia es lo normal mientras las dos puntas venden a la vez;
                 // una diferencia grande significa que una de las dos está mal, y eso sí hay que
                 // mirarlo. El umbral separa lo uno de lo otro sin inundar Sentry.
                 if (gap > divergenceAlertThreshold) {
-                    Sentry.captureMessage("Divergencia de stock con el POS: producto %d tiene %d en la tienda y %d según el POS"
-                            .formatted(mapping.getProduct().getId(), ourStock, posStock));
+                    Sentry.captureMessage("Divergencia de stock con el POS: %s tiene %d en la tienda y %d según el POS"
+                            .formatted(what, ourStock, posStock));
                 }
             });
         }
     }
 
-    private static PosOrderItem toPosItem(OrderItem item, ProductSyncMapping mapping) {
-        return new PosOrderItem(mapping.getExternalId(), item.getQuantity(), item.getPrice(), item.getSubtotal(),
-                item.getTaxAmount());
+    /**
+     * POS-5. Una línea de variación lleva su variante del POS. Si la variación no está mapeada, la línea no se envía:
+     * mandarla sin variante haría que el POS descontara otra cosa. Ya se avisó al confirmar el pago
+     * ({@link #reportIncompleteCoverage}).
+     */
+    private Optional<PosOrderItem> toPosItem(OrderItem item, ProductSyncMapping mapping) {
+        if (item.getVariation() == null) {
+            return Optional.of(new PosOrderItem(mapping.getExternalId(), null, item.getQuantity(), item.getPrice(),
+                    item.getSubtotal(), item.getTaxAmount()));
+        }
+        return variantMappingRepository.findByMappingIdAndVariationId(mapping.getId(), item.getVariation().getId())
+                .map(variant -> new PosOrderItem(mapping.getExternalId(), variant.getExternalVariantId(),
+                        item.getQuantity(), item.getPrice(), item.getSubtotal(), item.getTaxAmount()));
     }
 
     /**

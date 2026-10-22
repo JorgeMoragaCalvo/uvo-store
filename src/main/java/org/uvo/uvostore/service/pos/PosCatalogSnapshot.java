@@ -18,11 +18,21 @@ import java.util.Map;
  * <p>La lectura es tolerante, fila a fila: un campo que falta o no se entiende queda en {@code null}, y eso solo
  * apaga lo que dependía de él (sin {@code stock_web} no se concilia el stock; sin {@code version}, el catálogo).
  * Una fila sin {@code product_id} no se puede asignar a nada y se ignora.
+ *
+ * <p>POS-5. La fila de un producto con variantes trae además {@code variants}, con
+ * {@code [{"variant_id", "sku", "price", "stock_web", "attributes"}]}: el estado completo de sus variantes. Se lee
+ * con la misma tolerancia ({@link PosVariants#fromJson}), y la lista se valida antes de usarla.
  */
 public record PosCatalogSnapshot(Map<Long, Row> rows, String failure) {
 
+    /** {@code variants} es {@code null} si la fila no las trae; el {@code stock} de cada una es su {@code stock_web}. */
     public record Row(Long productId, Long version, Integer stockWeb, BigDecimal price, String name,
-                      String description) {
+                      String description, List<PosVariantFields> variants) {
+
+        public Row(Long productId, Long version, Integer stockWeb, BigDecimal price, String name,
+                   String description) {
+            this(productId, version, stockWeb, price, name, description, null);
+        }
     }
 
     public static PosCatalogSnapshot failed(String reason) {
@@ -48,13 +58,14 @@ public record PosCatalogSnapshot(Map<Long, Row> rows, String failure) {
                 continue;
             }
             rows.put(productId, new Row(productId, asLong(row.get("version")), asInt(row.get("stock_web")),
-                    asDecimal(row.get("price")), asText(row.get("name")), asText(row.get("description"))));
+                    asDecimal(row.get("price")), asText(row.get("name")), asText(row.get("description")),
+                    PosVariants.fromJson(row.get("variants"), "variant_id", "stock_web")));
         }
         return new PosCatalogSnapshot(Map.copyOf(rows), null);
     }
 
     // Un 7 puede llegar como 7, 7.0 o "7", según cómo serialice el POS. Lo que no es un entero se descarta.
-    private static Long asLong(Object value) {
+    static Long asLong(Object value) {
         BigDecimal decimal = asDecimal(value);
         if (decimal == null) {
             return null;
@@ -66,12 +77,12 @@ public record PosCatalogSnapshot(Map<Long, Row> rows, String failure) {
         }
     }
 
-    private static Integer asInt(Object value) {
+    static Integer asInt(Object value) {
         Long number = asLong(value);
         return number == null || number < Integer.MIN_VALUE || number > Integer.MAX_VALUE ? null : number.intValue();
     }
 
-    private static BigDecimal asDecimal(Object value) {
+    static BigDecimal asDecimal(Object value) {
         if (value == null) {
             return null;
         }
@@ -82,7 +93,7 @@ public record PosCatalogSnapshot(Map<Long, Row> rows, String failure) {
         }
     }
 
-    private static String asText(Object value) {
+    static String asText(Object value) {
         return value == null ? null : value.toString();
     }
 }

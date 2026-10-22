@@ -105,14 +105,15 @@ public class PosCatalogOwnership {
     }
 
     /**
-     * Las variantes de un producto sincronizado reescribirían su precio y su stock
-     * ({@code ProductVariationService.recalculateParentAggregate}), y el POS no las conoce: el mapeo es por
-     * producto (POS-5).
+     * Las variantes de un producto sincronizado son del POS (POS-5): las crea, las quita y les pone precio y stock
+     * por la sincronización, y el panel no las toca. {@code VariationCommand} solo trae campos del POS —SKU, precio,
+     * stock y atributos—, así que no hay una parte editable que dejar pasar. Y en un producto simple mapeado, una
+     * variante creada en el panel lo volvería variable sin que el POS lo supiera.
      */
     public void requireNotMapped(Long productId) {
         if (!activeMappings(productId).isEmpty()) {
-            throw new BusinessException("Este producto se sincroniza con UvoPOS y no admite variantes desde el "
-                    + "panel: cambiarían su precio y su stock, que gestiona el POS.");
+            throw new BusinessException("Este producto se sincroniza con UvoPOS: sus variantes se crean y se cambian "
+                    + "en el POS, no en el panel.");
         }
     }
 
