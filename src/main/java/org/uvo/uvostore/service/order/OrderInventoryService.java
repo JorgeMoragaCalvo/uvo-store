@@ -158,6 +158,8 @@ public class OrderInventoryService {
                 continue;
             }
             if (item.getVariation() != null) {
+                // POS-5: el padre antes que la variación, como en decrementVariation.
+                productRepository.findByIdForUpdate(item.getProduct().getId());
                 variationRepository.restoreStock(item.getVariation().getId(), item.getQuantity());
                 productRepository.recalculateStockFromVariations(item.getProduct().getId());
             } else {
@@ -196,6 +198,11 @@ public class OrderInventoryService {
 
     private void decrementVariation(OrderItem item, List<String> failures) {
         Long variationId = item.getVariation().getId();
+        // POS-5: el cerrojo del padre ANTES de tocar la variación. Es el orden de todo lo que escribe variaciones
+        // (PosVariantCatalog, el webhook de stock, la conciliación y el panel). Antes la venta tomaba la variación y
+        // después el padre (en recalculateStockFromVariations), y una actualización de catálogo del POS, que bloquea
+        // el padre y luego escribe sus variaciones, podía quedar esperándola mientras ella la esperaba a él.
+        productRepository.findByIdForUpdate(item.getProduct().getId());
         int updated = variationRepository.decrementStock(variationId, item.getQuantity());
         if (updated == 0) {
             failures.add("variación " + item.getProductSku() + " (id " + variationId + ", cantidad " + item.getQuantity() + ")");

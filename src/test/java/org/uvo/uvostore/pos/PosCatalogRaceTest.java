@@ -221,7 +221,7 @@ class PosCatalogRaceTest {
             // A: un stock.updated con el mapeo de la versión 10 en memoria. Un save() del mapeo copiaría todas
             // sus columnas, y la versión volvería a 10: la 11 se aceptaría después.
             stock.set(posWebhookService.handleStockUpdated(new StockUpdatePayload(
-                    connection.getCompanyId(), externalId, "SKU", 10, 7, 7)));
+                    connection.getCompanyId(), externalId, null, "SKU", 10, 7, 7)));
         });
 
         assertThat(stock.get().getStatus()).isEqualTo(WebhookStatus.SUCCESS);

@@ -36,8 +36,8 @@ public class PosWebhookController {
     public Map<String, Object> stockUpdated(@RequestAttribute("posConnection") PosConnection connection,
                                             @Valid @RequestBody StockUpdatedRequest request) {
         SyncWebhookLog log = posWebhookService.handleStockUpdated(new StockUpdatePayload(
-                PosRequestGuard.companyIdOf(connection, request.companyId()), request.productId(), request.sku(),
-                request.oldStock(), request.newStock(), request.stockWeb()));
+                PosRequestGuard.companyIdOf(connection, request.companyId()), request.productId(),
+                request.variantId(), request.sku(), request.oldStock(), request.newStock(), request.stockWeb()));
         return receivedResponse(log);
     }
 

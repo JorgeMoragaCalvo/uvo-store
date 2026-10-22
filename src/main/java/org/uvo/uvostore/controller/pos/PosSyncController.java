@@ -9,9 +9,11 @@ import org.springframework.web.bind.annotation.RestController;
 import org.uvo.uvostore.entity.pos.PosConnection;
 import org.uvo.uvostore.security.PosRequestGuard;
 import org.uvo.uvostore.service.pos.PosSyncService;
+import org.uvo.uvostore.service.pos.PosVariantFields;
 import org.uvo.uvostore.service.pos.SyncProductCommand;
 import org.uvo.uvostore.service.pos.SyncProductResult;
 
+import java.util.List;
 import java.util.Map;
 
 // F01: la tienda donde se crea o actualiza el producto sale de la conexión que autenticó
@@ -37,7 +39,7 @@ public class PosSyncController {
         SyncProductCommand command = new SyncProductCommand(
                 request.externalId(), request.sku(), request.name(), request.description(),
                 request.price(), request.stock(), request.warehouseId(), request.categoryName(), request.active(),
-                request.version()
+                request.version(), variants(request.variants())
         );
         SyncProductResult result = posSyncService.syncProduct(connection, command);
         // POS-3. Un descarte también es 200: la petición se entendió y no tiene sentido reintentarla. applied y
@@ -49,5 +51,19 @@ public class PosSyncController {
                 "applied", result.applied(),
                 "log_id", result.logId()
         );
+    }
+
+    // Una variante null dentro de la lista llega como una sin campos, para que la rechace PosVariants.validate con
+    // el mismo mensaje que cualquier otra variante incompleta.
+    private static List<PosVariantFields> variants(List<SyncProductRequest.Variant> variants) {
+        if (variants == null) {
+            return null;
+        }
+        return variants.stream()
+                .map(variant -> variant == null
+                        ? new PosVariantFields(null, null, null, null, null)
+                        : new PosVariantFields(variant.variantId(), variant.sku(), variant.price(), variant.stock(),
+                                variant.attributes()))
+                .toList();
     }
 }

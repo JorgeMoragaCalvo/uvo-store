@@ -315,7 +315,8 @@ class PosOwnedProductFieldsTest extends IntegrationTestSupport {
     @Test
     @DisplayName("Un producto sincronizado no admite variantes nuevas")
     void variationsCannotBeAddedToAMappedProduct() throws Exception {
-        // Recalcular el agregado reescribiría el precio y el stock que gestiona el POS.
+        // Recalcular el agregado reescribiría el precio y el stock que gestiona el POS, y desde POS-5 las variantes
+        // de un producto sincronizado son del POS.
         Product product = product();
         map(product, Flags.PRICE_AND_STOCK);
 
@@ -325,7 +326,7 @@ class PosOwnedProductFieldsTest extends IntegrationTestSupport {
                         .contentType("application/json")
                         .content(variationJson("V-NUEVA", 1000, 2)))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value(containsString("no admite variantes")));
+                .andExpect(jsonPath("$.message").value(containsString("sus variantes se crean y se cambian en el POS")));
 
         assertThat(variationRepository.findByProductId(product.getId())).isEmpty();
         assertThat(product.getPrice()).isEqualByComparingTo("9990");

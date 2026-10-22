@@ -25,4 +25,16 @@ public interface ProductVariationRepository extends JpaRepository<ProductVariati
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE ProductVariation v SET v.stock = v.stock + :quantity WHERE v.id = :id")
     int restoreStock(@Param("id") Long id, @Param("quantity") int quantity);
+
+    /**
+     * POS-5. El {@code ProductRepository.setStockIfUnchanged} de una variante (F13): el stock que manda el POS, solo
+     * si nadie lo movió desde el valor visto. 0 filas es "alguien lo movió mientras", y entonces no se pisa.
+     *
+     * <p>Quien la llama bloquea antes el producto padre y después recalcula su stock
+     * ({@code recalculateStockFromVariations}): es el orden de cerrojos de todo lo que toca variaciones.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE ProductVariation v SET v.stock = :newStock WHERE v.id = :id AND v.stock = :expectedStock")
+    int setStockIfUnchanged(@Param("id") Long id, @Param("expectedStock") int expectedStock,
+                            @Param("newStock") int newStock);
 }

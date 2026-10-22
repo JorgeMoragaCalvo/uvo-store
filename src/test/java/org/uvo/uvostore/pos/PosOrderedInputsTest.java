@@ -116,7 +116,7 @@ class PosOrderedInputsTest extends IntegrationTestSupport {
 
         SyncProductResult result = posSyncService.syncProduct(fixture.connection, new SyncProductCommand(
                 externalId, "NUEVO-" + externalId, "Gorro Nuevo", "Del POS", BigDecimal.valueOf(4990), 7, null,
-                "Accesorios", false, 7));
+                "Accesorios", false, 7, null));
 
         assertThat(result.created()).isTrue();
         assertThat(result.applied()).isTrue();
@@ -214,7 +214,7 @@ class PosOrderedInputsTest extends IntegrationTestSupport {
     void aRepeatedStockEventIsDiscardedWithoutADivergence() {
         Fixture fixture = mapped(false, false);
         StockUpdatePayload event = new StockUpdatePayload(
-                fixture.connection.getCompanyId(), fixture.externalId, "SKU", 10, 7, 7);
+                fixture.connection.getCompanyId(), fixture.externalId, null, "SKU", 10, 7, 7);
 
         SyncWebhookLog first = posWebhookService.handleStockUpdated(event);
         // El POS lo reintenta: es el mismo evento con otra firma, así que el filtro no lo para.
@@ -289,7 +289,7 @@ class PosOrderedInputsTest extends IntegrationTestSupport {
     private SyncProductCommand sync(Fixture fixture, long version, String name, String description, long price,
                                     int stock, String categoryName, boolean active) {
         return new SyncProductCommand(fixture.externalId, fixture.product.getSku(), name, description,
-                BigDecimal.valueOf(price), stock, null, categoryName, active, version);
+                BigDecimal.valueOf(price), stock, null, categoryName, active, version, null);
     }
 
     private ProductUpdatePayload productUpdated(Fixture fixture, long version, long price) {

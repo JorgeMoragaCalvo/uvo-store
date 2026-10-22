@@ -13,6 +13,7 @@ import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.repository.PosConnectionRepository;
 import org.uvo.uvostore.repository.ProductSyncMappingRepository;
+import org.uvo.uvostore.repository.ProductVariationSyncMappingRepository;
 import org.uvo.uvostore.service.outbox.OutboxResult;
 import org.uvo.uvostore.service.outbox.PosSaleOutboxHandler;
 import org.uvo.uvostore.service.pos.PosClient;
@@ -45,6 +46,8 @@ class PosNotifierDisabledTest {
 
     private final OrderRepository orderRepository = mock(OrderRepository.class);
     private final ProductSyncMappingRepository mappingRepository = mock(ProductSyncMappingRepository.class);
+    private final ProductVariationSyncMappingRepository variantMappingRepository =
+            mock(ProductVariationSyncMappingRepository.class);
     private final PosConnectionRepository connectionRepository = mock(PosConnectionRepository.class);
     private final PosClient posClient = mock(PosClient.class);
 
@@ -61,7 +64,8 @@ class PosNotifierDisabledTest {
     }
 
     private void assertNothingLeavesWith(PosIntegrationPolicy policy) {
-        PosOrderNotifier notifier = new PosOrderNotifier(orderRepository, mappingRepository, connectionRepository,
+        PosOrderNotifier notifier = new PosOrderNotifier(orderRepository, mappingRepository, variantMappingRepository,
+                connectionRepository,
                 new PosOrderPayloadMapper(), policy, 3);
         Order order = paidOrderWithASyncedItem();
 
