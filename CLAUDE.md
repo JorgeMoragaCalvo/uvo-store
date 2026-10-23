@@ -846,8 +846,8 @@ button. **PROD-17c:** all of it sits behind one switch, `SWAGGER_ENABLED` → `a
 `springdoc.swagger-ui.enabled` both derive so they can't diverge. On, `/swagger-ui.html` and
 `/v3/api-docs/**` are public and publish the whole API map, `/api/platform/**` included. Off, springdoc
 registers nothing and they answer **404**. **Production must set `SWAGGER_ENABLED=false`** — the default
-is not safe-by-default, and nothing enforces it yet (PROD-08a should make it a startup failure in
-production mode). The three paths stay in `SecurityConfig.PUBLIC_PATHS` on purpose: removing them would
+is not safe-by-default; since PROD-08a, `APP_ENVIRONMENT=production`/`staging` refuses to start with it on
+(see the PROD-08a paragraph below). The three paths stay in `SecurityConfig.PUBLIC_PATHS` on purpose: removing them would
 turn the 404 into a 401 "log in again" over something that doesn't exist. `/v3/api-docs.yaml` is not in
 that list (the pattern doesn't reach it) so an anonymous caller gets 401 either way; whether an
 *authenticated* caller gets the spec from it was not checked. Pinned by `config/SwaggerDisabledTest` and
@@ -874,7 +874,8 @@ named `dbHealthIndicator` (the name the autoconfiguration backs off from) and as
 are read by hand because the SDK's `enableExternalConfiguration` is `false` by default, so setting those
 variables did nothing before, and turning it on would also admit every other `SENTRY_*` variable. **If
 `SENTRY_ENVIRONMENT` is unset the SDK reports `production`**, so a staging that forgets it files its
-errors under production — nothing enforces it yet (same open item as `SWAGGER_ENABLED`, PROD-08a). The
+errors under production — since PROD-08a, with a DSN set and `APP_ENVIRONMENT` other than `development`, the
+app refuses to start unless `SENTRY_ENVIRONMENT` matches `APP_ENVIRONMENT`. The
 frontend does the same in `frontend/src/lib/sentry.ts` from build variables `VITE_SENTRY_ENVIRONMENT`
 (falls back to Vite's `MODE`) and `VITE_SENTRY_RELEASE` (`release.yml` sets it from the tag; the
 environment is *not* set there because the artifact is promoted between environments). That file also
@@ -885,6 +886,67 @@ with every error raised on those pages. The backend sends no request URLs to Sen
 integration), so it needs no such filter. Not covered: `main()` itself (one line, calls
 `SentryBootstrap`); and the customer-invitation e-mail links to `/cuenta/activar?token=…`, a route the SPA
 does not have (the customer surface is deferred).
+
+**PROD-08a — production configuration check and a separate Flyway role.** Every default in
+`application.properties` is the *development* value, and until now nothing stopped a deployment from booting
+on them. The signal is explicit: `APP_ENVIRONMENT` → `app.environment`, one of `development` (default),
+`staging`, `production` (`AppEnvironment`). **An unknown value refuses to start**, so `prod` or `produccion`
+can't silently switch the checks off. It is deliberately not a Spring profile (§7.1: a `prod` profile
+implements nothing by itself). `ProductionConfigurationRules` (pure: properties, the process environment for
+`SENTRY_*`, and the DB role through a `Supplier`) decides; `ProductionConfigurationCheck` applies it in its
+constructor, like the other startup validators. **All errors come out together** in one
+`IllegalStateException`, one per line, so the operator fixes them in one go; warnings are `WARN` lines.
+- **Errors, in `production` and `staging`:**
+  - `PUBLIC_STOREFRONT_URL` / `PUBLIC_API_URL` not `https`;
+  - `PUBLIC_PLATFORM_DOMAIN` that is `localhost`, `*.localhost`, an IPv4 address, or has no dot;
+  - **`production` only**, Webpay: `WEBPAY_ENVIRONMENT` other than `production`, or the parent code / API key
+    equal to the SDK's sandbox constants (`IntegrationCommerceCodes.WEBPAY_PLUS_MALL`,
+    `IntegrationApiKeys.WEBPAY`). This one closes a real hole: `WebpayServiceImpl` treats *anything* but
+    `production` as integration, so a typo charged in the sandbox and marked orders paid;
+  - local storage with a relative `APP_UPLOAD_DIR` (it lives in the container and dies with it), or `s3` without
+    a bucket;
+  - blank `MAIL_HOST` (mail is skipped silently: no invitations, resets or order e-mails);
+  - `SWAGGER_ENABLED` not false;
+  - `APP_ENCRYPTION_KEY` equal to the old committed value (`EncryptionKeyHolder` only warns, for the local
+    reason in "Local environment"; a production install has no such excuse);
+  - with `SENTRY_DSN` set, `SENTRY_ENVIRONMENT` different from `APP_ENVIRONMENT`;
+  - the DB role: `FLYWAY_USER` blank or equal to `DB_USERNAME`, or the application role (`DatabaseRole`, one
+    query) being superuser, able to `CREATE` in the current schema, or owner of any table.
+- **Warnings:** `POS_ENABLED=false` (off on purpose until POS-1 confirms the contract; make it an error then),
+  blank `RATE_LIMIT_TRUSTED_PROXIES` (the app can't know whether there is a proxy), blank `SENTRY_DSN`.
+- **In `development` nothing is checked and the database is not queried**, so the suite (surefire sets no
+  `app.environment`) and local runs are unchanged. One exception: a `PUBLIC_PLATFORM_DOMAIN` that looks real
+  logs a `WARN` saying `APP_ENVIRONMENT` is missing — the safety net for forgetting the signal.
+- **Flyway role:** `FLYWAY_USER` / `FLYWAY_PASSWORD` → `app.flyway.*`, applied by `FlywayMigrationRole`, a
+  `FlywayConfigurationCustomizer` that calls `configuration.dataSource(spring.datasource.url, user, password)`.
+  Blank, Flyway keeps using the application pool (local dev, where `uvostore` owns everything). **Not**
+  `spring.flyway.user=${FLYWAY_USER:}`: Boot 4.1's `FlywayAutoConfiguration.getMigrationDataSource` only checks
+  for `null`, so the placeholder's `""` builds a second datasource with an empty user that can't connect.
+  Customizers run after Boot sets the datasource, so this one wins. Nothing in `src/main` issues DDL or
+  `TRUNCATE` at runtime, and Hibernate's `validate` reads `pg_catalog`, so DML grants are enough.
+- **Provisioning SQL for the two roles** (PROD-08b does it on the platform; role names are illustrative):
+  ```sql
+  CREATE ROLE uvostore_migrator LOGIN PASSWORD '...';
+  CREATE ROLE uvostore_app LOGIN PASSWORD '...';
+  GRANT CONNECT ON DATABASE uvostore TO uvostore_migrator, uvostore_app;
+  GRANT USAGE, CREATE ON SCHEMA public TO uvostore_migrator;
+  GRANT USAGE ON SCHEMA public TO uvostore_app;
+  -- Already migrated by another role? Hand its tables over first (ALTER TABLE … OWNER TO uvostore_migrator).
+  GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO uvostore_app;
+  GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO uvostore_app;   -- most ids are BIGSERIAL
+  ALTER DEFAULT PRIVILEGES FOR ROLE uvostore_migrator IN SCHEMA public
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO uvostore_app;
+  ALTER DEFAULT PRIVILEGES FOR ROLE uvostore_migrator IN SCHEMA public
+      GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO uvostore_app;
+  ```
+  The default privileges are what make the next migration's tables reachable by the app without a new grant.
+- **Tests:** `config/ProductionConfigurationRulesTest` (pure; the development defaults are read from the real
+  `application.properties` with no environment, so a new unsafe default can't slip by),
+  `ProductionConfigurationCheckTest` (constructor + logs), `DatabaseRoleQueryTest` (the real query: local and
+  CI connect as a superuser that owns everything, exactly what production forbids) and
+  `FlywayMigrationRoleTest` (the customizer, plus a nested `@SpringBootTest` proving Boot applies it).
+- **Not covered:** whether an absolute upload directory is really a persistent volume (the app can't know);
+  the per-store Stripe keys in `settings` (runtime data, not startup configuration).
 
 **Which exception to throw** (M1): a rule the caller broke, in words meant for them, is
 `BusinessException` → 400 with the message. A request that can't be served but wasn't wrong is

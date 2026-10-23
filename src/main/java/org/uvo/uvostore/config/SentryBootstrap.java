@@ -25,7 +25,8 @@ import java.util.function.UnaryOperator;
  * solo rellena el segundo; ver {@code .env.example}).
  *
  * <p><b>Lo que esto no impone:</b> si {@code SENTRY_ENVIRONMENT} falta, el SDK sigue diciendo
- * {@code production}. Un staging que se olvide de ponerla informará como producción.
+ * {@code production}. Lo impone PROD-08a: con DSN y {@code APP_ENVIRONMENT} distinto de {@code development},
+ * {@link ProductionConfigurationRules} no deja arrancar si los dos ambientes no coinciden.
  */
 public final class SentryBootstrap {
 
