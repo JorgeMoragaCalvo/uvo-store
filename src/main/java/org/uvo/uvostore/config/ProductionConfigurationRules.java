@@ -3,6 +3,7 @@ package org.uvo.uvostore.config;
 import cl.transbank.common.IntegrationApiKeys;
 import cl.transbank.common.IntegrationCommerceCodes;
 import org.springframework.core.env.PropertyResolver;
+import org.uvo.uvostore.security.IpRanges;
 
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
@@ -71,6 +72,7 @@ public final class ProductionConfigurationRules {
         storage(properties, errors);
         mail(properties, errors);
         swagger(properties, errors);
+        platformNetworks(properties, errors);
         encryptionKey(properties, errors);
         sentry(environment, processEnv, errors, warnings);
         databaseRole(properties, database, errors);
@@ -158,6 +160,20 @@ public final class ProductionConfigurationRules {
         if (bool(properties, "app.swagger.enabled", true)) {
             errors.add("SWAGGER_ENABLED no es false: /swagger-ui.html y /v3/api-docs son públicos y publican el mapa "
                     + "completo de la API, incluida la de plataforma. Pon SWAGGER_ENABLED=false.");
+        }
+    }
+
+    /**
+     * POS-6. La API de plataforma crea tiendas: solo se llama desde la red privada. Un {@code /0} en la lista la abre
+     * a todo Internet, que es justo lo que la lista existe para impedir. Las entradas mal escritas no se miran aquí:
+     * {@code PlatformNetworkPolicy} ya impide el arranque por ellas.
+     */
+    private static void platformNetworks(PropertyResolver properties, List<String> errors) {
+        String networks = text(properties, "app.platform.allowed-networks", "");
+        if (IpRanges.parseLenient(networks, entry -> { }).coversEverything()) {
+            errors.add("PLATFORM_ALLOWED_NETWORKS es '" + networks + "' e incluye un rango /0: la API de plataforma, "
+                    + "que crea tiendas, queda abierta a todo Internet. Pon solo la red privada desde la que llama "
+                    + "UvoPOS, por ejemplo 10.0.0.0/8.");
         }
     }
 

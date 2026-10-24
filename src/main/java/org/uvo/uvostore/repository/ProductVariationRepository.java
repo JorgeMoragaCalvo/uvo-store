@@ -16,6 +16,10 @@ public interface ProductVariationRepository extends JpaRepository<ProductVariati
     List<ProductVariation> findByProductIdAndActiveTrue(Long productId);
     // PROD-17b: findByActiveTrueAndStockGreaterThan y findBySku (sin tienda, sin llamadores) se quitaron.
 
+    // POS-6. Un SKU de variante repetido en la tienda (UNIQUE(store_id, sku)) es un 400 al crearla desde el POS,
+    // no un 500 por la restricción.
+    boolean existsByStoreIdAndSku(Long storeId, String sku);
+
     // C5: same conditional-UPDATE reasoning as ProductRepository.decrementStock — see the comment
     // there. 0 rows affected means the stock wasn't available.
     @Modifying(clearAutomatically = true, flushAutomatically = true)

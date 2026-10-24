@@ -28,7 +28,8 @@ import org.uvo.uvostore.repository.SettingRepository;
 @Component
 public class PosIntegrationPolicy {
 
-    static final String STORE_SETTING_KEY = "pos_sync_enabled";
+    // Pública por POS-6: el alta desde el POS la escribe al crear la tienda.
+    public static final String STORE_SETTING_KEY = "pos_sync_enabled";
 
     private final boolean enabled;
     private final SettingRepository settingRepository;

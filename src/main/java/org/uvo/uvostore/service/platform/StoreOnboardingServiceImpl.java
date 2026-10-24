@@ -1,9 +1,11 @@
 package org.uvo.uvostore.service.platform;
 
-import org.uvo.uvostore.service.BusinessException;
-import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.ResultSetExtractor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.uvo.uvostore.entity.pos.PosConnection;
 import org.uvo.uvostore.entity.security.Role;
 import org.uvo.uvostore.entity.security.User;
 import org.uvo.uvostore.entity.settings.Setting;
@@ -11,22 +13,34 @@ import org.uvo.uvostore.entity.settings.StoreSettings;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.entity.tenant.enums.StoreStatus;
 import org.uvo.uvostore.repository.PermissionRepository;
+import org.uvo.uvostore.repository.PosConnectionRepository;
 import org.uvo.uvostore.repository.RoleRepository;
 import org.uvo.uvostore.repository.SettingRepository;
 import org.uvo.uvostore.repository.StoreRepository;
 import org.uvo.uvostore.repository.StoreSettingsRepository;
 import org.uvo.uvostore.repository.UserRepository;
+import org.uvo.uvostore.service.BusinessException;
+import org.uvo.uvostore.service.pos.PosApiKey;
+import org.uvo.uvostore.service.pos.PosIntegrationPolicy;
+import org.uvo.uvostore.service.security.AdminInvitationMailer;
 import org.uvo.uvostore.service.url.StorePublicUrlResolver;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 import java.util.Set;
 
 // Store onboarding is deliberately NOT self-service — see PlatformApiKeyAuthFilter. The operator
 // team collects the client's nick/domain/admin credentials through whatever channel they use, and
 // enters them here once; from that point on the client manages everything themselves through the
 // normal admin panel (already fully built) under their own slug/domain.
+//
+// POS-6: the UvoPOS backend calls this too, when a company activates the e-commerce module, with the
+// `pos` block — and then the same step creates the PosConnection with the secrets the POS generated.
+// In both cases the owner is invited: nobody chooses someone else's password anymore.
 @Service
 public class StoreOnboardingServiceImpl implements StoreOnboardingService {
 
@@ -39,27 +53,51 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
     /** La clave de {@code settings} que lee y escribe {@code SettingsServiceImpl} para «Ajustes generales». */
     private static final String STORE_NAME_KEY = "store_name";
 
+    /** La URL de la API del POS que muestra «Ajustes generales» ({@code SettingsServiceImpl}). */
+    private static final String POS_API_URL_KEY = "pos_api_url";
+
+    /**
+     * POS-6. El primer entero del cerrojo de alta por empresa ({@code pg_advisory_xact_lock(int, int)}). La forma de
+     * dos enteros es un espacio de claves aparte de la de un {@code bigint} que usan los jobs
+     * ({@code AdvisoryLock}), así que no puede chocar con ellos.
+     */
+    static final int ONBOARDING_LOCK_CLASS = 7312;
+
+    /** POS-6. El largo mínimo de la clave del token: lo genera una máquina, no lo teclea nadie. */
+    static final int MIN_GENERATED_KEY_LENGTH = 32;
+
     private final StoreRepository storeRepository;
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final PermissionRepository permissionRepository;
     private final StoreSettingsRepository storeSettingsRepository;
     private final SettingRepository settingRepository;
-    private final PasswordEncoder passwordEncoder;
+    private final PosConnectionRepository posConnectionRepository;
+    private final PosIntegrationPolicy posPolicy;
+    private final AdminInvitationMailer invitationMailer;
+    private final ApplicationEventPublisher events;
+    private final JdbcTemplate jdbcTemplate;
     private final StorePublicUrlResolver publicUrls;
 
     public StoreOnboardingServiceImpl(StoreRepository storeRepository, UserRepository userRepository,
                                       RoleRepository roleRepository, PermissionRepository permissionRepository,
                                       StoreSettingsRepository storeSettingsRepository,
                                       SettingRepository settingRepository,
-                                      PasswordEncoder passwordEncoder, StorePublicUrlResolver publicUrls) {
+                                      PosConnectionRepository posConnectionRepository,
+                                      PosIntegrationPolicy posPolicy, AdminInvitationMailer invitationMailer,
+                                      ApplicationEventPublisher events, JdbcTemplate jdbcTemplate,
+                                      StorePublicUrlResolver publicUrls) {
         this.storeRepository = storeRepository;
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.permissionRepository = permissionRepository;
         this.storeSettingsRepository = storeSettingsRepository;
         this.settingRepository = settingRepository;
-        this.passwordEncoder = passwordEncoder;
+        this.posConnectionRepository = posConnectionRepository;
+        this.posPolicy = posPolicy;
+        this.invitationMailer = invitationMailer;
+        this.events = events;
+        this.jdbcTemplate = jdbcTemplate;
         this.publicUrls = publicUrls;
     }
 
@@ -67,6 +105,19 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
     @Transactional
     public StoreOnboardingResponse createStore(StoreOnboardingCommand command) {
         String slug = command.slug().toLowerCase().trim();
+        StoreOnboardingCommand.PosLink pos = command.pos();
+        if (pos != null) {
+            requireUsablePosLink(pos);
+            // POS-6. Idempotente por la empresa del POS, que es la clave natural: company_id es UNIQUE en
+            // pos_connections. El cerrojo va antes de mirar, para que dos reintentos simultáneos no vean los dos
+            // "no existe" y el segundo acabe en un 500 por la restricción única del nick.
+            lockOnboardingOf(pos.companyId());
+            Optional<PosConnection> existing = posConnectionRepository.findByCompanyId(pos.companyId());
+            if (existing.isPresent()) {
+                return replay(existing.get(), slug, command);
+            }
+        }
+
         if (storeRepository.existsBySlug(slug)) {
             throw new BusinessException("Ese nick ya está en uso");
         }
@@ -86,7 +137,11 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
         admin.setStore(savedStore);
         admin.setName(command.adminName());
         admin.setEmail(command.adminEmail());
-        admin.setPassword(passwordEncoder.encode(command.adminPassword()));
+        // POS-6. El dueño nace sin contraseña y con una invitación de un solo uso, como un administrador invitado
+        // desde el panel (PROD-06): antes la elegía el operador, que la conocía para siempre. Mientras no la
+        // acepte no puede entrar: adminLogin compara contra un hash nulo y el encoder responde que no.
+        admin.setPassword(null);
+        invitationMailer.issue(admin);
         admin.setActive(true);
         admin.setAdmin(true);
         admin.setRoles(new HashSet<>(Set.of(ownerRole(savedStore))));
@@ -96,8 +151,104 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
         storeRepository.save(savedStore);
 
         seedStoreName(savedStore);
+        if (pos != null) {
+            connect(savedStore, pos);
+        }
 
-        return toResponse(savedStore, savedAdmin);
+        // El correo sale después del commit (StoreOwnerInvitationListener): si el alta se deshiciera, el dueño
+        // recibiría un enlace con un token que no existe.
+        events.publishEvent(new StoreOwnerInvitedEvent(savedAdmin.getId()));
+        return toResponse(savedStore, savedAdmin, true);
+    }
+
+    /**
+     * POS-6. Lo que el bloque {@code pos} tiene que cumplir más allá de sus anotaciones, comprobado antes de escribir
+     * nada.
+     *
+     * <p>La integración tiene que estar encendida en la plataforma: con {@code POS_ENABLED=false},
+     * {@code /api/sync/**} responde 404, así que la tienda quedaría creada y el POS no podría cargarle el catálogo
+     * — un alta a medias. Y el token tiene que ser de esa empresa, con una clave de máquina.
+     *
+     * <p>Ningún mensaje repite el token: vuelve en la respuesta.
+     */
+    private void requireUsablePosLink(StoreOnboardingCommand.PosLink pos) {
+        if (!posPolicy.isEnabled()) {
+            throw new BusinessException("La integración con UvoPOS está apagada en esta plataforma (POS_ENABLED): "
+                    + "sin ella el POS no podría cargar el catálogo de la tienda.");
+        }
+        Long tokenCompany = PosApiKey.companyIdOf(pos.apiKey()).orElse(null);
+        if (!pos.companyId().equals(tokenCompany)) {
+            throw new BusinessException("El token de la API no tiene el formato uvp_<empresa>_<clave> de la empresa "
+                    + pos.companyId() + ".");
+        }
+        if (PosApiKey.secretLength(pos.apiKey()) < MIN_GENERATED_KEY_LENGTH) {
+            throw new BusinessException("La clave del token de la API debe tener al menos " + MIN_GENERATED_KEY_LENGTH
+                    + " caracteres.");
+        }
+    }
+
+    /**
+     * POS-6. Un cerrojo por empresa que dura lo que la transacción. Va por {@code JdbcTemplate}, que usa la misma
+     * conexión que la transacción de JPA. La clave es el hash de la empresa: dos empresas con el mismo hash solo
+     * se esperarían una a la otra, nunca se mezclarían.
+     */
+    private void lockOnboardingOf(Long companyId) {
+        jdbcTemplate.query("select pg_advisory_xact_lock(?, ?)", (ResultSetExtractor<Void>) rs -> null,
+                ONBOARDING_LOCK_CLASS, Long.hashCode(companyId));
+    }
+
+    /**
+     * POS-6. La empresa ya tiene tienda: es un reintento del POS, y <b>no escribe nada</b>.
+     *
+     * <p>Si el reintento es el mismo alta (mismo nick, mismos secretos, mismo dueño), devuelve la tienda que ya
+     * existe. Si algo de eso cambió, se rechaza en vez de actualizar. Actualizar los secretos parecería más
+     * cómodo, pero un reintento atrasado de una activación anterior volvería a poner unos secretos que el POS ya
+     * no tiene, y desde ese momento ninguna llamada autenticaría. Y tampoco puede revivir ni cambiarle las
+     * credenciales a una conexión desactivada o a una tienda suspendida, que es cosa de PROD-23.
+     */
+    private StoreOnboardingResponse replay(PosConnection connection, String slug, StoreOnboardingCommand command) {
+        StoreOnboardingCommand.PosLink pos = command.pos();
+        Store store = connection.getStore();
+        if (!store.getSlug().equals(slug)) {
+            throw new BusinessException("La empresa " + pos.companyId() + " ya tiene la tienda " + store.getSlug() + ".");
+        }
+        User owner = store.getOwnerUserId() == null ? null : userRepository.findById(store.getOwnerUserId()).orElse(null);
+        boolean sameAlta = owner != null
+                && owner.getEmail().equalsIgnoreCase(command.adminEmail().trim())
+                && constantTimeEquals(connection.getApiKey(), pos.apiKey())
+                && constantTimeEquals(connection.getWebhookSecret(), pos.webhookSecret());
+        if (!sameAlta) {
+            throw new BusinessException("La empresa " + pos.companyId() + " ya está conectada con otras credenciales.");
+        }
+        return toResponse(store, owner, false);
+    }
+
+    /**
+     * POS-6. La conexión con el POS, con los secretos que generó el POS (los cifra {@code EncryptedStringConverter}
+     * al guardar), y los dos ajustes que la hacen operativa: {@code pos_sync_enabled}, sin el cual
+     * {@code PosIntegrationPolicy} trata la tienda como apagada, y {@code pos_api_url}, que muestra el panel.
+     */
+    private void connect(Store store, StoreOnboardingCommand.PosLink pos) {
+        PosConnection connection = new PosConnection();
+        connection.setStore(store);
+        connection.setCompanyId(pos.companyId());
+        connection.setCompanyName(pos.companyName());
+        connection.setApiUrl(pos.apiUrl());
+        connection.setApiKey(pos.apiKey());
+        connection.setWebhookSecret(pos.webhookSecret());
+        connection.setActive(true);
+        connection.setConnectedAt(Instant.now());
+        posConnectionRepository.save(connection);
+
+        seedSetting(store, PosIntegrationPolicy.STORE_SETTING_KEY, "true");
+        seedSetting(store, POS_API_URL_KEY, pos.apiUrl());
+    }
+
+    private static boolean constantTimeEquals(String stored, String received) {
+        if (stored == null || received == null) {
+            return false;
+        }
+        return MessageDigest.isEqual(stored.getBytes(StandardCharsets.UTF_8), received.getBytes(StandardCharsets.UTF_8));
     }
 
     @Override
@@ -120,7 +271,7 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
         store.setDomain(normalized);
         Store saved = storeRepository.save(store);
         User admin = saved.getOwnerUserId() == null ? null : userRepository.findById(saved.getOwnerUserId()).orElse(null);
-        return toResponse(saved, admin);
+        return toResponse(saved, admin, false);
     }
 
     /**
@@ -146,7 +297,7 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
         store.setDomainVerifiedAt(verified ? Instant.now() : null);
         Store saved = storeRepository.save(store);
         User admin = saved.getOwnerUserId() == null ? null : userRepository.findById(saved.getOwnerUserId()).orElse(null);
-        return toResponse(saved, admin);
+        return toResponse(saved, admin, false);
     }
 
     /**
@@ -199,24 +350,30 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
         branding.setStoreName(store.getName());
         storeSettingsRepository.save(branding);
 
-        Setting general = new Setting();
-        general.setStore(store);
-        general.setSettingKey(STORE_NAME_KEY);
-        general.setValue(store.getName());
-        settingRepository.save(general);
+        seedSetting(store, STORE_NAME_KEY, store.getName());
+    }
+
+    /** Una fila de {@code settings} de una tienda recién creada, sin pasar por {@code TenantContext}. */
+    private void seedSetting(Store store, String key, String value) {
+        Setting setting = new Setting();
+        setting.setStore(store);
+        setting.setSettingKey(key);
+        setting.setValue(value);
+        settingRepository.save(setting);
     }
 
     private String normalizeDomain(String domain) {
         return domain == null || domain.isBlank() ? null : domain.toLowerCase().trim();
     }
 
-    private StoreOnboardingResponse toResponse(Store store, User admin) {
+    private StoreOnboardingResponse toResponse(Store store, User admin, boolean created) {
         return new StoreOnboardingResponse(
                 store.getId(), store.getName(), store.getSlug(), store.getDomain(),
                 admin == null ? null : admin.getId(), admin == null ? null : admin.getEmail(),
                 store.getDomainVerifiedAt(),
                 publicUrls.storefrontOrigin(store),
-                publicUrls.storefrontUrl(store, "/admin/login")
+                publicUrls.storefrontUrl(store, "/admin/login"),
+                created
         );
     }
 }

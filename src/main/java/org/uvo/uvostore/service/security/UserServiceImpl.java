@@ -1,8 +1,5 @@
 package org.uvo.uvostore.service.security;
 
-import io.sentry.Sentry;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -16,44 +13,37 @@ import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.security.TokenVersionService;
 import org.uvo.uvostore.service.BusinessException;
 import org.uvo.uvostore.service.catalog.FileStorageService;
-import org.uvo.uvostore.service.notification.EmailService;
-import org.uvo.uvostore.service.url.StorePublicUrlResolver;
 
 import java.time.Duration;
-import java.time.Instant;
 import java.util.HashSet;
 import java.util.NoSuchElementException;
 import java.util.Set;
-import java.util.UUID;
 
 @Service
 public class UserServiceImpl implements UserService {
-
-    private static final Logger log = LoggerFactory.getLogger(UserServiceImpl.class);
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final FileStorageService fileStorageService;
     private final TokenVersionService tokenVersionService;
-    private final EmailService emailService;
-    private final StorePublicUrlResolver publicUrls;
     // PROD-06. La vigencia de la invitación y el intervalo entre reenvíos los decide un solo sitio: antes
     // ttl-days se leía aquí y en AuthController por separado.
     private final AdminInvitationPolicy invitationPolicy;
+    // POS-6. El token y el correo de la invitación, compartidos con el alta de tiendas.
+    private final AdminInvitationMailer invitationMailer;
 
     public UserServiceImpl(UserRepository userRepository, RoleRepository roleRepository,
                             PasswordEncoder passwordEncoder, FileStorageService fileStorageService,
-                            TokenVersionService tokenVersionService, EmailService emailService,
-                            StorePublicUrlResolver publicUrls, AdminInvitationPolicy invitationPolicy) {
+                            TokenVersionService tokenVersionService, AdminInvitationPolicy invitationPolicy,
+                            AdminInvitationMailer invitationMailer) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
         this.fileStorageService = fileStorageService;
         this.tokenVersionService = tokenVersionService;
-        this.emailService = emailService;
-        this.publicUrls = publicUrls;
         this.invitationPolicy = invitationPolicy;
+        this.invitationMailer = invitationMailer;
     }
 
     @Override
@@ -74,7 +64,7 @@ public class UserServiceImpl implements UserService {
             // (AbstractValidatingPasswordEncoder: `!StringUtils.hasLength(encodedPassword)` → false), así
             // que no hay ventana en la que la cuenta valga sin activarse.
             user.setPassword(null);
-            issueInvitation(user);
+            invitationMailer.issue(user);
         } else {
             // Sin invitación hace falta contraseña, y se exige AQUÍ — antes no se exigía en ninguna parte,
             // pese a lo que afirma el comentario de UserRequest ("Presence on create is enforced in
@@ -103,7 +93,7 @@ public class UserServiceImpl implements UserService {
         saved = userRepository.save(saved);
 
         if (command.sendInvitation()) {
-            sendInvitationEmail(saved, store);
+            invitationMailer.send(saved, store);
         }
         return saved;
     }
@@ -147,56 +137,10 @@ public class UserServiceImpl implements UserService {
                     + minutesLeft + (minutesLeft == 1 ? " minuto" : " minutos") + " antes de reenviarla");
         }
 
-        issueInvitation(user);
+        invitationMailer.issue(user);
         User saved = userRepository.save(user);
-        sendInvitationEmail(saved, store);
+        invitationMailer.send(saved, store);
         return saved;
-    }
-
-    /**
-     * Un token de un solo uso y la fecha desde la que cuenta su vigencia.
-     *
-     * <p>Dos UUID sin guiones: 64 caracteres, porque esto viaja en una URL y es lo único que separa a un
-     * desconocido del panel. Reescribirlo es lo que invalida el anterior.
-     */
-    private void issueInvitation(User user) {
-        user.setInvitationToken(UUID.randomUUID().toString().replace("-", "") + UUID.randomUUID().toString().replace("-", ""));
-        user.setInvitationSentAt(Instant.now());
-    }
-
-    /**
-     * El correo con el enlace para elegir contraseña.
-     *
-     * <p>Los fallos se registran y no se propagan <b>a propósito</b>: el administrador ya está creado y su
-     * token sigue siendo válido, así que tumbar el alta por un SMTP caído sería perder trabajo bueno. Si el
-     * correo no sale queda en el log y en Sentry, y el token se puede entregar a mano mientras no exista
-     * una pantalla de reenvío — que hoy no existe, y está anotado como pendiente.
-     */
-    private void sendInvitationEmail(User user, Store store) {
-        try {
-            emailService.send(user.getEmail(), "Te invitaron a administrar " + store.getName(),
-                    invitationBody(user, store));
-        } catch (Exception e) {
-            log.error("Error enviando la invitación de administrador user_id={} error={}", user.getId(), e.getMessage());
-            Sentry.captureException(e);
-        }
-    }
-
-    /**
-     * Visible en el paquete para poder afirmar sobre el cuerpo sin enviar nada: en los tests no hay SMTP y
-     * {@code EmailServiceImpl} registra y omite el envío. Mismo recurso que
-     * {@code OrderEmailComposer.invitationBody} y {@code MercadoPagoServiceImpl.buildPreferenceRequest}.
-     */
-    String invitationBody(User user, Store store) {
-        return "Hola " + user.getName() + ",\n\n"
-                + "Te dieron acceso al panel de administración de " + store.getName() + ". "
-                + "Elige tu contraseña aquí para entrar:\n\n"
-                // PROD-04: el panel de SU tienda. Con la URL global, invitar a un administrador de la
-                // tienda B le mandaba al panel de la tienda A, donde su token no vale nada porque el
-                // endpoint de aceptación resuelve el tenant por el Host.
-                + publicUrls.storefrontUrl(store, "/admin/aceptar-invitacion?token=" + user.getInvitationToken()) + "\n\n"
-                + "El enlace es de un solo uso y caduca en " + invitationPolicy.ttlDays() + " días. "
-                + "Nadie más conoce tu contraseña: la eliges tú.";
     }
 
     @Override

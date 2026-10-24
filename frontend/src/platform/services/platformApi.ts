@@ -1,12 +1,12 @@
 import axios from 'axios'
 
+// POS-6. Sin contraseña: el dueño recibe una invitación por correo y la elige él.
 export interface StoreOnboardingRequest {
   slug: string
   domain: string
   storeName: string
   adminName: string
   adminEmail: string
-  adminPassword: string
 }
 
 export interface StoreOnboardingResponse {
@@ -22,6 +22,8 @@ export interface StoreOnboardingResponse {
   domainVerifiedAt: string | null
   storefrontUrl: string
   adminUrl: string
+  // POS-6. false cuando UvoPOS reintenta un alta que ya existía. Desde este formulario siempre es true.
+  created: boolean
 }
 
 const client = axios.create({
@@ -33,7 +35,8 @@ client.interceptors.response.use(
   (response) => response.data,
   (error) => {
     const data = error.response?.data
-    return Promise.reject({ message: data?.message ?? error.message, ...data })
+    // POS-6: el estado viaja aparte para distinguir un 404, que aquí significa "fuera de la red privada".
+    return Promise.reject({ status: error.response?.status, message: data?.message ?? error.message, ...data })
   },
 )
 

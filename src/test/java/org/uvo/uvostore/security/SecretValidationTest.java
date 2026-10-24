@@ -81,7 +81,8 @@ class SecretValidationTest {
     @Test
     @DisplayName("PlatformApiKeyAuthFilter: clave ausente falla el arranque, no la petición")
     void platformKeyMissing() {
-        assertThatThrownBy(() -> new PlatformApiKeyAuthFilter(""))
+        // La red y el ObjectMapper no se usan al construir: la clave se valida antes de mirarlos.
+        assertThatThrownBy(() -> new PlatformApiKeyAuthFilter("", null, null))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("PLATFORM_API_KEY");
     }
@@ -89,7 +90,7 @@ class SecretValidationTest {
     @Test
     @DisplayName("PlatformApiKeyAuthFilter: el valor por defecto commiteado es rechazado")
     void platformKeyLegacyDefault() {
-        assertThatThrownBy(() -> new PlatformApiKeyAuthFilter(RequiredSecret.LEGACY_PLATFORM_API_KEY))
+        assertThatThrownBy(() -> new PlatformApiKeyAuthFilter(RequiredSecret.LEGACY_PLATFORM_API_KEY, null, null))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("PLATFORM_API_KEY");
     }
@@ -97,7 +98,7 @@ class SecretValidationTest {
     @Test
     @DisplayName("PlatformApiKeyAuthFilter: una clave cualquiera no vacía construye")
     void platformKeyValid() {
-        assertThatCode(() -> new PlatformApiKeyAuthFilter("una-clave-de-plataforma")).doesNotThrowAnyException();
+        assertThatCode(() -> new PlatformApiKeyAuthFilter("una-clave-de-plataforma", null, null)).doesNotThrowAnyException();
     }
 
     @Test

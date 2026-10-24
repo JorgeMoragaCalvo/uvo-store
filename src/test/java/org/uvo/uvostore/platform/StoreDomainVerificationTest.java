@@ -124,8 +124,7 @@ class StoreDomainVerificationTest extends IntegrationTestSupport {
                           "domain": "%s",
                           "storeName": "Tienda de prueba",
                           "adminName": "Admin de prueba",
-                          "adminEmail": "admin-%d@test.local",
-                          "adminPassword": "password123456"
+                          "adminEmail": "admin-%d@test.local"
                         }
                         """.formatted(slug, domain, nextSeq()));
     }

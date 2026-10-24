@@ -7,6 +7,8 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import platformApi, { type StoreOnboardingResponse } from '@/platform/services/platformApi'
 
+// POS-6. Sin contraseña del cliente: la tienda nace con su dueño invitado por correo, y la contraseña la
+// elige él. Antes la escribía el operador, que la conocía para siempre.
 interface FormState {
   platformKey: string
   slug: string
@@ -14,7 +16,6 @@ interface FormState {
   storeName: string
   adminName: string
   adminEmail: string
-  adminPassword: string
 }
 
 const EMPTY_FORM: FormState = {
@@ -24,7 +25,6 @@ const EMPTY_FORM: FormState = {
   storeName: '',
   adminName: '',
   adminEmail: '',
-  adminPassword: '',
 }
 
 export default function NewStore() {
@@ -46,13 +46,17 @@ export default function NewStore() {
         storeName: form.storeName,
         adminName: form.adminName,
         adminEmail: form.adminEmail,
-        adminPassword: form.adminPassword,
       })
       setCreated(response)
       toast.success('Tienda creada')
     } catch (err) {
-      const message = (err as { message?: string })?.message
-      toast.error(message ?? 'No se pudo crear la tienda')
+      const { status, message } = (err ?? {}) as { status?: number; message?: string }
+      // POS-6: fuera de la red privada la API de plataforma responde 404, como si no existiera.
+      if (status === 404) {
+        toast.error('La API de plataforma no es accesible desde esta red')
+      } else {
+        toast.error(message ?? 'No se pudo crear la tienda')
+      }
     } finally {
       setSaving(false)
     }
@@ -67,6 +71,10 @@ export default function NewStore() {
             <CardDescription>Pásale estos datos al cliente para que entre a su panel.</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3 text-sm">
+            <p>
+              Le enviamos una invitación a <span className="font-medium">{created.adminEmail}</span> para que
+              elija su contraseña. Si no le llega, puede usar «¿Olvidaste tu contraseña?» en el panel.
+            </p>
             <div>
               <span className="text-muted-foreground">Tienda: </span>
               <span className="font-medium">{created.storeName}</span>
@@ -169,17 +177,9 @@ export default function NewStore() {
                 onChange={(e) => set('adminEmail', e.target.value)}
               />
             </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="adminPassword">Contraseña del cliente</Label>
-              <Input
-                id="adminPassword"
-                type="password"
-                required
-                minLength={8}
-                value={form.adminPassword}
-                onChange={(e) => set('adminPassword', e.target.value)}
-              />
-            </div>
+            <p className="text-xs text-muted-foreground">
+              El cliente recibirá una invitación en ese correo para elegir su contraseña.
+            </p>
             <Button type="submit" disabled={saving}>
               {saving ? 'Creando…' : 'Crear tienda'}
             </Button>

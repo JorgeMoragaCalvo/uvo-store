@@ -10,6 +10,10 @@ import java.time.Instant;
  * concretas que el alta tenía que entregar y no entregaba: el §6.2 del plan de producción pide «se crea
  * propietario con permisos y se entrega una URL concreta del storefront y otra del panel», y hasta ahora
  * el operador tenía que componerlas de memoria a partir del nick.
+ *
+ * <p>POS-6 añade {@code created}: {@code false} cuando el POS reintenta un alta que ya se hizo y la respuesta es
+ * la tienda que ya existía. Los cambios de dominio responden siempre {@code false}. <b>Nunca lleva los secretos
+ * de la conexión</b>: los generó el POS y ya los tiene.
  */
 public record StoreOnboardingResponse(
         Long storeId,
@@ -20,6 +24,7 @@ public record StoreOnboardingResponse(
         String adminEmail,
         Instant domainVerifiedAt,
         String storefrontUrl,
-        String adminUrl
+        String adminUrl,
+        boolean created
 ) {
 }

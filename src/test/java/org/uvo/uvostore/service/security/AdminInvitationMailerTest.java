@@ -12,15 +12,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * El cuerpo del correo de invitación de administrador.
  *
- * <p>En este paquete porque {@code invitationBody(...)} es visible solo en el paquete — la misma razón por
- * la que {@code MercadoPagoPreferenceTest} vive junto a su servicio y por la que el test del cuerpo de la
- * invitación de cliente vive junto a su oyente. Es lo único que se puede acreditar sobre el envío: en los
- * tests no hay SMTP y {@code EmailServiceImpl} registra y omite.
+ * <p>En este paquete porque {@code body(...)} es visible solo en el paquete — la misma razón por la que
+ * {@code MercadoPagoPreferenceTest} vive junto a su servicio y por la que el test del cuerpo de la invitación de
+ * cliente vive junto a su oyente. Es lo único que se puede acreditar sobre el envío: en los tests no hay SMTP y
+ * {@code EmailServiceImpl} registra y omite.
+ *
+ * <p>Antes era {@code AdminInvitationEmailTest} y probaba {@code UserServiceImpl.invitationBody}. POS-6 sacó el
+ * correo a {@link AdminInvitationMailer} para que el alta de tiendas invite al dueño con lo mismo.
  */
-class AdminInvitationEmailTest extends IntegrationTestSupport {
+class AdminInvitationMailerTest extends IntegrationTestSupport {
 
     @Autowired
-    private UserServiceImpl userService;
+    private AdminInvitationMailer invitationMailer;
 
     @Test
     @DisplayName("El enlace lleva el token, y el correo dice a qué tienda y que la clave la elige él")
@@ -29,7 +32,7 @@ class AdminInvitationEmailTest extends IntegrationTestSupport {
         User user = createAdmin(store, "adm-inv-body");
         user.setInvitationToken("token-de-prueba-0123456789");
 
-        String body = userService.invitationBody(user, store);
+        String body = invitationMailer.body(user, store);
 
         // Sin el token el correo no sirve para nada.
         assertThat(body).contains("token-de-prueba-0123456789");
@@ -55,8 +58,8 @@ class AdminInvitationEmailTest extends IntegrationTestSupport {
         firstUser.setInvitationToken("token-a");
         secondUser.setInvitationToken("token-b");
 
-        String firstBody = userService.invitationBody(firstUser, first);
-        String secondBody = userService.invitationBody(secondUser, second);
+        String firstBody = invitationMailer.body(firstUser, first);
+        String secondBody = invitationMailer.body(secondUser, second);
 
         assertThat(firstBody).contains("http://" + hostHeader(first) + "/admin/aceptar-invitacion");
         assertThat(secondBody).contains("http://" + hostHeader(second) + "/admin/aceptar-invitacion");
@@ -73,13 +76,13 @@ class AdminInvitationEmailTest extends IntegrationTestSupport {
 
         // Sin verificar: el dominio está escrito pero su DNS puede no apuntar aquí todavía, y un correo
         // con ese enlace sería un correo inservible que nadie puede reenviar.
-        assertThat(userService.invitationBody(user, store))
+        assertThat(invitationMailer.body(user, store))
                 .contains("http://" + hostHeader(store) + "/admin/aceptar-invitacion")
                 .doesNotContain(store.getDomain());
 
         store.setDomainVerifiedAt(java.time.Instant.now());
 
-        assertThat(userService.invitationBody(user, store))
+        assertThat(invitationMailer.body(user, store))
                 .contains("http://" + store.getDomain() + "/admin/aceptar-invitacion");
     }
 }
