@@ -9,15 +9,11 @@ import org.uvo.uvostore.repository.PosConnectionRepository;
 import org.uvo.uvostore.repository.SettingRepository;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.BusinessException;
+import org.uvo.uvostore.service.pos.PosApiKey;
 import org.uvo.uvostore.service.pos.PosIntegrationPolicy;
-
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 @Service
 public class SettingsServiceImpl implements SettingsService {
-
-    private static final Pattern API_KEY_PATTERN = Pattern.compile("^uvp_(\\d+)_([A-Za-z0-9]+)$");
 
     private final SettingRepository settingRepository;
     private final PosConnectionRepository posConnectionRepository;
@@ -99,12 +95,9 @@ public class SettingsServiceImpl implements SettingsService {
         // are never stored in the plain-text `settings` table — only on PosConnection, whose
         // apiKey/webhookSecret columns are encrypted at rest (see EncryptedStringConverter).
         if (!posToken.isEmpty()) {
-            Matcher matcher = API_KEY_PATTERN.matcher(posToken);
-            if (!matcher.matches()) {
-                throw new IllegalArgumentException("API key inválida");
-            }
+            Long companyId = PosApiKey.companyIdOf(posToken)
+                    .orElseThrow(() -> new IllegalArgumentException("API key inválida"));
             Store store = TenantContext.requireCurrent();
-            Long companyId = Long.valueOf(matcher.group(1));
             PosConnection connection = posConnectionRepository.findByStoreId(store.getId()).orElseGet(PosConnection::new);
             connection.setStore(store);
             connection.setCompanyId(companyId);

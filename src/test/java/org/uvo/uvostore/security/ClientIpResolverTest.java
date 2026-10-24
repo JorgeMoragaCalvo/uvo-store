@@ -86,6 +86,71 @@ class ClientIpResolverTest {
                 .isEqualTo("198.51.100.9");
     }
 
+    // --- POS-6 ------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("POS-6: un proxy confiable IPv4 no hace confiable a una IPv6 que empiece con el mismo byte")
+    void aTrustedIpv4RangeDoesNotTrustAnIpv6Peer() {
+        // Con IpAddressMatcher de Spring, 10.0.0.0/8 aceptaba a00::1 como proxy confiable, y entonces se creía la
+        // cabecera que mandara.
+        ClientIpResolver resolver = new ClientIpResolver("10.0.0.0/8");
+
+        assertThat(resolver.resolve(request("a00::1", "198.51.100.9"))).isEqualTo("a00::1");
+        assertThat(resolver.resolveStrict(request("a00::1", "198.51.100.9"))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("POS-6: sin proxy de por medio, la dirección estricta es la del socket")
+    void theStrictAddressOfADirectCallIsTheSocket() {
+        ClientIpResolver resolver = new ClientIpResolver("203.0.113.7");
+
+        assertThat(resolver.resolveStrict(request("10.0.0.5", null))).contains("10.0.0.5");
+    }
+
+    @Test
+    @DisplayName("POS-6: una cabecera de reenvío desde quien no es proxy confiable deja la dirección sin saber")
+    void aForwardingHeaderFromAnUntrustedPeerIsUnknown() {
+        // Detrás de un proxy que nadie declaró, el socket es la dirección privada del proxy: tomarla dejaría pasar a
+        // todo Internet por la lista de redes de la plataforma.
+        ClientIpResolver resolver = new ClientIpResolver("");
+
+        assertThat(resolver.resolveStrict(request("10.0.0.5", "198.51.100.9"))).isEmpty();
+        MockHttpServletRequest forwarded = request("10.0.0.5", null);
+        forwarded.addHeader("Forwarded", "for=198.51.100.9");
+        assertThat(resolver.resolveStrict(forwarded)).isEmpty();
+        MockHttpServletRequest realIp = request("10.0.0.5", null);
+        realIp.addHeader("X-Real-IP", "198.51.100.9");
+        assertThat(resolver.resolveStrict(realIp)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("POS-6: detrás de un proxy confiable, la dirección estricta es el primer salto no confiable")
+    void behindATrustedProxyTheStrictAddressIsTheClient() {
+        ClientIpResolver resolver = new ClientIpResolver("203.0.113.7");
+
+        assertThat(resolver.resolveStrict(request("203.0.113.7", "1.2.3.4, 198.51.100.9"))).contains("198.51.100.9");
+    }
+
+    @Test
+    @DisplayName("POS-6: donde resolve cae en el socket, la dirección estricta queda sin saber")
+    void whereResolveFallsBackTheStrictAddressIsUnknown() {
+        ClientIpResolver resolver = new ClientIpResolver("203.0.113.7");
+
+        // Un proxy confiable que no dice de quién viene la petición.
+        assertThat(resolver.resolveStrict(request("203.0.113.7", null))).isEmpty();
+        // Un salto que no es una dirección.
+        assertThat(resolver.resolveStrict(request("203.0.113.7", "no-es-una-ip"))).isEmpty();
+        assertThat(resolver.resolveStrict(request("203.0.113.7", "198.51.100.9, , 203.0.113.7"))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("POS-6: una cadena toda de proxies confiables nació en el del extremo izquierdo")
+    void anAllProxyChainStartsAtTheLeftmostHop() {
+        ClientIpResolver resolver = new ClientIpResolver("10.0.0.0/8");
+
+        assertThat(resolver.resolveStrict(request("10.1.2.3", "10.4.5.6, 10.7.8.9"))).contains("10.4.5.6");
+    }
+
     private MockHttpServletRequest request(String socketAddress, String forwardedFor) {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setRemoteAddr(socketAddress);

@@ -4,6 +4,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.uvo.uvostore.entity.security.Role;
+import org.uvo.uvostore.entity.security.User;
+import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.StoreSettingsRepository;
 import org.uvo.uvostore.support.IntegrationTestSupport;
 
@@ -58,6 +60,7 @@ class StoreOnboardingTest extends IntegrationTestSupport {
 
         org.junit.jupiter.api.Assertions.assertTrue(objectMapper.readTree(response).get("domain").isNull());
         String adminEmail = objectMapper.readTree(response).get("adminEmail").asText();
+        activateOwner(slug);
 
         mockMvc.perform(post("/api/admin/auth/login")
                         .header("Host", slug + ".localhost")
@@ -81,6 +84,7 @@ class StoreOnboardingTest extends IntegrationTestSupport {
                 .andReturn().getResponse().getContentAsString();
 
         String adminEmail = objectMapper.readTree(response).get("adminEmail").asText();
+        activateOwner(slug);
 
         // Same admin, authenticated via the CUSTOM DOMAIN instead of the subdomain — proves
         // TenantResolutionFilter's domain-match path resolves the same store.
@@ -176,6 +180,7 @@ class StoreOnboardingTest extends IntegrationTestSupport {
                 .andReturn().getResponse().getContentAsString();
         String adminEmail = objectMapper.readTree(response).get("adminEmail").asText();
         long storeId = objectMapper.readTree(response).get("storeId").asLong();
+        activateOwner(slug);
 
         String login = mockMvc.perform(post("/api/admin/auth/login")
                         .header("Host", slug + ".localhost")
@@ -249,6 +254,7 @@ class StoreOnboardingTest extends IntegrationTestSupport {
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         String adminEmail = objectMapper.readTree(response).get("adminEmail").asText();
+        activateOwner(slug);
 
         String login = mockMvc.perform(post("/api/admin/auth/login")
                         .header("Host", slug + ".localhost")
@@ -297,6 +303,7 @@ class StoreOnboardingTest extends IntegrationTestSupport {
                 .andReturn().getResponse().getContentAsString();
         String adminEmail = objectMapper.readTree(response).get("adminEmail").asText();
         long storeId = objectMapper.readTree(response).get("storeId").asLong();
+        activateOwner(slug);
         String token = objectMapper.readTree(mockMvc.perform(post("/api/admin/auth/login")
                         .header("Host", slug + ".localhost")
                         .contentType("application/json")
@@ -338,6 +345,98 @@ class StoreOnboardingTest extends IntegrationTestSupport {
                 .andExpect(jsonPath("$.storeName").value("Nombre elegido por el dueño"));
     }
 
+    // --- POS-6: el dueño nace invitado, nadie elige su contraseña ------------------------------------------
+
+    @Test
+    void theOwnerIsInvitedInsteadOfGivenAPassword() throws Exception {
+        // Antes el operador escribía la contraseña del dueño y la conocía para siempre. Ahora el dueño nace sin
+        // contraseña, con una invitación de un solo uso, y no puede entrar hasta aceptarla.
+        String slug = "onboard-invite-" + nextSeq();
+        String response = mockMvc.perform(post("/api/platform/stores")
+                        .header("X-Platform-Key", platformKey)
+                        .contentType("application/json")
+                        .content(onboardingBody(slug, "", "Tienda invitada")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.created").value(true))
+                .andReturn().getResponse().getContentAsString();
+        String adminEmail = objectMapper.readTree(response).get("adminEmail").asText();
+
+        User owner = owner(slug);
+        assertThat(owner.getPassword()).isNull();
+        assertThat(owner.getInvitationToken()).hasSize(64);
+        assertThat(owner.getInvitationSentAt()).isNotNull();
+        assertThat(owner.getInvitationAcceptedAt()).isNull();
+
+        // Sin aceptar, ninguna contraseña entra: la que antes elegía el operador tampoco.
+        mockMvc.perform(post("/api/admin/auth/login")
+                        .header("Host", slug + ".localhost")
+                        .contentType("application/json")
+                        .content("{\"email\":\"" + adminEmail + "\",\"password\":\"password123456\"}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void anOldClientSendingAPasswordDoesNotGetItSet() throws Exception {
+        // Un cliente viejo que todavía mande adminPassword no consigue fijarla: el campo ya no existe y se
+        // ignora, y el dueño queda igualmente invitado.
+        String slug = "onboard-oldpwd-" + nextSeq();
+        mockMvc.perform(post("/api/platform/stores")
+                        .header("X-Platform-Key", platformKey)
+                        .contentType("application/json")
+                        .content(onboardingBody(slug, "", "Tienda vieja").replace("\"adminName\"",
+                                "\"adminPassword\": \"password123456\", \"adminName\"")))
+                .andExpect(status().isOk());
+
+        assertThat(owner(slug).getPassword()).isNull();
+        assertThat(owner(slug).getInvitationToken()).isNotNull();
+    }
+
+    @Test
+    void aPosBlockIsRejectedWhileThePosIntegrationIsOff() throws Exception {
+        // Este contexto corre con app.pos.enabled=false, el valor de despacho. Con la integración apagada,
+        // /api/sync/** responde 404, así que la tienda quedaría creada y el POS no podría cargarle el catálogo:
+        // un alta a medias. Se rechaza antes de escribir nada.
+        String slug = "onboard-posoff-" + nextSeq();
+        long companyId = 880_000_000L + nextSeq();
+        String body = onboardingBody(slug, "", "Tienda POS apagado").replace("\n}", """
+                ,
+                  "pos": {
+                    "companyId": %d,
+                    "companyName": "Empresa",
+                    "apiUrl": "http://pos.internal",
+                    "apiKey": "uvp_%d_%s",
+                    "webhookSecret": "%s"
+                  }
+                }""".formatted(companyId, companyId, "a".repeat(40), "s".repeat(40)));
+
+        mockMvc.perform(post("/api/platform/stores")
+                        .header("X-Platform-Key", platformKey)
+                        .contentType("application/json")
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("POS_ENABLED")));
+
+        assertThat(storeRepository.existsBySlug(slug)).isFalse();
+    }
+
+    /** El dueño de la tienda con ese nick. */
+    private User owner(String slug) {
+        Store store = storeRepository.findBySlug(slug).orElseThrow();
+        return userRepository.findById(store.getOwnerUserId()).orElseThrow();
+    }
+
+    /**
+     * POS-6. El dueño acepta su invitación con {@code password123456}, como hace desde el enlace del correo. Los
+     * tests que entran al panel después del alta pasan por aquí: antes el operador fijaba esa contraseña en el alta.
+     */
+    private void activateOwner(String slug) throws Exception {
+        mockMvc.perform(post("/api/admin/auth/accept-invitation")
+                        .header("Host", slug + ".localhost")
+                        .contentType("application/json")
+                        .content("{\"token\":\"" + owner(slug).getInvitationToken() + "\",\"password\":\"password123456\"}"))
+                .andExpect(status().isOk());
+    }
+
     private String onboardingBody(String slug, String domain, String storeName) {
         return """
                 {
@@ -345,9 +444,7 @@ class StoreOnboardingTest extends IntegrationTestSupport {
                   "domain": "%s",
                   "storeName": "%s",
                   "adminName": "Admin de prueba",
-                  "adminEmail": "admin-%d@test.local",
-                  "adminPassword": "password123456"
-                }
-                """.formatted(slug, domain, storeName, nextSeq());
+                  "adminEmail": "admin-%d@test.local"
+                }""".formatted(slug, domain, storeName, nextSeq());
     }
 }

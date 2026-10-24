@@ -19,6 +19,7 @@ import org.uvo.uvostore.repository.AttributeValueRepository;
 import org.uvo.uvostore.repository.ProductVariationAttributeRepository;
 import org.uvo.uvostore.repository.ProductVariationRepository;
 import org.uvo.uvostore.repository.ProductVariationSyncMappingRepository;
+import org.uvo.uvostore.service.BusinessException;
 
 import java.math.BigDecimal;
 import java.util.HashMap;
@@ -133,12 +134,29 @@ public class PosVariantCatalog {
                 .ifPresent(product::setPrice);
     }
 
+    /**
+     * POS-6. UNIQUE(store_id, sku) en product_variations: un SKU que ya usa otra variación de la tienda era un 500 por
+     * la restricción, y en una carga masiva el POS lo reintentaría para siempre. Un 400 que nombra el SKU dice qué hay
+     * que corregir en el POS. {@code PosSyncServiceImpl} lo llama antes de escribir nada; {@link #create} lo vuelve a
+     * mirar para las variantes nuevas que llegan con una actualización.
+     */
+    public void requireFreeSkus(Store store, List<PosVariantFields> variants) {
+        for (PosVariantFields variant : variants) {
+            String sku = variant.sku().trim();
+            if (variationRepository.existsByStoreIdAndSku(store.getId(), sku)) {
+                throw new BusinessException("El SKU de variante " + sku + " ya existe en la tienda: corrígelo en el POS.");
+            }
+        }
+    }
+
     private void create(Product product, ProductSyncMapping mapping, PosVariantFields variant) {
         Store store = product.getStore();
+        requireFreeSkus(store, List.of(variant));
+        String sku = variant.sku().trim();
         ProductVariation variation = new ProductVariation();
         variation.setStore(store);
         variation.setProduct(product);
-        variation.setSku(variant.sku().trim());
+        variation.setSku(sku);
         variation.setPrice(variant.price());
         variation.setStock(variant.stock() == null ? 0 : variant.stock());
         variation.setActive(true);
@@ -163,11 +181,11 @@ public class PosVariantCatalog {
         variantMapping.setMapping(mapping);
         variantMapping.setVariation(variation);
         variantMapping.setExternalVariantId(variant.variantId());
-        variantMapping.setExternalSku(variant.sku().trim());
+        variantMapping.setExternalSku(sku);
         variantMappingRepository.save(variantMapping);
     }
 
-    // Por slug, como getOrCreateCategory: "Talla" y "talla" son el mismo atributo de la tienda.
+    // Por slug, como getOrCreateCategory desde POS-6: "Talla" y "talla" son el mismo atributo de la tienda.
     private Attribute attribute(Store store, String name) {
         String slug = PosVariants.slug(name);
         return attributeRepository.findByStoreIdAndSlug(store.getId(), slug).orElseGet(() -> {

@@ -135,9 +135,11 @@ public class PosCatalogWriter {
         if (mapping.isSyncPrice() && fields.price() != null && !variable) {
             product.setPrice(fields.price());
         }
-        if (mapping.isSyncName() && fields.name() != null) {
+        // POS-6. El slug solo cambia si cambia el nombre, y nunca a uno que ya use otro producto de la tienda: antes se
+        // recalculaba en cada entrada, y un nombre repetido chocaba con UNIQUE(store_id, slug) y era un 500.
+        if (mapping.isSyncName() && fields.name() != null && !fields.name().equals(product.getName())) {
             product.setName(fields.name());
-            product.setSlug(slugify(fields.name()));
+            product.setSlug(uniqueProductSlug(product.getStore().getId(), fields.name(), product.getId()));
         }
         if (mapping.isSyncDescription() && fields.description() != null) {
             product.setDescription(fields.description());
@@ -158,5 +160,35 @@ public class PosCatalogWriter {
         return value.trim().toLowerCase()
                 .replaceAll("[^a-z0-9]+", "-")
                 .replaceAll("(^-|-$)", "");
+    }
+
+    /**
+     * POS-6. Un slug libre en la tienda para un producto que viene del POS: el del nombre, o {@code -2}, {@code -3}…
+     * si ya lo usa otro. En una carga inicial es lo normal tener dos productos con el mismo nombre (la misma polera
+     * en dos colores, como productos aparte), y antes el segundo chocaba con UNIQUE(store_id, slug) y era un 500
+     * que el POS reintentaría sin fin.
+     *
+     * <p>Un nombre que no deja nada (solo símbolos, o letras que no son latinas) da {@code producto}. El propio
+     * producto no cuenta al renombrar ({@code selfId}), para que conserve su slug si sigue libre.
+     *
+     * <p>Dos altas simultáneas con el mismo nombre todavía pueden elegir el mismo: el contrato pide empujar el
+     * catálogo en secuencia, y el reintento de la que choca encuentra el siguiente libre.
+     */
+    String uniqueProductSlug(Long storeId, String name, Long selfId) {
+        String base = slugify(name);
+        if (base.isEmpty()) {
+            base = "producto";
+        }
+        String candidate = base;
+        for (int suffix = 2; slugTaken(storeId, candidate, selfId); suffix++) {
+            candidate = base + "-" + suffix;
+        }
+        return candidate;
+    }
+
+    private boolean slugTaken(Long storeId, String slug, Long selfId) {
+        return selfId == null
+                ? productRepository.existsByStoreIdAndSlug(storeId, slug)
+                : productRepository.existsByStoreIdAndSlugAndIdNot(storeId, slug, selfId);
     }
 }

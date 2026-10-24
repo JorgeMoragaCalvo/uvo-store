@@ -4,12 +4,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.web.util.matcher.IpAddressMatcher;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
+import java.util.Optional;
 
 /**
  * F18. El único sitio que decide de qué dirección viene una petición.
@@ -44,30 +41,23 @@ import java.util.List;
  * extendería el fallo del limitador a todo lo que lea la dirección, y además haría que
  * {@code getServerName()} saliera de {@code X-Forwarded-Host} —otra cabecera del cliente—, de donde
  * {@code MercadoPagoController} compone la URL de notificación de pagos.
+ *
+ * <p><b>POS-6.</b> La lista se compara con {@link IpRanges} y no con {@code IpAddressMatcher} de Spring, que en la
+ * 7.1.0 no distingue IPv4 de IPv6 (un proxy confiable {@code 10.0.0.0/8} aceptaba la IPv6 {@code a00::1}). Y
+ * {@link #resolveStrict} es la variante para decidir permisos, que no puede caer en la dirección del socket.
  */
 @Component
 public class ClientIpResolver {
 
     private static final Logger log = LoggerFactory.getLogger(ClientIpResolver.class);
 
-    private final List<IpAddressMatcher> trustedProxies;
-    private final String trustedProxiesDescription;
+    private final IpRanges trustedProxies;
 
     public ClientIpResolver(@Value("${app.rate-limit.trusted-proxies:}") String trustedProxies) {
-        List<IpAddressMatcher> matchers = new ArrayList<>();
-        List<String> accepted = new ArrayList<>();
-        for (String entry : Arrays.stream(trustedProxies.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList()) {
-            try {
-                matchers.add(new IpAddressMatcher(entry));
-                accepted.add(entry);
-            } catch (IllegalArgumentException e) {
-                // Una entrada mal escrita no puede valer como "confío en todo" ni tirar el arranque:
-                // se descarta avisando, y lo que quede sigue siendo la lista.
-                log.error("app.rate-limit.trusted-proxies: '{}' no es una IP ni un CIDR válido, se ignora", entry);
-            }
-        }
-        this.trustedProxies = List.copyOf(matchers);
-        this.trustedProxiesDescription = accepted.isEmpty() ? "" : String.join(", ", accepted);
+        // Una entrada mal escrita no puede valer como "confío en todo" ni tirar el arranque: se descarta
+        // avisando, y lo que quede sigue siendo la lista.
+        this.trustedProxies = IpRanges.parseLenient(trustedProxies, entry -> log.error(
+                "app.rate-limit.trusted-proxies: '{}' no es una IP ni un CIDR válido, se ignora", entry));
 
         // La única señal que va a tener quien despliegue. El error de operación es silencioso en los dos
         // sentidos: detrás de un proxy sin configurar esto, TODOS los clientes comparten un contador y el
@@ -77,7 +67,7 @@ public class ClientIpResolver {
             log.info("Límite por IP: se ignora X-Forwarded-For y se usa la dirección del socket. "
                     + "Si hay un proxy inverso delante, configura app.rate-limit.trusted-proxies.");
         } else {
-            log.info("Límite por IP: se confía en X-Forwarded-For procedente de [{}]", this.trustedProxiesDescription);
+            log.info("Límite por IP: se confía en X-Forwarded-For procedente de [{}]", this.trustedProxies.describe());
         }
     }
 
@@ -99,13 +89,12 @@ public class ClientIpResolver {
             if (candidate.isEmpty()) {
                 continue;
             }
-            // La validez va PRIMERO, y no es cosmética: IpAddressMatcher.matches(String) lanza
-            // IllegalArgumentException ante algo que no sea una dirección, así que comprobar la
-            // confianza antes convertía cualquier cabecera con basura en un 500. Lo descubrió el test.
-            //
-            // Y si no es una dirección no se puede identificar a nadie: se prefiere agrupar a todos bajo
-            // el proxy —limitar de más— antes que aceptar como clave un texto que escribe el atacante.
-            if (!isAddress(candidate)) {
+            // La validez va PRIMERO. Con IpAddressMatcher de Spring no era cosmética: lanzaba ante algo que no
+            // fuera una dirección, y comprobar la confianza antes convertía cualquier cabecera con basura en un
+            // 500 (lo descubrió el test). IpRanges ya no lanza, pero el orden sigue decidiendo qué se devuelve:
+            // si no es una dirección no se puede identificar a nadie, y se prefiere agrupar a todos bajo el
+            // proxy —limitar de más— antes que aceptar como clave un texto que escribe el atacante.
+            if (!IpRanges.isAddress(candidate)) {
                 log.debug("X-Forwarded-For con una entrada que no es una dirección; se usa el socket");
                 return socketAddress;
             }
@@ -118,35 +107,55 @@ public class ClientIpResolver {
         return socketAddress;
     }
 
-    private boolean isTrusted(String address) {
-        for (IpAddressMatcher matcher : trustedProxies) {
-            try {
-                if (matcher.matches(address)) {
-                    return true;
-                }
-            } catch (IllegalArgumentException e) {
-                // Por si llega aquí algo que no es una dirección: no confiar nunca es la respuesta
-                // segura, y desde luego no propagar un 500 desde el limitador.
-                return false;
+    /**
+     * POS-6. La dirección del cliente para decidir un <b>permiso</b> (la lista de redes de la API de plataforma), o
+     * vacío si no se puede saber con certeza.
+     *
+     * <p>{@link #resolve} cae en la dirección del socket cuando duda, y para el limitador es lo correcto: agrupa de
+     * más. Para un permiso es justo lo contrario, porque detrás de un proxy esa dirección es la del proxy, que es
+     * privada: la duda dejaría pasar a todo Internet. Por eso aquí la duda es un no:
+     * <ul>
+     *   <li>llega una cabecera de reenvío ({@code X-Forwarded-For}, {@code Forwarded} o {@code X-Real-IP}) desde un
+     *       par que no es proxy confiable: hay un proxy delante que nadie declaró, o alguien la escribe a mano;</li>
+     *   <li>un proxy confiable no dice de quién viene la petición;</li>
+     *   <li>un salto de la cadena no es una dirección.</li>
+     * </ul>
+     * Lo que <b>no</b> puede detectar es un proxy que no añada ninguna cabecera: entonces todo llega con su
+     * dirección privada. Que el proxy ponga {@code X-Forwarded-For} es parte de su configuración (CLAUDE.md, POS-6).
+     */
+    public Optional<String> resolveStrict(HttpServletRequest request) {
+        String socketAddress = request.getRemoteAddr();
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (!isTrusted(socketAddress)) {
+            if (hasText(forwarded) || hasText(request.getHeader("Forwarded")) || hasText(request.getHeader("X-Real-IP"))) {
+                return Optional.empty();
             }
+            return IpRanges.isAddress(socketAddress) ? Optional.of(socketAddress) : Optional.empty();
         }
-        return false;
+        if (!hasText(forwarded)) {
+            return Optional.empty();
+        }
+        String origin = null;
+        String[] chain = forwarded.split(",");
+        for (int i = chain.length - 1; i >= 0; i--) {
+            String candidate = chain[i].trim();
+            if (!IpRanges.isAddress(candidate)) {
+                return Optional.empty();
+            }
+            if (!isTrusted(candidate)) {
+                return Optional.of(candidate);
+            }
+            origin = candidate;
+        }
+        // Toda la cadena es de proxies confiables: la petición nació en uno de ellos, el del extremo izquierdo.
+        return Optional.ofNullable(origin);
     }
 
-    // Reutiliza el parseo de la propia librería en vez de escribir uno a mano: IpAddressMatcher rechaza
-    // cualquier cosa que no sea IPv4, IPv6 o un CIDR, y no resuelve nombres (InetAddress.getByName sí lo
-    // haría, y eso sería una consulta DNS por petición a lo que diga un atacante). El CIDR se descarta
-    // aquí porque una entrada de la cadena es una dirección, no un rango. Cuesta un objeto pequeño por
-    // salto y solo en el camino con proxy confiable, que es tráfico legítimo y de cadena corta.
-    private static boolean isAddress(String candidate) {
-        if (candidate.indexOf('/') >= 0) {
-            return false;
-        }
-        try {
-            new IpAddressMatcher(candidate);
-            return true;
-        } catch (IllegalArgumentException e) {
-            return false;
-        }
+    private boolean isTrusted(String address) {
+        return trustedProxies.matches(address);
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }

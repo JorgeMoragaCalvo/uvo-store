@@ -85,6 +85,17 @@ public class PosSyncServiceImpl implements PosSyncService {
             };
         }
 
+        // POS-6. UNIQUE(store_id, sku): un SKU que ya usa otro producto de la tienda era un 500 por la restricción, y
+        // en la carga inicial del catálogo el POS lo reintentaría para siempre. Un 400 que nombra el SKU dice qué
+        // corregir. Los de las variantes también, y todo antes de crear nada del catálogo.
+        if (command.sku() != null && !command.sku().isBlank()
+                && productRepository.existsByStoreIdAndSku(store.getId(), command.sku())) {
+            throw new BusinessException("El SKU " + command.sku() + " ya existe en la tienda: corrígelo en el POS.");
+        }
+        if (command.variants() != null) {
+            variantCatalog.requireFreeSkus(store, command.variants());
+        }
+
         // La categoría solo se usa al crear, así que solo aquí se busca o se crea: antes se creaba en cada
         // envío aunque el producto ya existiera y no se le asignara.
         Category category = null;
@@ -98,7 +109,7 @@ public class PosSyncServiceImpl implements PosSyncService {
         Product product = new Product();
         product.setStore(store);
         product.setName(command.name());
-        product.setSlug(PosCatalogWriter.slugify(command.name()));
+        product.setSlug(catalogWriter.uniqueProductSlug(store.getId(), command.name(), null));
         product.setSku(command.sku());
         product.setDescription(command.description() == null ? "" : command.description());
         product.setPrice(variable ? PosVariants.minPrice(command.variants()) : command.price());
@@ -182,15 +193,22 @@ public class PosSyncServiceImpl implements PosSyncService {
         }).toList();
     }
 
+    // POS-6. Por nombre y, si no, por slug, como los atributos de PosVariantCatalog: "Bebidas" y "bebidas" son la
+    // misma categoría. Antes solo se buscaba por nombre, así que la segunda se intentaba crear con el mismo slug,
+    // chocaba con UNIQUE(store_id, slug) y era un 500.
     private Category getOrCreateCategory(Store store, String name) {
-        return categoryRepository.findByStoreIdAndName(store.getId(), name).orElseGet(() -> {
-            Category category = new Category();
-            category.setStore(store);
-            category.setName(name);
-            category.setSlug(PosCatalogWriter.slugify(name));
-            category.setDescription("Categoría sincronizada desde UvoPOS");
-            category.setActive(true);
-            return categoryRepository.save(category);
-        });
+        String slugified = PosCatalogWriter.slugify(name);
+        String slug = slugified.isEmpty() ? "categoria" : slugified;
+        return categoryRepository.findByStoreIdAndName(store.getId(), name)
+                .or(() -> categoryRepository.findByStoreIdAndSlug(store.getId(), slug))
+                .orElseGet(() -> {
+                    Category category = new Category();
+                    category.setStore(store);
+                    category.setName(name);
+                    category.setSlug(slug);
+                    category.setDescription("Categoría sincronizada desde UvoPOS");
+                    category.setActive(true);
+                    return categoryRepository.save(category);
+                });
     }
 }

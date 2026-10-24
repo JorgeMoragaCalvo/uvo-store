@@ -25,6 +25,14 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     // search buscaba en el catálogo de todas. Cuando POS-3 necesite buscar por posProductId, tiene que
     // nacer con storeId (el id del POS es de una empresa, no global).
     Optional<Product> findByStoreIdAndSlug(Long storeId, String slug);
+
+    // POS-6. Para que la carga del catálogo desde el POS no choque con UNIQUE(store_id, slug) ni con
+    // UNIQUE(store_id, sku): un slug libre al crear o renombrar (sin contar el propio producto), y un SKU
+    // repetido como 400 en vez de un 500 por la restricción.
+    boolean existsByStoreIdAndSlug(Long storeId, String slug);
+    boolean existsByStoreIdAndSlugAndIdNot(Long storeId, String slug, Long id);
+    boolean existsByStoreIdAndSku(Long storeId, String sku);
+
     List<Product> findByStoreIdAndCategoryId(Long storeId, Long categoryId);
     List<Product> findByStoreIdAndIsFeaturedTrueAndActiveTrue(Long storeId);
 

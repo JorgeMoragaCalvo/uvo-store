@@ -76,7 +76,7 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
   **not tested**; the Webpay, MercadoPago and tracking paths do compare the store. The test skips synthetic methods (JaCoCo's
   `$jacocoInit`, and the bridge `findById(Object)` javac generates when a repository redeclares
   `findById(Long)`).
-- New stores are created via `/api/platform/**` (`PlatformApiKeyAuthFilter`, shared secret in the `X-Platform-Key` header) — an **operator-only** tool (`/plataforma/nueva-tienda` in the frontend), not public self-service signup. The intended flow: a client hands the operator team a nick/domain/admin credentials, the operator creates the store, the client then self-manages everything from their own admin panel.
+- New stores are created via `/api/platform/**` (`PlatformApiKeyAuthFilter`, shared secret in the `X-Platform-Key` header, **reachable only from the private network** since POS-6) — called by the UvoPOS backend when a company activates the module, or by the operator tool (`/plataforma/nueva-tienda` in the frontend); not public self-service signup. Either way the owner gets an **invitation** and chooses their own password, then self-manages everything from their own admin panel. See "POS-6" below.
 - **Anything the backend builds that points at a store goes through `StorePublicUrlResolver`**
   (`service/url/`, PROD-04) — the inverse of `StoreHostResolver`: that one turns a hostname into a
   `Store`, this one turns a `Store` into its public origin. It **takes the store as an argument and
@@ -140,7 +140,8 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
 - **The three secrets have no defaults, and the app refuses to start without them** (C4). Generate
   each with `openssl rand -base64 32`:
   - `JWT_SECRET` — signs admin and customer JWTs, minimum 32 bytes (`JwtService`).
-  - `PLATFORM_API_KEY` — guards `/api/platform/**` store onboarding (`PlatformApiKeyAuthFilter`).
+  - `PLATFORM_API_KEY` — guards `/api/platform/**` store onboarding (`PlatformApiKeyAuthFilter`), which
+    since POS-6 also only answers from `PLATFORM_ALLOWED_NETWORKS`.
   - `APP_ENCRYPTION_KEY` — AES-256 (base64, exactly 32 bytes) for payment gateway credentials and
     the Stripe/POS secrets in `settings`, at rest (`EncryptionKeyHolder`).
 
@@ -176,6 +177,9 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
   `ForwardedHeaderFilter` does overwrite `getRemoteAddr()` from that header but has no trusted-proxy
   notion at all, so it would spread the hole instead of closing it. Startup logs which mode is active —
   behind an unconfigured proxy every client shares one bucket, and login cuts off at 5 attempts total.
+  Since POS-6 the list is compared with `IpRanges` (Spring's `IpAddressMatcher` ignores the IPv4/IPv6
+  family), and `resolveStrict` is the variant for permission decisions (the platform allowlist): where
+  `resolve` falls back to the socket, it says "unknown".
 - **Per-account throttling** (`AccountAttemptThrottle`, F18) on admin login, customer login, and admin
   forgot-password, because per-IP is blind to an attacker spread across many addresses. Same Caffeine
   pattern, but called from `AuthController` where the email is already parsed — no body reading in a
@@ -911,7 +915,8 @@ constructor, like the other startup validators. **All errors come out together**
     reason in "Local environment"; a production install has no such excuse);
   - with `SENTRY_DSN` set, `SENTRY_ENVIRONMENT` different from `APP_ENVIRONMENT`;
   - the DB role: `FLYWAY_USER` blank or equal to `DB_USERNAME`, or the application role (`DatabaseRole`, one
-    query) being superuser, able to `CREATE` in the current schema, or owner of any table.
+    query) being superuser, able to `CREATE` in the current schema, or owner of any table;
+  - (POS-6) a `/0` entry in `PLATFORM_ALLOWED_NETWORKS`, which would open store creation to the Internet.
 - **Warnings:** `POS_ENABLED=false` (off on purpose until POS-1 confirms the contract; make it an error then),
   blank `RATE_LIMIT_TRUSTED_PROXIES` (the app can't know whether there is a proxy), blank `SENTRY_DSN`.
 - **In `development` nothing is checked and the database is not queried**, so the suite (surefire sets no
@@ -947,6 +952,71 @@ constructor, like the other startup validators. **All errors come out together**
   `FlywayMigrationRoleTest` (the customizer, plus a nested `@SpringBootTest` proving Boot applies it).
 - **Not covered:** whether an absolute upload directory is really a persistent volume (the app can't know);
   the per-store Stripe keys in `settings` (runtime data, not startup configuration).
+
+**POS-6 — store onboarding from UvoPOS, with the owner invited.** When a company activates the e-commerce
+module, the UvoPOS backend calls `POST /api/platform/stores` with a `pos` block, and the same transaction
+creates the store, the owner, the `PosConnection` and the two settings that make it work. **The contract is
+proposed** (POS-1 is still open; `uvopos-app` has none of this), like POS-4/POS-5:
+```json
+{ "slug": "tiendadejuan", "domain": "", "storeName": "Tienda de Juan",
+  "adminName": "Juan", "adminEmail": "juan@tienda.cl",
+  "pos": { "companyId": 123, "companyName": "Juan SpA", "apiUrl": "http://pos.internal/api",
+           "apiKey": "uvp_123_<≥32 alphanumerics>", "webhookSecret": "<≥32 chars>" } }
+```
+- **The POS generates both secrets** and sends them; the response (`StoreOnboardingResponse`, now with
+  `created`) never carries them. The token must be `uvp_<companyId>_…` of the declared company
+  (`service/pos/PosApiKey`, shared with `SettingsServiceImpl`). They're stored encrypted like the ones typed in
+  Settings. The block is refused (400, before writing) while `POS_ENABLED=false`: `/api/sync/**` would 404 and
+  the catalog could never load — a half-done onboarding.
+- **Idempotent by the POS company** (`pos_connections.company_id` is UNIQUE), not by a header. The transaction
+  starts with `pg_advisory_xact_lock(7312, Long.hashCode(companyId))` (two-int key space, distinct from the
+  jobs' one-bigint `AdvisoryLock` keys), then looks the company up. Found ⇒ a retry, and **a retry writes
+  nothing**: same slug + same secrets (constant-time) + same owner e-mail (ignoring case) ⇒ the existing store
+  with `created=false`; another slug ⇒ 400 "ya tiene la tienda"; other secrets or e-mail ⇒ 400 "otras
+  credenciales". Updating the secrets on a retry was rejected: a late retry of an older activation would put
+  back secrets the POS no longer holds. The operator path (no `pos`) keeps the old semantics (duplicate slug ⇒
+  400).
+- **The owner is always invited** (both paths; the operator form `/plataforma/nueva-tienda` lost its password
+  field): password `null` plus a PROD-06 token. `service/security/AdminInvitationMailer` (`issue`, `send`,
+  package-visible `body`) came out of `UserServiceImpl` so both use it with an explicit `Store`. The e-mail goes
+  **after commit** (`StoreOwnerInvitedEvent` → `StoreOwnerInvitationListener`, `AFTER_COMMIT`, own
+  `REQUIRES_NEW` read-only transaction). A failure there can't change the response: Spring runs `AFTER_COMMIT`
+  listeners inside `afterCompletion`, and `TransactionSynchronizationUtils` catches and logs whatever they throw
+  (a bite proved it — without the listener's `try` the onboarding still answered 200). The `try` is there to
+  attribute the failure: a log line with the user and a Sentry event, instead of Spring's generic log line that
+  alerts nobody. **Not durable**; if it's lost, «¿Olvidaste tu contraseña?» works for an account
+  without a password and closes the pending invitation (`AuthController.adminResetPassword`). Resending from
+  the platform is PROD-23.
+- **The initial catalog is pushed by the POS**, one `POST /api/sync/product` per product, with the token it
+  generated — **sequentially** (two parallel creates can still collide on a unique constraint; the retry
+  resolves it). The bulk path was hardened: product slugs are unique per store (`PosCatalogWriter.uniqueProductSlug`:
+  `base`, `base-2`…, `producto` if the name leaves nothing; on a rename only when the name changes, excluding
+  the product itself); categories match by name, then by slug ("Bebidas" = "bebidas"); a product or variant SKU
+  already used in the store is a 400 naming it, checked before writing (`PosVariantCatalog.requireFreeSkus`).
+  Each of these used to be a 500 the POS would retry forever. Note `slugify` drops accented letters
+  (`Café` → `caf`), as it always did.
+- **Private network only:** `PlatformNetworkPolicy` + `app.platform.allowed-networks`
+  (`PLATFORM_ALLOWED_NETWORKS`, default loopback + RFC 1918 + `fc00::/7`; a mistyped entry fails the startup,
+  empty closes the API). `PlatformApiKeyAuthFilter` checks the network **before** the key and answers 404 with
+  the `DeferredSurfaceGateFilter` body, so from outside the key is never evaluated. The address comes from
+  `ClientIpResolver.resolveStrict`, which, unlike `resolve`, says "unknown" (⇒ denied) when a forwarding header
+  (`X-Forwarded-For`, `Forwarded`, `X-Real-IP`) arrives from a peer that isn't a trusted proxy, when a trusted
+  proxy sends no `X-Forwarded-For`, or when a hop isn't an address. **What it can't detect** is a proxy that
+  adds no header at all (stock nginx `proxy_pass`): then everything looks private. So the proxy must set
+  `X-Forwarded-For`, be declared in `RATE_LIMIT_TRUSTED_PROXIES`, and should not publish `/api/platform/` at
+  all (PROD-05c). Operators use the form from the private network (VPN or tunnel); in dev Vite sends no XFF.
+- **IP ranges are compared by `security/IpRanges`, not Spring's `IpAddressMatcher`**, which in Security 7.1.0
+  ignores the address family (checked against the jar: `10.0.0.0/8` matched IPv6 `a00::1`, `::1/128` vs
+  `0.0.0.0` threw `ArrayIndexOutOfBoundsException`, `"10"` parsed as `0.0.0.10`). `ClientIpResolver` uses it for
+  `trusted-proxies` too. It never resolves names.
+- **Tests:** `platform/PosStoreOnboardingTest` (creation, encryption, retries, validation, and the full
+  path to `/api/sync/product`), `platform/StoreOnboardingCommitTest` (committed transactions: e-mail after
+  commit, not on retry, not on rollback, a failing mailer still 200, and two simultaneous retries — B waits on
+  the lock in `pg_locks`, then gets `created=false`), `security/IpRangesTest`, `PlatformNetworkTest`,
+  `PlatformNetworkBehindProxyTest` (shares `TrustedProxyRateLimitTest`'s context on purpose),
+  `pos/PosBulkCatalogPushTest`, new cases in `StoreOnboardingTest` / `ClientIpResolverTest` /
+  `ProductionConfigurationRulesTest`, and `NewStore.test.tsx`. Tests that log into a freshly onboarded store
+  accept the invitation first (`StoreOnboardingTest.activateOwner`).
 
 **Which exception to throw** (M1): a rule the caller broke, in words meant for them, is
 `BusinessException` → 400 with the message. A request that can't be served but wasn't wrong is
@@ -1079,7 +1149,8 @@ consuming this API.
   ahead of the Security chain, the checkout issues no invitation and no invitation email is sent. The
   authority on the flag is `CustomerAccountsPolicy`, the only class that reads it. See the PROD-07
   bullet in "Architecture" for why, and for what turning it on would require.
-- `/api/platform/**` (store onboarding) uses `X-Platform-Key`, not JWT — see "Multi-tenancy".
+- `/api/platform/**` (store onboarding) uses `X-Platform-Key`, not JWT, and only answers from the private
+  network (POS-6) — see "Multi-tenancy".
 - POS integration (`/api/sync/**`, `/api/webhooks/pos/**`) uses its own HMAC/API-key filters, separate from JWT.
 
 ### External integrations — all "off until configured"
@@ -1183,7 +1254,7 @@ login (`/admin/login`) is separate and fully functional.
     constructor — `PosPolicyFixture` has the three combinations that matter.
   - **Package-visible builder methods to assert outbound payloads** without SMTP or network:
     `MercadoPagoServiceImpl.buildPreferenceRequest`, `PaymentServiceImpl.buildSessionParams`,
-    `OrderEmailComposer.invitationBody`, `UserServiceImpl.invitationBody`. That's why those
+    `OrderEmailComposer.invitationBody`, `AdminInvitationMailer.body`. That's why those
     tests live in the service's own package.
   - **The outbox scheduler is off in tests** (`app.outbox.scheduler.enabled=false` in surefire,
     `pom.xml`): it runs every few seconds, and every cached context would dispatch over the shared

@@ -11,10 +11,11 @@ import org.uvo.uvostore.service.platform.StoreOnboardingCommand;
 import org.uvo.uvostore.service.platform.StoreOnboardingResponse;
 import org.uvo.uvostore.service.platform.StoreOnboardingService;
 
-// Protected by PlatformApiKeyAuthFilter (X-Platform-Key header), not by the per-store JWT scheme
-// the rest of /api/admin/** uses — there's no tenant yet when a store is being created, and this
-// is only ever called by the operator team, never by a client.
-@io.swagger.v3.oas.annotations.tags.Tag(name = "Alta de tiendas (plataforma)", description = "Creación de tiendas nuevas por el equipo operador, header X-Platform-Key")
+// Protected by PlatformApiKeyAuthFilter (X-Platform-Key header, and only from the private network
+// since POS-6), not by the per-store JWT scheme the rest of /api/admin/** uses — there's no tenant
+// yet when a store is being created, and this is only ever called by the operator team or by the
+// UvoPOS backend, never by a client.
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Alta de tiendas (plataforma)", description = "Creación de tiendas nuevas por el equipo operador o por UvoPOS, header X-Platform-Key, solo desde la red privada")
 @io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "platformApiKey")
 @RestController
 @RequestMapping("/api/platform/stores")
@@ -26,11 +27,16 @@ public class StoreOnboardingController {
         this.storeOnboardingService = storeOnboardingService;
     }
 
+    // POS-6: lo llama también el backend de UvoPOS al activar el módulo, con el bloque `pos`. Es idempotente
+    // por la empresa del POS: un reintento devuelve la tienda que ya existe, con created=false.
     @PostMapping
     public StoreOnboardingResponse create(@Valid @RequestBody StoreOnboardingRequest request) {
+        StoreOnboardingRequest.PosLinkRequest pos = request.pos();
         return storeOnboardingService.createStore(new StoreOnboardingCommand(
                 request.slug(), request.domain(), request.storeName(),
-                request.adminName(), request.adminEmail(), request.adminPassword()
+                request.adminName(), request.adminEmail(),
+                pos == null ? null : new StoreOnboardingCommand.PosLink(pos.companyId(), pos.companyName(),
+                        pos.apiUrl(), pos.apiKey(), pos.webhookSecret())
         ));
     }
 

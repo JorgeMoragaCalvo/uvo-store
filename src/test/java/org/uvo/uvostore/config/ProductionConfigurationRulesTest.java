@@ -201,6 +201,25 @@ class ProductionConfigurationRulesTest {
     }
 
     @Test
+    @DisplayName("POS-6: la API de plataforma no se puede abrir a todo Internet con un /0")
+    void thePlatformApiCannotBeOpenedToEveryone() {
+        for (String everything : new String[] {"0.0.0.0/0", "10.0.0.0/8, ::/0"}) {
+            MockEnvironment properties = production();
+            properties.setProperty("app.platform.allowed-networks", everything);
+
+            assertThat(check(AppEnvironment.PRODUCTION, properties, sentry("production"), APP_ROLE).errors())
+                    .singleElement().asString().startsWith("PLATFORM_ALLOWED_NETWORKS").contains("/0");
+            assertThat(check(AppEnvironment.STAGING, properties, sentry("staging"), APP_ROLE).errors())
+                    .singleElement().asString().startsWith("PLATFORM_ALLOWED_NETWORKS");
+        }
+
+        // La red privada de siempre, y el default que se despacha, no son errores.
+        MockEnvironment privateOnly = production();
+        privateOnly.setProperty("app.platform.allowed-networks", "10.0.0.0/8,fc00::/7");
+        assertThat(check(AppEnvironment.PRODUCTION, privateOnly, sentry("production"), APP_ROLE).errors()).isEmpty();
+    }
+
+    @Test
     @DisplayName("Las advertencias no impiden el arranque")
     void theWarningsDoNotStopTheStartup() {
         MockEnvironment properties = production();
