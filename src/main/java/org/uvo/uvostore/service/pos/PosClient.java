@@ -8,6 +8,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClient.RequestHeadersSpec.ConvertibleClientHttpResponse;
+import org.uvo.uvostore.config.LogContext;
+import org.uvo.uvostore.config.RequestIdFilter;
 import org.uvo.uvostore.entity.pos.PosConnection;
 
 import java.io.IOException;
@@ -36,6 +38,16 @@ public class PosClient {
                      @Value("${app.pos.read-timeout-ms:20000}") int readTimeoutMs) {
         this.restClient = RestClient.builder()
                 .requestFactory(clientRequestFactory(connectTimeoutMs, readTimeoutMs))
+                .requestInterceptor((request, body, execution) -> {
+                    // PROD-15b. El id con el que se sigue esta llamada en nuestros logs: el de la petición que
+                    // encoló la venta (OutboxDispatcher lo pone desde la fila) o el de la pasada del job. Si el
+                    // POS lo registra, una venta se sigue entre los dos sistemas con un solo id.
+                    String requestId = LogContext.requestId();
+                    if (requestId != null) {
+                        request.getHeaders().set(RequestIdFilter.HEADER, requestId);
+                    }
+                    return execution.execute(request, body);
+                })
                 .build();
     }
 

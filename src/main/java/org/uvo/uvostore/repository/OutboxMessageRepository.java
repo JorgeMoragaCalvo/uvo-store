@@ -131,4 +131,20 @@ public interface OutboxMessageRepository extends JpaRepository<OutboxMessage, Lo
                                org.uvo.uvostore.entity.outbox.enums.OutboxStatus.IN_FLIGHT)
             """)
     long countUnfinishedForStore(@Param("storeId") Long storeId);
+
+    /**
+     * PROD-15b. Lo que el outbox tiene en cola ({@code PENDING}, {@code IN_FLIGHT}) y lo que falló de forma definitiva
+     * ({@code FAILED}), en todas las tiendas, por tipo y estado, con la fila más vieja de cada grupo. Una sola
+     * consulta para todos los gauges del outbox ({@code OperationalBacklogMetrics}); el canal sale del tipo.
+     *
+     * @return filas {@code [OutboxType, OutboxStatus, Long count, Instant oldestCreatedAt]}
+     */
+    @Query("""
+            select m.type, m.status, count(m), min(m.createdAt) from OutboxMessage m
+            where m.status in (org.uvo.uvostore.entity.outbox.enums.OutboxStatus.PENDING,
+                               org.uvo.uvostore.entity.outbox.enums.OutboxStatus.IN_FLIGHT,
+                               org.uvo.uvostore.entity.outbox.enums.OutboxStatus.FAILED)
+            group by m.type, m.status
+            """)
+    List<Object[]> countBacklogByTypeAndStatus();
 }

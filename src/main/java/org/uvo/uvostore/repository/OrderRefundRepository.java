@@ -59,4 +59,11 @@ public interface OrderRefundRepository extends JpaRepository<OrderRefund, Long> 
               and r.status = org.uvo.uvostore.entity.order.enums.RefundStatus.PENDING
             """)
     long countPendingForStore(@Param("storeId") Long storeId);
+
+    /** PROD-15b. Los reembolsos sin resolver de todas las tiendas: la métrica {@code uvostore_refunds_pending}. */
+    @Query("""
+            select count(r) from OrderRefund r
+            where r.status = org.uvo.uvostore.entity.order.enums.RefundStatus.PENDING
+            """)
+    long countPending();
 }

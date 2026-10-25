@@ -18,6 +18,7 @@ import org.uvo.uvostore.repository.ProductRepository;
 import org.uvo.uvostore.repository.ProductSyncMappingRepository;
 import org.uvo.uvostore.repository.ProductVariationRepository;
 import org.uvo.uvostore.repository.ProductVariationSyncMappingRepository;
+import org.uvo.uvostore.service.metrics.BusinessMetrics;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -41,12 +42,14 @@ public class PosWebhookServiceImpl implements PosWebhookService {
     private final ProductVariationRepository variationRepository;
     private final PosCatalogWriter catalogWriter;
     private final PosInboundLog inboundLog;
+    private final BusinessMetrics metrics;
 
     public PosWebhookServiceImpl(PosConnectionRepository posConnectionRepository,
                                   ProductSyncMappingRepository mappingRepository,
                                   ProductVariationSyncMappingRepository variantMappingRepository,
                                   ProductRepository productRepository, ProductVariationRepository variationRepository,
-                                  PosCatalogWriter catalogWriter, PosInboundLog inboundLog) {
+                                  PosCatalogWriter catalogWriter, PosInboundLog inboundLog, BusinessMetrics metrics) {
+        this.metrics = metrics;
         this.posConnectionRepository = posConnectionRepository;
         this.mappingRepository = mappingRepository;
         this.variantMappingRepository = variantMappingRepository;
@@ -165,6 +168,7 @@ public class PosWebhookServiceImpl implements PosWebhookService {
                     .formatted(variationId, productId, currentStock, payload.oldStock(), payload.stockWeb());
             LOG.warn(message);
             Sentry.captureMessage(message);
+            metrics.stockDivergences(BusinessMetrics.DivergenceSource.WEBHOOK, 1);
             return inboundLog.failed(log, message);
         }
         productRepository.recalculateStockFromVariations(productId);
@@ -242,6 +246,7 @@ public class PosWebhookServiceImpl implements PosWebhookService {
                 .formatted(productId, currentStock, payload.oldStock(), payload.stockWeb());
         LOG.warn(message);
         Sentry.captureMessage(message);
+        metrics.stockDivergences(BusinessMetrics.DivergenceSource.WEBHOOK, 1);
         return inboundLog.failed(log, message);
     }
 

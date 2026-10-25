@@ -1,11 +1,16 @@
 package org.uvo.uvostore.security;
 
+import org.uvo.uvostore.config.LogContext;
 import org.uvo.uvostore.service.BusinessException;
 import org.uvo.uvostore.entity.tenant.Store;
 
 // Per-request current Store, resolved by TenantResolutionFilter from the request's subdomain.
 // ThreadLocal is safe here because Tomcat serves requests thread-per-request by default; the
 // filter clears it in a finally block so pooled threads never leak a previous request's tenant.
+//
+// PROD-15b: la tienda también va al MDC (LogContext.STORE_ID), y por eso set y clear son el único sitio
+// que la escribe: así la petición, los jobs y el outbox (que pasan por runWithin) la llevan en cada línea
+// de log sin tocar ninguno, y se va con el tenant, en el mismo finally.
 public final class TenantContext {
 
     private static final ThreadLocal<Store> CURRENT = new ThreadLocal<>();
@@ -15,6 +20,7 @@ public final class TenantContext {
 
     public static void set(Store store) {
         CURRENT.set(store);
+        LogContext.putStore(store == null ? null : store.getId());
     }
 
     public static Store get() {
@@ -42,6 +48,7 @@ public final class TenantContext {
 
     public static void clear() {
         CURRENT.remove();
+        LogContext.removeStore();
     }
 
     /**

@@ -1,10 +1,13 @@
 package org.uvo.uvostore.outbox;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.slf4j.MDC;
+import org.uvo.uvostore.config.LogContext;
 import org.uvo.uvostore.entity.order.Order;
 import org.uvo.uvostore.entity.outbox.OutboxMessage;
 import org.uvo.uvostore.entity.outbox.enums.OutboxChannel;
@@ -14,6 +17,7 @@ import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.OutboxMessageRepository;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.AdvisoryLock;
+import org.uvo.uvostore.service.metrics.BusinessMetrics;
 import org.uvo.uvostore.service.outbox.OutboxDispatcher;
 import org.uvo.uvostore.service.outbox.OutboxHandler;
 import org.uvo.uvostore.service.outbox.OutboxResult;
@@ -60,6 +64,9 @@ class OutboxDispatcherTest {
     private final List<OutboxMessage> handled = new ArrayList<>();
     private final List<Long> tenantsSeen = new ArrayList<>();
     private final List<OutboxMessage> afterDelivered = new ArrayList<>();
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+    private final List<String> requestIdsSeen = new ArrayList<>();
+    private final List<String> storeIdsInMdc = new ArrayList<>();
 
     @BeforeEach
     void setUp() {
@@ -75,6 +82,69 @@ class OutboxDispatcherTest {
     @AfterEach
     void tearDown() {
         TenantContext.clear();
+        MDC.clear();
+    }
+
+    @Test
+    @DisplayName("PROD-15b: la entrega corre con el id de la petición que encoló la fila, y luego vuelve el de la pasada")
+    void theDeliveryRunsUnderTheIdOfTheRequestThatQueuedIt() {
+        OutboxMessage row = posRow(1L);
+        row.setRequestId("it-pago-15b-0001");
+        givenDue(OutboxChannel.POS, row);
+        LogContext.putRequestId("job-0123456789ab");
+
+        dispatcher(false).dispatch(OutboxChannel.POS);
+
+        // handle y afterDelivered: los dos con el id de origen (PosClient lo manda al POS desde aquí).
+        assertThat(requestIdsSeen).containsExactly("it-pago-15b-0001", "it-pago-15b-0001");
+        assertThat(storeIdsInMdc).containsExactly(row.getOrder().getStore().getId().toString());
+        assertThat(MDC.get(LogContext.REQUEST_ID)).isEqualTo("job-0123456789ab");
+        assertThat(MDC.get(LogContext.STORE_ID)).isNull();
+    }
+
+    @Test
+    @DisplayName("PROD-15b: una fila sin id (anterior a V30) se entrega con el de la pasada")
+    void aRowWithoutAnIdKeepsTheIdOfTheRun() {
+        OutboxMessage row = posRow(1L);
+        givenDue(OutboxChannel.POS, row);
+        LogContext.putRequestId("job-0123456789ab");
+
+        dispatcher(false).dispatch(OutboxChannel.POS);
+
+        assertThat(requestIdsSeen).containsExactly("job-0123456789ab", "job-0123456789ab");
+    }
+
+    @Test
+    @DisplayName("PROD-15b: cada intento suma a su canal y resultado; una huérfana cuenta como incierta")
+    void eachAttemptIsCountedByChannelAndOutcome() {
+        OutboxMessage delivered = posRow(1L);
+        OutboxMessage rejected = posRow(2L);
+        OutboxMessage retried = posRow(3L);
+        OutboxMessage email = row(OutboxType.ORDER_PLACED_EMAIL, null);
+        OutboxMessage orphan = posRow(4L);
+        givenDue(OutboxChannel.POS, delivered, rejected, retried);
+        givenDue(OutboxChannel.MAIL, email);
+        when(repository.findOrphans(eq(OutboxType.of(OutboxChannel.POS)), any(), any())).thenReturn(List.of(orphan));
+        behaviour.put(OutboxType.POS_ORDER, m -> m == delivered ? OutboxResult.delivered(null)
+                : m == rejected ? OutboxResult.permanent("HTTP 422") : OutboxResult.retryable("Connection refused"));
+        behaviour.put(OutboxType.ORDER_PLACED_EMAIL, m -> OutboxResult.skipped("sin correo"));
+
+        OutboxDispatcher dispatcher = dispatcher(false);
+        dispatcher.dispatch(OutboxChannel.POS);
+        dispatcher.dispatch(OutboxChannel.MAIL);
+
+        assertThat(deliveries("pos", "delivered")).isEqualTo(1);
+        assertThat(deliveries("pos", "permanent")).isEqualTo(1);
+        assertThat(deliveries("pos", "retryable")).isEqualTo(1);
+        assertThat(deliveries("pos", "uncertain")).isEqualTo(1);
+        assertThat(deliveries("pos", "skipped")).isZero();
+        assertThat(deliveries("mail", "skipped")).isEqualTo(1);
+        assertThat(deliveries("mail", "delivered")).isZero();
+    }
+
+    private double deliveries(String channel, String outcome) {
+        return meterRegistry.get(BusinessMetrics.OUTBOX_DELIVERIES)
+                .tag("channel", channel).tag("outcome", outcome).counter().count();
     }
 
     @Test
@@ -301,7 +371,8 @@ class OutboxDispatcherTest {
         for (OutboxType type : OutboxType.values()) {
             handlers.add(new RecordingHandler(type));
         }
-        return new OutboxDispatcher(repository, store, advisoryLock, handlers, posRetryEnabled, 50, 48, 120);
+        return new OutboxDispatcher(repository, store, advisoryLock, handlers, posRetryEnabled, 50, 48, 120,
+                new BusinessMetrics(meterRegistry));
     }
 
     private void givenDue(OutboxChannel channel, OutboxMessage... rows) {
@@ -350,12 +421,15 @@ class OutboxDispatcherTest {
         public OutboxResult handle(OutboxMessage message) {
             handled.add(message);
             tenantsSeen.add(TenantContext.currentStoreId());
+            requestIdsSeen.add(MDC.get(LogContext.REQUEST_ID));
+            storeIdsInMdc.add(MDC.get(LogContext.STORE_ID));
             return behaviour.getOrDefault(type, m -> OutboxResult.delivered(null)).apply(message);
         }
 
         @Override
         public void afterDelivered(OutboxMessage message, OutboxResult result) {
             afterDelivered.add(message);
+            requestIdsSeen.add(MDC.get(LogContext.REQUEST_ID));
         }
     }
 }

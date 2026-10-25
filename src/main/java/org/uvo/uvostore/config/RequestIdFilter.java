@@ -15,6 +15,9 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * petición ({@code logging.pattern.correlation}) y en {@code audit_events.request_id}. Con eso, una fila de auditoría
  * lleva a los logs de la petición que la escribió, y un usuario que reporta un error puede dar el id que vio.
  *
+ * <p>PROD-15b: el mismo id sigue a la venta hasta el POS. {@code OutboxService} lo guarda en la fila al encolar y
+ * {@code PosClient} lo manda como {@value #HEADER} al entregarla (ver {@link LogContext}).
+ *
  * <p>Acepta el id que llegue si tiene un formato acotado (un proxy, el POS o el navegador pueden traer el suyo para
  * seguir la petición entre sistemas); si no, genera uno. Un id mal formado se reemplaza, no se rechaza: es una ayuda
  * para correlacionar, no una prueba de nada, y cualquiera puede elegirlo.
@@ -28,7 +31,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class RequestIdFilter extends OncePerRequestFilter {
 
     public static final String HEADER = "X-Request-Id";
-    public static final String MDC_KEY = "requestId";
+    public static final String MDC_KEY = LogContext.REQUEST_ID;
 
     // 8 a 64 caracteres, sin espacios ni saltos de línea (no puede inyectar líneas en el log). Cabe un UUID y el
     // $request_id de nginx.
@@ -45,7 +48,7 @@ public class RequestIdFilter extends OncePerRequestFilter {
         try {
             filterChain.doFilter(request, response);
         } finally {
-            // remove y no clear: lo que otros pongan en el MDC (PROD-15b, la tienda) no es asunto de este filtro.
+            // remove y no clear: la tienda (PROD-15b) la pone y la quita TenantContext, no este filtro.
             MDC.remove(MDC_KEY);
         }
     }

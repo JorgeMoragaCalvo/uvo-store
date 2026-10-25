@@ -162,6 +162,32 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
             """)
     long countPaidWithoutStockAppliedForStore(@Param("storeId") Long storeId);
 
+    /**
+     * PROD-15b. Las de {@link #findPaidWithoutStockApplied}, contadas en todas las tiendas: la métrica
+     * {@code uvostore_orders_paid_without_stock}. El mismo margen, para no contar un pago que el listener todavía
+     * está procesando.
+     */
+    @Query("""
+            select count(o) from Order o
+            where o.paymentStatus = org.uvo.uvostore.entity.order.enums.PaymentStatus.PAID
+              and o.stockApplied = false
+              and o.paidAt < :notAfter
+            """)
+    long countPaidWithoutStockApplied(@Param("notAfter") Instant notAfter);
+
+    /**
+     * PROD-15b. Órdenes que siguen {@code PENDING} desde antes de {@code createdBefore}, en todas las tiendas: la
+     * métrica {@code uvostore_orders_pending_stale}. Con el plazo de {@code app.reconciliation.stale-hours} son las
+     * mismas que la conciliación de pagos ya avisa una a una a Sentry, más las manuales (transferencia) que nadie
+     * cobró todavía.
+     */
+    @Query("""
+            select count(o) from Order o
+            where o.status = org.uvo.uvostore.entity.order.enums.OrderStatus.PENDING
+              and o.createdAt < :createdBefore
+            """)
+    long countPendingCreatedBefore(@Param("createdBefore") Instant createdBefore);
+
     // Admin\Shipping\{Zones,Methods}\Index delete guards — refuse to delete a zone/method that
     // still has orders referencing it.
     long countByShippingZoneId(Long shippingZoneId);

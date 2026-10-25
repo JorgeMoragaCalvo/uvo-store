@@ -8,6 +8,7 @@ import org.jspecify.annotations.NonNull;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.uvo.uvostore.config.LogContext;
 import org.uvo.uvostore.entity.pos.PosConnection;
 import org.uvo.uvostore.repository.PosConnectionRepository;
 
@@ -64,7 +65,18 @@ public class PosApiKeyAuthFilter extends OncePerRequestFilter {
         }
 
         request.setAttribute("posConnection", connection.get());
-        filterChain.doFilter(request, response);
+        // PROD-15b. Esta entrada no resuelve la tienda por el Host, así que TenantContext no la pone en el MDC.
+        LogContext.putStore(storeIdOf(connection.get()));
+        try {
+            filterChain.doFilter(request, response);
+        } finally {
+            LogContext.removeStore();
+        }
+    }
+
+    /** El id sin cargar la tienda: un proxy perezoso lo da sin ir a la base. */
+    static Long storeIdOf(PosConnection connection) {
+        return connection.getStore() == null ? null : connection.getStore().getId();
     }
 
     private static boolean constantTimeEquals(String a, String b) {

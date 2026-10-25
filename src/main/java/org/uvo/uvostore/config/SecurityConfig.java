@@ -13,6 +13,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.uvo.uvostore.security.ApiSecurityErrorHandlers;
 import org.uvo.uvostore.security.DeferredSurfaceGateFilter;
 import org.uvo.uvostore.security.JwtAuthenticationFilter;
+import org.uvo.uvostore.security.MetricsAuthFilter;
 import org.uvo.uvostore.security.PlatformApiKeyAuthFilter;
 import org.uvo.uvostore.security.PosApiKeyAuthFilter;
 import org.uvo.uvostore.security.PosWebhookAuthFilter;
@@ -33,8 +34,9 @@ public class SecurityConfig {
             "/uploads/**",
             // A3: "/health" used to be here, but nothing ever served that path — actuator's real
             // endpoint is /actuator/health, and that one wasn't public. A liveness/readiness probe
-            // got a 404 on one and a 401 on the other. Exposure is pinned to `health` alone in
-            // application.properties, so opening this doesn't open the rest of the actuator.
+            // got a 404 on one and a 401 on the other. Exposure is pinned in application.properties
+            // (`health`, and since PROD-15b `prometheus`, which MetricsAuthFilter guards), so opening
+            // this doesn't open the rest of the actuator.
             "/actuator/health",
             // PROD-15a. Las sondas de liveness y readiness cuelgan de /actuator/health/<grupo> y el
             // patrón de arriba es exacto, no las alcanza. Van nombradas una a una y no como
@@ -42,6 +44,9 @@ public class SecurityConfig {
             // añada mañana, y la regla de A3 es que lo público sea lo que se decidió abrir.
             "/actuator/health/liveness",
             "/actuator/health/readiness",
+            // PROD-15b. Se autentica sola, como las rutas del POS: red, token y 404 sin token configurado
+            // (MetricsAuthFilter). Exacta, como las sondas.
+            MetricsAuthFilter.PATH,
             // PROD-17c. Las tres rutas de documentación siguen aquí aunque SWAGGER_ENABLED=false, y es
             // a propósito: con springdoc apagado esos endpoints no existen y responden 404, igual que
             // cualquier ruta inexistente. Quitarlas de esta lista las llevaría a anyRequest().authenticated()
@@ -68,6 +73,7 @@ public class SecurityConfig {
             PosWebhookAuthFilter posWebhookAuthFilter,
             PosApiKeyAuthFilter posApiKeyAuthFilter,
             PlatformApiKeyAuthFilter platformApiKeyAuthFilter,
+            MetricsAuthFilter metricsAuthFilter,
             ApiSecurityErrorHandlers errorHandlers) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
@@ -108,6 +114,7 @@ public class SecurityConfig {
                 .addFilterBefore(posWebhookAuthFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(posApiKeyAuthFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(platformApiKeyAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(metricsAuthFilter, UsernamePasswordAuthenticationFilter.class)
                 // A4: first in the chain on purpose — a throttled request should be rejected before
                 // resolving a tenant or parsing a JWT, so flooding costs the server as little as
                 // possible.

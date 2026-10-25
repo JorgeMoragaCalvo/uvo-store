@@ -84,4 +84,11 @@ public class OutboxMessage {
 
     @Column(name = "processed_at")
     private Instant processedAt;
+
+    /**
+     * PROD-15b. El id de la petición (o de la pasada de job) que encoló la fila. Se pone en el MDC al entregarla y
+     * {@code PosClient} lo manda al POS como {@code X-Request-Id}. Null en las filas anteriores a V30.
+     */
+    @Column(name = "request_id", length = 64)
+    private String requestId;
 }
