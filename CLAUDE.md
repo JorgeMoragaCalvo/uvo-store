@@ -985,8 +985,8 @@ proposed** (POS-1 is still open; `uvopos-app` has none of this), like POS-4/POS-
   (a bite proved it — without the listener's `try` the onboarding still answered 200). The `try` is there to
   attribute the failure: a log line with the user and a Sentry event, instead of Spring's generic log line that
   alerts nobody. **Not durable**; if it's lost, «¿Olvidaste tu contraseña?» works for an account
-  without a password and closes the pending invitation (`AuthController.adminResetPassword`). Resending from
-  the platform is PROD-23.
+  without a password and closes the pending invitation (`AuthController.adminResetPassword`). The platform can
+  send a new one (PROD-23's owner access recovery, same event and listener).
 - **The initial catalog is pushed by the POS**, one `POST /api/sync/product` per product, with the token it
   generated — **sequentially** (two parallel creates can still collide on a unique constraint; the retry
   resolves it). The bulk path was hardened: product slugs are unique per store (`PosCatalogWriter.uniqueProductSlug`:
@@ -1021,8 +1021,8 @@ proposed** (POS-1 is still open; `uvopos-app` has none of this), like POS-4/POS-
 **PROD-18 — audit log.** `audit_events` (V28) records who changed what, in which store, when, with which result
 and in which request: `store_id`, `actor_type` (`ADMIN` | `PLATFORM` | `SYSTEM`), `actor_id`, `actor_label`,
 `action`, `target_type`, `target_id`, `result` (`SUCCESS` | `FAILURE`), `request_id`, `details` (jsonb). **Read it
-with SQL for now** — there is no endpoint or screen (PROD-23 decides the consumer); the queries are in V28's
-`REVISIÓN MANUAL` block.
+through the platform API** (`GET /api/platform/stores/{id}/audit-events`, PROD-23) **or with SQL** — the queries
+are in V28's `REVISIÓN MANUAL` block; the store panel doesn't read it.
 - **Same transaction as the change.** `service/audit/AuditTrail.record(AuditEntry)` is the only writer and is
   `Propagation.MANDATORY`: if the change rolls back the row goes with it, and if the row can't be written the
   change doesn't happen (fail-closed — an enum constant missing from the migration breaks the business call, which
@@ -1057,8 +1057,8 @@ with SQL for now** — there is no endpoint or screen (PROD-23 decides the consu
   cancellation (both panel paths) and payment status; gateway, carrier, Stripe and POS credentials; the eight F17
   money settings (`SettingsServiceImpl.set` now returns the previous value); admin users (create, update,
   activate/deactivate, delete, resend, accept, reset) and logins; roles with permission names; store creation
-  (not its idempotent replay), domain and verification (`STORE_STATUS_UPDATE` is reserved for PROD-23, nothing
-  writes it yet); coupons, shipping rates and methods; product and variation **price** changes made from the
+  (not its idempotent replay), domain and verification, and since PROD-23 status changes, closing and owner access
+  recovery; coupons, shipping rates and methods; product and variation **price** changes made from the
   panel. POS-originated catalog writes (`/api/sync/**`, webhooks) are not audited — `sync_webhook_logs` has them.
 - **Immutable:** a `BEFORE UPDATE` trigger rejects any UPDATE (also from a console); DELETE stays allowed for
   retention (undecided, no purge job), store closing and test cleanup. No foreign keys, on purpose: history
@@ -1084,6 +1084,162 @@ with SQL for now** — there is no endpoint or screen (PROD-23 decides the consu
   `PosStoreOnboardingTest`, `StoreOnboardingCommitTest`, `AccountThrottleTest`, `PlatformNetworkTest`.
   `IntegrationTestSupport.auditRows(store[, action])` reads the rows inside the test transaction.
 
+**PROD-23 — platform operation.** `controller/platform/PlatformStoreController` runs the stores that already
+exist. It has the same `/api/platform/stores` base and the same `PlatformApiKeyAuthFilter` as onboarding. The
+consumer is the UvoPOS backoffice; there is no screen.
+- **Reading:**
+  - `GET /` lists stores: `search` over slug, name, domain and owner e-mail; `status`; `companyId`; the M8 sort
+    allowlist; 20 per page.
+  - `GET /{id}` returns one store.
+  - `GET /{id}/audit-events` takes `action`, `from` (inclusive) and `to` (exclusive), 50 per page, newest first.
+    This is the consumer PROD-18 left open; the panel still doesn't read the audit.
+  - `PlatformStoreDto` never carries POS secrets. Its POS links come from a projection
+    (`PosConnectionRepository.findLinksByStoreIdIn`): loading the entity decrypts the token, so one row with a
+    rotated key would take the whole list down.
+- **States (V29):** `ACTIVE ⇄ SUSPENDED → CLOSED`, where `CLOSED` is terminal. `stores.status_changed_at` records
+  the last change.
+  - Every transition reads the store with `StoreRepository.findLockedById` (`PESSIMISTIC_WRITE`).
+  - Suspending needs a `reason` (`StoreStatusReason`). It goes to the audit and isn't stored on the store.
+  - Suspending a suspended store, or reactivating an active one, is a 200 no-op with no audit row. Anything on a
+    closed store is a 400, including domain changes and verification. The audit action is `STORE_STATUS_UPDATE`.
+  - A POS onboarding retry doesn't reactivate a store; `StoreOnboardingResponse.status` tells the POS where it
+    stands.
+- **Suspension:** `TenantResolutionFilter` answers 403 to any store that isn't active ("suspendida" or "cerrada")
+  except on `/api/platform/**`.
+  - For **suspended stores only**, the exact paths `POST /api/v1/webpay/return`, `/api/v1/mercadopago/webhook` and
+    `/api/v1/stripe/webhook` also pass, so a payment made just before suspending still gets confirmed.
+  - Jobs and the outbox keep running, and POS inbound keeps working. The scheduled POS reconciliation skips
+    stores that aren't active (`findAllActive`).
+  - Sessions are not revoked: after reactivation, tokens still valid work again.
+- **Owner access recovery**, `POST /{id}/owner/access-recovery` with an optional `{email}`: active stores only,
+  and the owner is `stores.owner_user_id`.
+  - The account becomes active and admin, with no password, no reset token, `invitationAcceptedAt = null`,
+    `tokenVersion + 1` and a new invitation.
+  - It gets the owner role back (`StoreOwnerRole.ensureAssigned`, which also holds onboarding's F08 role
+    creation). The role is recreated if it was deleted; an existing role keeps its permissions.
+  - The new e-mail must not belong to another admin of the store. The 5-minute cooldown applies only when the
+    e-mail doesn't change.
+  - The invitation e-mail goes after commit through `StoreOwnerInvitedEvent`. Audit:
+    `STORE_OWNER_ACCESS_RECOVERY`, never the token.
+- **Closing**, `POST /{id}/close` with `{confirmSlug, reason}`:
+  - Preconditions: the store is suspended, the slug is typed correctly, and nothing is in flight. "In flight"
+    means gateway payments still pending (the reconciliation criterion, without its margin), paid orders without
+    stock applied, outbox messages `PENDING` or `IN_FLIGHT`, and refunds `PENDING`. A failure is a 400 with the
+    counts. Pending manual orders don't block.
+  - One transaction does all of this:
+    - admins are deactivated, lose their password and tokens, and get `tokenVersion + 1`;
+    - customers get the same in a single UPDATE;
+    - gateway configs are deleted, carrier credentials are nulled, the Stripe secrets are deleted, and
+      `stripe_enabled` and `pos_sync_enabled` are set to false;
+    - sync mappings and POS connections are deleted, which frees the company for a new onboarding. Without that,
+      the `UNIQUE (external_id, company_id)` mapping would point the new store's sync at the old products;
+    - the domain is released;
+    - the status becomes `CLOSED`.
+  - Gateways, carriers and connections are changed with statements that don't load the entity (decryption).
+  - Audit: `STORE_CLOSE`, with names and counts only.
+  - Data is kept and the slug stays taken. Closing again with the slug is a 200 no-op.
+- **Export and purge are a documented procedure, not an API call:** deleting a merchant's data is irreversible,
+  and the retention period is agreed outside the code. The procedure is below.
+  `ClosedStorePurgeProcedureTest` runs these exact blocks (it extracts them between the markers). It also fails
+  if a table with `store_id` isn't named in the purge, so a new table has to be handled here.
+- **Tests:** `platform/StoreLifecycleTest`, `StoreClosureTest`, `OwnerAccessRecoveryTest`,
+  `OwnerAccessRecoveryCommitTest` (committed: the e-mail goes after commit), `PlatformStoreQueryTest` and
+  `ClosedStorePurgeProcedureTest` (committed). There are also new cases in `SuspendedStoreTest` (callbacks pass
+  while suspended, nothing passes when closed), `PosReconciliationTest`, `AuditCatalogConsistencyTest`
+  (`stores_status_valid`), `AuditSecretSweepTest` and `PlatformNetworkTest`.
+
+**Closing a store: export and purge (PROD-23).** Run it with `psql` against the store's database, after
+`\set store_id <id>`.
+
+The export goes first, and can be repeated as needed. It hands the merchant their data: orders, items,
+customers without credentials, addresses, products and variations. Image files are listed by the first purge
+query. The files land in `psql`'s working directory.
+
+Each line is `COPY ... TO STDOUT \g <file>`, not `\copy`: psql doesn't replace `:store_id` inside `\copy`, while
+`\g` sends ordinary SQL, which it does replace. The manual run caught that.
+
+<!-- prod23-export:start -->
+```sql
+COPY (SELECT * FROM orders WHERE store_id = :store_id ORDER BY id) TO STDOUT WITH CSV HEADER \g orders.csv
+COPY (SELECT i.* FROM order_items i JOIN orders o ON o.id = i.order_id WHERE o.store_id = :store_id ORDER BY i.id) TO STDOUT WITH CSV HEADER \g order_items.csv
+COPY (SELECT id, email, first_name, last_name, phone, account_status, created_at FROM customers WHERE store_id = :store_id ORDER BY id) TO STDOUT WITH CSV HEADER \g customers.csv
+COPY (SELECT * FROM shipping_addresses WHERE store_id = :store_id ORDER BY id) TO STDOUT WITH CSV HEADER \g shipping_addresses.csv
+COPY (SELECT * FROM products WHERE store_id = :store_id ORDER BY id) TO STDOUT WITH CSV HEADER \g products.csv
+COPY (SELECT * FROM product_variations WHERE store_id = :store_id ORDER BY id) TO STDOUT WITH CSV HEADER \g product_variations.csv
+```
+<!-- prod23-export:end -->
+
+The purge comes **only after the agreed retention**, counted from `stores.status_changed_at`, and only for a
+`CLOSED` store: the `purge_store` temp table is empty otherwise, so every statement deletes nothing. It runs in
+one transaction.
+- First save the image paths the first query prints. The local storage driver doesn't group files by store, so
+  they're deleted by hand, and only once the transaction has committed.
+- The POS logs are keyed by company, not by store. The company comes from the `STORE_CLOSE` audit row, because
+  the connection is already gone. They are kept if the company has a store again, since those rows can't be told
+  apart.
+
+<!-- prod23-purge:start -->
+```sql
+BEGIN;
+CREATE TEMP TABLE purge_store ON COMMIT DROP AS
+    SELECT id FROM stores WHERE id = :store_id AND status = 'CLOSED';
+CREATE TEMP TABLE purge_companies ON COMMIT DROP AS
+    SELECT DISTINCT jsonb_array_elements_text(details -> 'posCompanyIds')::bigint AS company_id
+    FROM audit_events WHERE store_id IN (SELECT id FROM purge_store) AND action = 'STORE_CLOSE';
+-- The files to delete afterwards (local driver: by hand; S3: the directory/<store>/ prefixes).
+SELECT image_path FROM product_images WHERE store_id IN (SELECT id FROM purge_store)
+UNION ALL SELECT featured_image FROM products WHERE store_id IN (SELECT id FROM purge_store) AND featured_image IS NOT NULL
+UNION ALL SELECT images::text FROM products WHERE store_id IN (SELECT id FROM purge_store) AND images IS NOT NULL
+UNION ALL SELECT image FROM product_variations WHERE store_id IN (SELECT id FROM purge_store) AND image IS NOT NULL
+UNION ALL SELECT image FROM categories WHERE store_id IN (SELECT id FROM purge_store) AND image IS NOT NULL
+UNION ALL SELECT image FROM home_banners WHERE store_id IN (SELECT id FROM purge_store) AND image IS NOT NULL
+UNION ALL SELECT mobile_image FROM home_banners WHERE store_id IN (SELECT id FROM purge_store) AND mobile_image IS NOT NULL
+UNION ALL SELECT store_logo FROM store_settings WHERE store_id IN (SELECT id FROM purge_store) AND store_logo IS NOT NULL
+UNION ALL SELECT store_favicon FROM store_settings WHERE store_id IN (SELECT id FROM purge_store) AND store_favicon IS NOT NULL
+UNION ALL SELECT avatar FROM users WHERE store_id IN (SELECT id FROM purge_store) AND avatar IS NOT NULL;
+UPDATE stores SET owner_user_id = NULL WHERE id IN (SELECT id FROM purge_store);
+-- Cascades from orders: order_items, order_status_history, coupon_usages, order_refunds, outbox_messages.
+-- Before products (order_items.product_id is RESTRICT) and before users (order_status_history.user_id).
+DELETE FROM orders WHERE store_id IN (SELECT id FROM purge_store);
+-- Cascades from products: product_images, product_variations, product_variation_attributes, product_sync_mapping,
+-- product_variation_sync_mapping.
+DELETE FROM products WHERE store_id IN (SELECT id FROM purge_store);
+DELETE FROM categories WHERE store_id IN (SELECT id FROM purge_store);
+-- Cascades from attributes: attribute_values.
+DELETE FROM attributes WHERE store_id IN (SELECT id FROM purge_store);
+-- Cascades from customers: shipping_addresses.
+DELETE FROM customers WHERE store_id IN (SELECT id FROM purge_store);
+DELETE FROM coupons WHERE store_id IN (SELECT id FROM purge_store);
+-- Cascades from methods and zones: shipping_rates.
+DELETE FROM shipping_methods WHERE store_id IN (SELECT id FROM purge_store);
+DELETE FROM shipping_zones WHERE store_id IN (SELECT id FROM purge_store);
+DELETE FROM home_banners WHERE store_id IN (SELECT id FROM purge_store);
+DELETE FROM settings WHERE store_id IN (SELECT id FROM purge_store);
+DELETE FROM store_settings WHERE store_id IN (SELECT id FROM purge_store);
+DELETE FROM payment_gateway_configs WHERE store_id IN (SELECT id FROM purge_store);
+DELETE FROM pos_connections WHERE store_id IN (SELECT id FROM purge_store);
+DELETE FROM user_roles WHERE user_id IN (SELECT id FROM users WHERE store_id IN (SELECT id FROM purge_store));
+DELETE FROM role_permissions WHERE role_id IN (SELECT id FROM roles WHERE store_id IN (SELECT id FROM purge_store));
+DELETE FROM users WHERE store_id IN (SELECT id FROM purge_store);
+DELETE FROM roles WHERE store_id IN (SELECT id FROM purge_store);
+DELETE FROM sync_webhook_logs WHERE company_id IN (SELECT company_id FROM purge_companies)
+    AND company_id NOT IN (SELECT company_id FROM pos_connections);
+DELETE FROM pos_webhook_receipts WHERE company_id IN (SELECT company_id FROM purge_companies)
+    AND company_id NOT IN (SELECT company_id FROM pos_connections);
+DELETE FROM stores WHERE id IN (SELECT id FROM purge_store);
+COMMIT;
+```
+<!-- prod23-purge:end -->
+
+The store's audit rows are deleted on their own retention, which can be longer. They have no foreign key and
+survive the purge.
+
+<!-- prod23-audit-purge:start -->
+```sql
+DELETE FROM audit_events WHERE store_id = :store_id AND NOT EXISTS (SELECT 1 FROM stores WHERE id = :store_id);
+```
+<!-- prod23-audit-purge:end -->
+
 **Which exception to throw** (M1): a rule the caller broke, in words meant for them, is
 `BusinessException` → 400 with the message. A request that can't be served but wasn't wrong is
 `OutOfStockException`/`ShippingUnavailableException` → 409. Anything else — a wrapped SDK error, a
@@ -1104,24 +1260,24 @@ fetch join over a collection with pagination makes Hibernate page in memory. `@O
 is the other trap — it can't be proxied, so it costs one SELECT per row no matter what `fetch` says.
 `ProductListingQueryCountTest` fails if any of this is undone.
 
-**Database**: PostgreSQL via Flyway, schema in `src/main/resources/db/migration/` — **28 migrations,
-currently up to `V28__audit_events.sql`**, well past the original catalog/settings ones.
+**Database**: PostgreSQL via Flyway, schema in `src/main/resources/db/migration/` — **29 migrations,
+currently up to `V29__store_lifecycle.sql`**, well past the original catalog/settings ones.
 Everything from V8 on is a hardening or new capability rather than the original port: V8 stores, V11
 store domains, V12 password reset, V13 stock/coupon integrity, V14 token versions, V15 the
 permission catalogue, V16 the listing indexes, V17 TIMESTAMPTZ + the enum CHECK constraints, V18
 store status, V19 order refunds, V20 `order_items.stock_applied`, V21 refund intent, V22 nullable
 `users.password` (admin invitations), V23 `stores.domain_verified_at` (PROD-04), V24 `orders.paid_at`,
 V25 the outbox, V26 the POS ordered inputs, V27 POS variants, V28 `audit_events` (PROD-18, the first
-plpgsql: its immutability trigger).
+plpgsql: its immutability trigger), V29 the store lifecycle (PROD-23: `CLOSED`, `status_changed_at`, two audit
+actions).
 `spring.jpa.hibernate.ddl-auto=validate`, so any entity change must be paired with a new Flyway
 migration — **never edit an already-applied one**, add the next number (`V24__...sql`).
 
 **Enum columns** (B6): every column that stores an enum name carries a `CHECK` listing its values
 (V17). Adding a constant to an enum therefore needs a migration too — otherwise the new value is
-rejected by the database at runtime, not at compile time. `stores.status` is the exception and is
-deliberately unconstrained: it looks like an enum but is a free-form `String` (`Store.java:53`).
-`audit_events` has four such CHECKs (action, target type, actor type, result), and
-`AuditCatalogConsistencyTest` fails when an enum and its CHECK drift apart.
+rejected by the database at runtime, not at compile time. `stores.status` got its CHECK later (V18, widened by
+V29 for `CLOSED`). `audit_events` has four such CHECKs (action, target type, actor type, result), and
+`AuditCatalogConsistencyTest` fails when one of those five enums and its CHECK drift apart.
 
 **Time zones** (B5/B7): timestamps are `TIMESTAMPTZ` and Hibernate writes them with
 `hibernate.jdbc.time_zone=UTC`, so a value doesn't change meaning when the server's zone does. Any

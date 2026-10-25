@@ -117,8 +117,9 @@ public abstract class IntegrationTestSupport {
 
     /**
      * G5: una tienda suspendida no vende — TenantResolutionFilter responde 403 a todo lo que no sea
-     * /api/platform/**. Se crea directamente en ese estado porque no hay (todavía) endpoint para
-     * suspenderla: hoy es una operación de base de datos del equipo de operaciones.
+     * /api/platform/** (ni, desde PROD-23, los retornos de pago). Se crea directamente en ese estado para los
+     * tests que no son de la suspensión; la suspensión en sí (POST /api/platform/stores/{id}/suspend) la
+     * prueban StoreLifecycleTest y StoreClosureTest.
      */
     protected Store createStore(String slugPrefix, StoreStatus status) {
         Store store = Store.builder()

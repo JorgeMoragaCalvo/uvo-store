@@ -139,6 +139,29 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
             """)
     List<Long> findProductsWithStockPending(@Param("productIds") Collection<Long> productIds);
 
+    /**
+     * PROD-23. Pagos de pasarela todavía sin resolver en una tienda: lo que {@link #findPendingPaymentsToReconcile}
+     * seguiría preguntando a la pasarela, sin su margen ni su exclusión de las ya marcadas como descuadradas (un
+     * descuadre es dinero sin resolver, y también impide cerrar). Cerrar la tienda con alguno borraría las
+     * credenciales con las que se confirma.
+     */
+    @Query("""
+            select count(o) from Order o
+            where o.store.id = :storeId
+              and o.paymentStatus = org.uvo.uvostore.entity.order.enums.PaymentStatus.PENDING
+              and (o.paymentId is not null or o.stripeCheckoutSessionId is not null)
+            """)
+    long countGatewayPaymentsPendingForStore(@Param("storeId") Long storeId);
+
+    /** PROD-23. Cobradas sin el stock descontado, sin margen: lo que todavía tiene que recoger StockRecoveryJob. */
+    @Query("""
+            select count(o) from Order o
+            where o.store.id = :storeId
+              and o.paymentStatus = org.uvo.uvostore.entity.order.enums.PaymentStatus.PAID
+              and o.stockApplied = false
+            """)
+    long countPaidWithoutStockAppliedForStore(@Param("storeId") Long storeId);
+
     // Admin\Shipping\{Zones,Methods}\Index delete guards — refuse to delete a zone/method that
     // still has orders referencing it.
     long countByShippingZoneId(Long shippingZoneId);

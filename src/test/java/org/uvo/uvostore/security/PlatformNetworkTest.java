@@ -7,8 +7,11 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.uvo.uvostore.support.IntegrationTestSupport;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -90,6 +93,30 @@ class PlatformNetworkTest extends IntegrationTestSupport {
                         .header("X-Platform-Operator", "mal formado"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("X-Platform-Operator")));
+    }
+
+    @Test
+    @DisplayName("PROD-23. La operación de tiendas está detrás de la misma puerta: 404 desde fuera, 401 con una clave mala")
+    void theStoreOperationsAreBehindTheSameGate() throws Exception {
+        for (MockHttpServletRequestBuilder call : List.of(
+                get("/api/platform/stores"),
+                get("/api/platform/stores/1/audit-events"),
+                post("/api/platform/stores/1/suspend").contentType("application/json").content("{\"reason\":\"OTHER\"}"),
+                post("/api/platform/stores/1/close").contentType("application/json").content("{}"))) {
+            mockMvc.perform(from(call, "203.0.113.9").header("X-Platform-Key", platformKey))
+                    .andExpect(status().isNotFound());
+        }
+        mockMvc.perform(from(get("/api/platform/stores"), "10.0.0.5").header("X-Platform-Key", "clave-equivocada"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(from(get("/api/platform/stores"), "10.0.0.5").header("X-Platform-Key", platformKey))
+                .andExpect(status().isOk());
+    }
+
+    private static MockHttpServletRequestBuilder from(MockHttpServletRequestBuilder call, String remoteAddress) {
+        return call.with(request -> {
+            request.setRemoteAddr(remoteAddress);
+            return request;
+        });
     }
 
     @Test

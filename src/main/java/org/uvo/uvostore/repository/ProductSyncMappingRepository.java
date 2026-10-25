@@ -51,4 +51,14 @@ public interface ProductSyncMappingRepository extends JpaRepository<ProductSyncM
             """)
     List<ProductSyncMapping> findActiveBatch(@Param("companyId") Long companyId, @Param("afterId") Long afterId,
                                              Pageable pageable);
+
+    /**
+     * PROD-23. Los mapeos de los productos de una tienda, al cerrarla; los de variantes caen con ellos
+     * ({@code ON DELETE CASCADE}, V27). Sin esto la empresa no podría tener otra tienda: el mapeo es
+     * {@code UNIQUE (external_id, company_id)} y la sincronización lo busca por empresa, así que encontraría el
+     * producto de la tienda cerrada.
+     */
+    @Modifying(flushAutomatically = true)
+    @Query("delete from ProductSyncMapping m where m.product.id in (select p.id from Product p where p.store.id = :storeId)")
+    int deleteAllForStore(@Param("storeId") Long storeId);
 }

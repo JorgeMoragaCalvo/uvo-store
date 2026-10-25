@@ -24,6 +24,7 @@ import org.uvo.uvostore.entity.pos.enums.SyncDirection;
 import org.uvo.uvostore.entity.pos.enums.SyncStatus;
 import org.uvo.uvostore.entity.pos.enums.WebhookStatus;
 import org.uvo.uvostore.entity.tenant.Store;
+import org.uvo.uvostore.entity.tenant.enums.StoreStatus;
 import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.repository.OutboxMessageRepository;
 import org.uvo.uvostore.repository.PosConnectionRepository;
@@ -289,6 +290,28 @@ class PosReconciliationTest extends IntegrationTestSupport {
         reconciliation.reconcileAll();
         verify(posClient, never()).readCatalog(argThat(c -> c != null
                 && offConnection.getCompanyId().equals(c.getCompanyId())), any());
+    }
+
+    @Test
+    @DisplayName("PROD-23: con la tienda suspendida la pasada programada no le pregunta al POS; al reactivarla, sí")
+    void aSuspendedStoreIsSkippedByTheScheduledPass() {
+        Mapped mapped = mapped(10, 9990, 1);
+        posSays(row(mapped, 1, 7, 9990));
+        store.setStatus(StoreStatus.SUSPENDED);
+        storeRepository.saveAndFlush(store);
+
+        reconciliation.reconcileAll();
+
+        verify(posClient, never()).readCatalog(argThat(c -> c != null
+                && connection.getCompanyId().equals(c.getCompanyId())), any());
+        assertThat(stock(mapped)).isEqualTo(10);
+
+        store.setStatus(StoreStatus.ACTIVE);
+        storeRepository.saveAndFlush(store);
+
+        reconciliation.reconcileAll();
+
+        assertThat(stock(mapped)).isEqualTo(7);
     }
 
     @Test

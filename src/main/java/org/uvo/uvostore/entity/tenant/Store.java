@@ -66,8 +66,20 @@ public class Store {
     @Builder.Default
     private StoreStatus status = StoreStatus.ACTIVE;
 
+    // PROD-23. Cuándo cambió el estado por última vez (V29). NULL = nunca, desde el alta.
+    @Column(name = "status_changed_at")
+    private Instant statusChangedAt;
+
+    public boolean isActive() {
+        return status == StoreStatus.ACTIVE;
+    }
+
     public boolean isSuspended() {
         return status == StoreStatus.SUSPENDED;
+    }
+
+    public boolean isClosed() {
+        return status == StoreStatus.CLOSED;
     }
 
     @CreationTimestamp
