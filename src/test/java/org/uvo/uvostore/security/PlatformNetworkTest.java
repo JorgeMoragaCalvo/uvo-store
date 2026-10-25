@@ -74,6 +74,25 @@ class PlatformNetworkTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("PROD-18. El operador se valida después de la red y de la clave: sin pasarlas no se puede sondear")
+    void theOperatorIsCheckedAfterTheNetworkAndTheKey() throws Exception {
+        mockMvc.perform(platformCall("203.0.113.9")
+                        .header("X-Platform-Key", platformKey)
+                        .header("X-Platform-Operator", "mal formado"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(platformCall("10.0.0.5")
+                        .header("X-Platform-Key", "clave-equivocada")
+                        .header("X-Platform-Operator", "mal formado"))
+                .andExpect(status().isUnauthorized());
+        // El cuerpo vacío también daría 400 (validación): lo que dice que fue el operador es el mensaje.
+        mockMvc.perform(platformCall("10.0.0.5")
+                        .header("X-Platform-Key", platformKey)
+                        .header("X-Platform-Operator", "mal formado"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("X-Platform-Operator")));
+    }
+
+    @Test
     @DisplayName("El resto de la API no se ve afectado por la lista de redes")
     void otherRoutesAreUntouched() throws Exception {
         mockMvc.perform(post("/api/admin/auth/login")

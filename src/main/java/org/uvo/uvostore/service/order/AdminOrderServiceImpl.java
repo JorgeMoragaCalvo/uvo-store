@@ -2,6 +2,8 @@ package org.uvo.uvostore.service.order;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.uvo.uvostore.entity.audit.enums.AuditAction;
+import org.uvo.uvostore.entity.audit.enums.AuditTargetType;
 import org.uvo.uvostore.entity.order.Order;
 import org.uvo.uvostore.entity.order.OrderStatusHistory;
 import org.uvo.uvostore.entity.order.enums.FulfillmentStatus;
@@ -10,6 +12,9 @@ import org.uvo.uvostore.entity.order.enums.PaymentStatus;
 import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.BusinessException;
+import org.uvo.uvostore.service.audit.AuditDiff;
+import org.uvo.uvostore.service.audit.AuditEntry;
+import org.uvo.uvostore.service.audit.AuditTrail;
 
 import java.time.Instant;
 import java.util.NoSuchElementException;
@@ -21,13 +26,16 @@ public class AdminOrderServiceImpl implements AdminOrderService {
     private final AdminOrderQueryService adminOrderQueryService;
     private final OrderInventoryService orderInventoryService;
     private final OrderStatusService orderStatusService;
+    private final AuditTrail auditTrail;
 
     public AdminOrderServiceImpl(OrderRepository orderRepository, AdminOrderQueryService adminOrderQueryService,
-                                 OrderInventoryService orderInventoryService, OrderStatusService orderStatusService) {
+                                 OrderInventoryService orderInventoryService, OrderStatusService orderStatusService,
+                                 AuditTrail auditTrail) {
         this.orderRepository = orderRepository;
         this.adminOrderQueryService = adminOrderQueryService;
         this.orderInventoryService = orderInventoryService;
         this.orderStatusService = orderStatusService;
+        this.auditTrail = auditTrail;
     }
 
     @Override
@@ -69,10 +77,12 @@ public class AdminOrderServiceImpl implements AdminOrderService {
     @Transactional
     public AdminOrderDetailDto cancelOrder(Long orderId) {
         Order order = findOrThrow(orderId);
+        OrderStatus previous = order.getStatus();
         order.setStatus(OrderStatus.CANCELLED);
         appendHistory(order, "Orden cancelada");
         releaseInventory(order);
         orderRepository.save(order);
+        auditCancel(order, previous, "cancel");
         return adminOrderQueryService.getById(orderId);
     }
 
@@ -105,12 +115,16 @@ public class AdminOrderServiceImpl implements AdminOrderService {
             requirePaid(order, "pasar a " + newStatus);
         }
 
+        OrderStatus previous = order.getStatus();
         order.setStatus(newStatus);
         appendHistory(order, "Estado actualizado manualmente");
         if (newStatus == OrderStatus.CANCELLED) {
             releaseInventory(order);
         }
         orderRepository.save(order);
+        if (newStatus == OrderStatus.CANCELLED) {
+            auditCancel(order, previous, "status");
+        }
         return adminOrderQueryService.getById(orderId);
     }
 
@@ -118,6 +132,7 @@ public class AdminOrderServiceImpl implements AdminOrderService {
     @Transactional
     public AdminOrderDetailDto updatePaymentStatus(Long orderId, String paymentStatus) {
         Order order = findOrThrow(orderId);
+        PaymentStatus previous = order.getPaymentStatus();
         PaymentStatus newStatus = PaymentStatus.valueOf(paymentStatus.toUpperCase());
         guardAgainstManualRefund(newStatus == PaymentStatus.REFUNDED);
 
@@ -150,7 +165,29 @@ public class AdminOrderServiceImpl implements AdminOrderService {
             // y un valor nuevo del enum no se cuele por un default silencioso.
             case REFUNDED -> throw new IllegalStateException("inalcanzable: lo rechaza guardAgainstManualRefund");
         }
+        // PROD-18. Marcar pagada a mano entrega mercadería sin que haya pasado un cobro por aquí: es lo que más
+        // conviene poder atribuir. markPaid y markPaymentFailed cambian esta misma entidad (misma transacción),
+        // y son idempotentes: si no cambió nada, no hay fila.
+        AuditDiff diff = AuditDiff.create().value("paymentStatus", previous, order.getPaymentStatus());
+        if (diff.hasChanges()) {
+            auditTrail.record(AuditEntry.of(AuditAction.ORDER_PAYMENT_STATUS_UPDATE, AuditTargetType.ORDER, order.getId())
+                    .details(diff.with("orderNumber", order.getOrderNumber())));
+        }
         return adminOrderQueryService.getById(orderId);
+    }
+
+    // PROD-18. Las dos vías del panel que cancelan (el botón y el cambio de estado). Cancelar devuelve stock y
+    // cupón; cancelar una ya cancelada no hace nada y no deja fila.
+    private void auditCancel(Order order, OrderStatus previous, String via) {
+        if (previous == OrderStatus.CANCELLED) {
+            return;
+        }
+        auditTrail.record(AuditEntry.of(AuditAction.ORDER_CANCEL, AuditTargetType.ORDER, order.getId())
+                .details(AuditDiff.create()
+                        .with("orderNumber", order.getOrderNumber())
+                        .with("fromStatus", previous)
+                        .with("paymentStatus", order.getPaymentStatus())
+                        .with("via", via)));
     }
 
     // G4: marcar una orden como devuelta dejó de ser un cambio de estado. Antes, estos dos endpoints

@@ -21,6 +21,7 @@ import org.uvo.uvostore.service.order.OrderStatusService;
 import org.uvo.uvostore.service.order.PaymentService;
 import org.uvo.uvostore.service.payment.MercadoPagoService;
 import org.uvo.uvostore.service.payment.RefundCommand;
+import org.uvo.uvostore.service.audit.AuditTrail;
 import org.uvo.uvostore.service.payment.RefundIntentStore;
 import org.uvo.uvostore.service.payment.RefundService;
 import org.uvo.uvostore.service.payment.WebpayService;
@@ -66,9 +67,11 @@ class RefundIdempotencyTest {
     private final WebpayService webpayService = mock(WebpayService.class);
     private final MercadoPagoService mercadoPagoService = mock(MercadoPagoService.class);
     private final RefundIntentStore intentStore = mock(RefundIntentStore.class);
+    private final AuditTrail auditTrail = mock(AuditTrail.class);
 
     private final RefundService service = new RefundService(orderRepository, refundRepository, historyRepository,
-            userRepository, orderStatusService, paymentService, webpayService, mercadoPagoService, intentStore);
+            userRepository, orderStatusService, paymentService, webpayService, mercadoPagoService, intentStore,
+            auditTrail);
 
     /** Lo que hay guardado, para que el saldo se calcule como lo haría la consulta real. */
     private final List<OrderRefund> stored = new ArrayList<>();

@@ -6,6 +6,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.transaction.TestTransaction;
 import org.springframework.test.web.servlet.MockMvc;
@@ -83,6 +84,8 @@ public abstract class IntegrationTestSupport {
     protected PermissionRepository permissionRepository;
     @Autowired
     protected JwtService jwtService;
+    @Autowired
+    protected JdbcTemplate jdbcTemplate;
 
     protected static final String TEST_PASSWORD = "password123";
 
@@ -224,6 +227,19 @@ public abstract class IntegrationTestSupport {
         setting.setSettingKey(key);
         setting.setValue(value);
         settingRepository.save(setting);
+    }
+
+    /** PROD-18. Las filas de auditoría de una tienda, en orden; dentro de la transacción del test se ven. */
+    protected List<AuditRows.Row> auditRows(Store store) {
+        return AuditRows.forStore(jdbcTemplate, store.getId());
+    }
+
+    protected List<AuditRows.Row> auditRows(Store store, String action) {
+        return AuditRows.forStore(jdbcTemplate, store.getId(), action);
+    }
+
+    protected AuditRows.Row auditRow(Store store, String action) {
+        return AuditRows.single(jdbcTemplate, store.getId(), action);
     }
 
     protected String loginAdmin(Store store, User user) throws Exception {

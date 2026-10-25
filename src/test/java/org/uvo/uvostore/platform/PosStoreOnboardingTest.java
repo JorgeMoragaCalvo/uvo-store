@@ -18,6 +18,7 @@ import org.uvo.uvostore.entity.security.User;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.PosConnectionRepository;
 import org.uvo.uvostore.service.platform.StoreOwnerInvitedEvent;
+import org.uvo.uvostore.support.AuditRows;
 import org.uvo.uvostore.support.IntegrationTestSupport;
 import org.uvo.uvostore.support.WithPosIntegration;
 
@@ -137,6 +138,10 @@ class PosStoreOnboardingTest extends IntegrationTestSupport {
         assertThat(settingRepository.count()).isEqualTo(settings);
         // Y una sola invitación: el reintento no le manda otro correo al dueño.
         assertThat(events.stream(StoreOwnerInvitedEvent.class)).hasSize(1);
+        // PROD-18. Y una sola fila de alta: el reintento no escribe nada, tampoco en la auditoría.
+        assertThat(AuditRows.forStore(jdbcTemplate, objectMapper.readTree(first).get("storeId").asLong(), "STORE_CREATE"))
+                .singleElement()
+                .satisfies(row -> assertThat(row.json().path("posCompanyId").asLong()).isEqualTo(alta.companyId()));
     }
 
     @Test

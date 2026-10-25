@@ -6,23 +6,32 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.uvo.uvostore.entity.audit.enums.AuditAction;
+import org.uvo.uvostore.entity.audit.enums.AuditTargetType;
 import org.uvo.uvostore.entity.order.Coupon;
 import org.uvo.uvostore.entity.order.enums.CouponType;
 import org.uvo.uvostore.repository.CouponRepository;
 import org.uvo.uvostore.security.TenantContext;
+import org.uvo.uvostore.service.audit.AuditDiff;
+import org.uvo.uvostore.service.audit.AuditEntry;
+import org.uvo.uvostore.service.audit.AuditTrail;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 
 @Service
 public class AdminCouponServiceImpl implements AdminCouponService {
 
     private final CouponRepository couponRepository;
+    private final AuditTrail auditTrail;
 
-    public AdminCouponServiceImpl(CouponRepository couponRepository) {
+    public AdminCouponServiceImpl(CouponRepository couponRepository, AuditTrail auditTrail) {
         this.couponRepository = couponRepository;
+        this.auditTrail = auditTrail;
     }
 
     @Override
@@ -49,7 +58,10 @@ public class AdminCouponServiceImpl implements AdminCouponService {
         Coupon coupon = new Coupon();
         coupon.setStore(TenantContext.requireCurrent());
         applyCommonFields(coupon, command, code);
-        return toDto(couponRepository.save(coupon));
+        Coupon saved = couponRepository.save(coupon);
+        auditTrail.record(AuditEntry.of(AuditAction.COUPON_CREATE, AuditTargetType.COUPON, saved.getId())
+                .details(AuditDiff.create().withAll(auditFields(saved))));
+        return toDto(saved);
     }
 
     @Override
@@ -64,8 +76,18 @@ public class AdminCouponServiceImpl implements AdminCouponService {
                 });
         validatePercentage(command);
 
+        Map<String, Object> before = auditFields(coupon);
+        String previousDescription = coupon.getDescription();
         applyCommonFields(coupon, command, code);
-        return toDto(couponRepository.save(coupon));
+        Coupon saved = couponRepository.save(coupon);
+        AuditDiff diff = AuditDiff.create()
+                .values(before, auditFields(saved))
+                .opaque("description", previousDescription, saved.getDescription());
+        if (diff.hasChanges()) {
+            auditTrail.record(AuditEntry.of(AuditAction.COUPON_UPDATE, AuditTargetType.COUPON, saved.getId())
+                    .details(diff.with("coupon", saved.getCode())));
+        }
+        return toDto(saved);
     }
 
     @Override
@@ -75,6 +97,8 @@ public class AdminCouponServiceImpl implements AdminCouponService {
         if (coupon.getTimesUsed() > 0) {
             throw new BusinessException("No se puede eliminar un cupón que ya ha sido usado.");
         }
+        auditTrail.record(AuditEntry.of(AuditAction.COUPON_DELETE, AuditTargetType.COUPON, coupon.getId())
+                .details(AuditDiff.create().withAll(auditFields(coupon))));
         couponRepository.delete(coupon);
     }
 
@@ -83,7 +107,27 @@ public class AdminCouponServiceImpl implements AdminCouponService {
     public CouponDto toggleStatus(Long id) {
         Coupon coupon = findOrThrow(id);
         coupon.setActive(!coupon.isActive());
-        return toDto(couponRepository.save(coupon));
+        Coupon saved = couponRepository.save(coupon);
+        auditTrail.record(AuditEntry.of(AuditAction.COUPON_STATUS_TOGGLE, AuditTargetType.COUPON, saved.getId())
+                .details(AuditDiff.create().with("coupon", saved.getCode()).value("active", !saved.isActive(), saved.isActive())));
+        return toDto(saved);
+    }
+
+    // PROD-18. Lo que decide cuánto descuenta. La descripción es texto libre y va aparte, solo por nombre.
+    private static Map<String, Object> auditFields(Coupon c) {
+        Map<String, Object> fields = new LinkedHashMap<>();
+        fields.put("code", c.getCode());
+        fields.put("name", c.getName());
+        fields.put("type", c.getType());
+        fields.put("value", c.getValue());
+        fields.put("minimumPurchase", c.getMinimumPurchase());
+        fields.put("maximumDiscount", c.getMaximumDiscount());
+        fields.put("startsAt", c.getStartsAt());
+        fields.put("expiresAt", c.getExpiresAt());
+        fields.put("usageLimit", c.getUsageLimit());
+        fields.put("usageLimitPerCustomer", c.getUsageLimitPerCustomer());
+        fields.put("active", c.isActive());
+        return fields;
     }
 
     private void validatePercentage(CouponCommand command) {

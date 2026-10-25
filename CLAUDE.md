@@ -1018,6 +1018,72 @@ proposed** (POS-1 is still open; `uvopos-app` has none of this), like POS-4/POS-
   `ProductionConfigurationRulesTest`, and `NewStore.test.tsx`. Tests that log into a freshly onboarded store
   accept the invitation first (`StoreOnboardingTest.activateOwner`).
 
+**PROD-18 — audit log.** `audit_events` (V28) records who changed what, in which store, when, with which result
+and in which request: `store_id`, `actor_type` (`ADMIN` | `PLATFORM` | `SYSTEM`), `actor_id`, `actor_label`,
+`action`, `target_type`, `target_id`, `result` (`SUCCESS` | `FAILURE`), `request_id`, `details` (jsonb). **Read it
+with SQL for now** — there is no endpoint or screen (PROD-23 decides the consumer); the queries are in V28's
+`REVISIÓN MANUAL` block.
+- **Same transaction as the change.** `service/audit/AuditTrail.record(AuditEntry)` is the only writer and is
+  `Propagation.MANDATORY`: if the change rolls back the row goes with it, and if the row can't be written the
+  change doesn't happen (fail-closed — an enum constant missing from the migration breaks the business call, which
+  `AuditCatalogConsistencyTest` catches at build time). The only two `FAILURE` rows survive because *their*
+  transaction commits: a failed admin login (`adminLogin` is `@Transactional(noRollbackFor =
+  BadCredentialsException.class)`; the failure path writes nothing else) and a gateway-rejected refund (inside
+  `RefundIntentStore.fail`, which already ran in its own transaction; `REFUND_REQUEST` is written in `open`, so the
+  intent stays recorded even if the local transaction dies after the gateway paid). **No `REQUIRES_NEW` writer**:
+  it would hold a second pooled connection per failed login, and ten at once starve the pool.
+- **Never secrets or whole bodies.** `details` is built only through `AuditDiff`: `value` (from/to, only if it
+  changed; amounts by `compareTo`, so `10000` = `10000.00`), `secret`/`secretSubmitted`/`credentials` (only the key
+  name and `set`/`replaced`/`cleared`; credential map keys are client-chosen, so only names matching
+  `[a-z][A-Za-z0-9]{0,39}` are kept and the rest counted), `opaque` (only the name of a free-text field that
+  changed: notes, descriptions, phone), `with` (context, not a change), text cut at 120 chars. Edits record only
+  when `hasChanges()`; create, delete and toggle always record. Stored-encrypted secrets (`stripe_secret_key`) are
+  **not decrypted to compare** — after a key rotation that would fail exactly on the save that fixes it. No refund
+  reasons, no gateway references, no passwords or tokens, and a failed login with an unknown e-mail records
+  nothing (people type their password there); attempts the account throttle rejects aren't evaluated, so brute
+  force can't fill the table.
+- **Actor and store.** By default the actor is the Spring Security principal (admin: id + e-mail as it was; the
+  platform: `PlatformApiKeyAuthFilter` now puts `AuthPrincipal(null, operator, "PLATFORM", null)` after the key
+  check) and the store is `TenantContext`'s; nothing authenticated is `SYSTEM`. Two exceptions are explicit
+  (`AuditEntry.by` / `forStore`): login, invitation acceptance and password reset name the account itself as actor
+  (the panel sends its stored Bearer to those routes too, and it may be another admin's), and the reset uses the
+  user's store (the token is looked up without the Host). Platform actions **must** name their store —
+  `TenantResolutionFilter` resolves the Host on `/api/platform/**` too, and that's not the store being created.
+- **Operator of the POS (#39):** optional `X-Platform-Operator` on `/api/platform/**`
+  (`[A-Za-z0-9][A-Za-z0-9._:@-]{0,63}`, one value; malformed ⇒ 400 `ApiError`, checked after network ⇒ 404 and key
+  ⇒ 401) becomes `actor_label`. Absent ⇒ platform without operator (the operator form doesn't send it). It becomes
+  mandatory in PROD-19.
+- **What is audited:** refunds (`REFUND_REQUEST`, `REFUND_ISSUE` S/F, `REFUND_RECORD_EXTERNAL`); manual
+  cancellation (both panel paths) and payment status; gateway, carrier, Stripe and POS credentials; the eight F17
+  money settings (`SettingsServiceImpl.set` now returns the previous value); admin users (create, update,
+  activate/deactivate, delete, resend, accept, reset) and logins; roles with permission names; store creation
+  (not its idempotent replay), domain and verification (`STORE_STATUS_UPDATE` is reserved for PROD-23, nothing
+  writes it yet); coupons, shipping rates and methods; product and variation **price** changes made from the
+  panel. POS-originated catalog writes (`/api/sync/**`, webhooks) are not audited — `sync_webhook_logs` has them.
+- **Immutable:** a `BEFORE UPDATE` trigger rejects any UPDATE (also from a console); DELETE stays allowed for
+  retention (undecided, no purge job), store closing and test cleanup. No foreign keys, on purpose: history
+  outlives stores and users.
+- **Request id:** `config/RequestIdFilter`, the one filter `FilterRegistrationConfig` registers for real, at
+  `HIGHEST_PRECEDENCE`, outside the Security chain (so a 401/404/429 from a security filter carries it too). It
+  accepts an incoming `X-Request-Id` matching `[A-Za-z0-9][A-Za-z0-9._-]{7,63}` or generates a UUID, returns it in
+  the response header, puts it in the MDC (`requestId`) and removes it in `finally`. It never rewrites the request
+  header (`MercadoPagoController` reads MercadoPago's own `x-request-id` for the signature). Both log patterns
+  carry it through `logging.pattern.correlation=%([%X{requestId:-}] ){}`. Two logback traps, each caught once:
+  a bare trailing space is trimmed when the properties load (the log read `[id]o.u.u…`), hence the group; and
+  logback takes the character right after a group's `)` as a literal unless it is `)`, `{` or `\`, so in our own
+  `!default` pattern, where `%logger` follows, every line printed `%logger{40}` verbatim — hence the empty options
+  `{}` (Boot's own pattern does `%clr(...){}`). `RequestIdIntegrationTest` renders that pattern with logback's
+  `PatternLayout`, since the suite runs on the default profile. It's a correlation aid, not proof: anyone can
+  choose it. PROD-15b adds the store and the POS.
+- **Tests:** `audit/*` — `AuditTrailTransactionTest` and `AdminLoginAuditCommitTest` / `RefundAuditCommitTest`
+  (committed transactions, `support/CommittedFixtures` + `purgeStore`), `AuditCatalogConsistencyTest`,
+  `PlatformAuditTest`, `AuthAuditTest`, `UserRoleAuditTest`, `MoneyConfigAuditTest`, `SettingsAuditTest`,
+  `CatalogShippingAuditTest`, and `AuditSecretSweepTest` (every audited operation with marked secrets; no row
+  may contain one, and the expected actions must be there); plus `service/audit/AuditDiffTest`,
+  `config/RequestIdFilterTest`, `config/RequestIdIntegrationTest`, and new assertions in
+  `PosStoreOnboardingTest`, `StoreOnboardingCommitTest`, `AccountThrottleTest`, `PlatformNetworkTest`.
+  `IntegrationTestSupport.auditRows(store[, action])` reads the rows inside the test transaction.
+
 **Which exception to throw** (M1): a rule the caller broke, in words meant for them, is
 `BusinessException` → 400 with the message. A request that can't be served but wasn't wrong is
 `OutOfStockException`/`ShippingUnavailableException` → 409. Anything else — a wrapped SDK error, a
@@ -1038,13 +1104,15 @@ fetch join over a collection with pagination makes Hibernate page in memory. `@O
 is the other trap — it can't be proxied, so it costs one SELECT per row no matter what `fetch` says.
 `ProductListingQueryCountTest` fails if any of this is undone.
 
-**Database**: PostgreSQL via Flyway, schema in `src/main/resources/db/migration/` — **23 migrations,
-currently up to `V23__store_domain_verified.sql`**, well past the original catalog/settings ones.
+**Database**: PostgreSQL via Flyway, schema in `src/main/resources/db/migration/` — **28 migrations,
+currently up to `V28__audit_events.sql`**, well past the original catalog/settings ones.
 Everything from V8 on is a hardening or new capability rather than the original port: V8 stores, V11
 store domains, V12 password reset, V13 stock/coupon integrity, V14 token versions, V15 the
 permission catalogue, V16 the listing indexes, V17 TIMESTAMPTZ + the enum CHECK constraints, V18
 store status, V19 order refunds, V20 `order_items.stock_applied`, V21 refund intent, V22 nullable
-`users.password` (admin invitations), V23 `stores.domain_verified_at` (PROD-04).
+`users.password` (admin invitations), V23 `stores.domain_verified_at` (PROD-04), V24 `orders.paid_at`,
+V25 the outbox, V26 the POS ordered inputs, V27 POS variants, V28 `audit_events` (PROD-18, the first
+plpgsql: its immutability trigger).
 `spring.jpa.hibernate.ddl-auto=validate`, so any entity change must be paired with a new Flyway
 migration — **never edit an already-applied one**, add the next number (`V24__...sql`).
 
@@ -1052,6 +1120,8 @@ migration — **never edit an already-applied one**, add the next number (`V24__
 (V17). Adding a constant to an enum therefore needs a migration too — otherwise the new value is
 rejected by the database at runtime, not at compile time. `stores.status` is the exception and is
 deliberately unconstrained: it looks like an enum but is a free-form `String` (`Store.java:53`).
+`audit_events` has four such CHECKs (action, target type, actor type, result), and
+`AuditCatalogConsistencyTest` fails when an enum and its CHECK drift apart.
 
 **Time zones** (B5/B7): timestamps are `TIMESTAMPTZ` and Hibernate writes them with
 `hibernate.jdbc.time_zone=UTC`, so a value doesn't change meaning when the server's zone does. Any
@@ -1069,10 +1139,11 @@ config, so `mvnw verify` can't touch real store images and its leftovers die wit
 test that resolves upload paths reads that property rather than hardcoding `uploads` — see
 `AdminProductImageTest`, which used to hardcode it and cleaned up inside the real directory.
 
-**Filters** (B8): the six security filters are `@Component`, which would auto-register them in the
+**Filters** (B8): the seven security filters are `@Component`, which would auto-register them in the
 servlet chain on top of where `SecurityConfig` puts them. `FilterRegistrationConfig` disables that
-auto-registration, so `SecurityConfig` is the single place the order is decided. A new filter needs
-its `setEnabled(false)` registration there too.
+auto-registration, so `SecurityConfig` is the single place the order is decided. A new security filter
+needs its `setEnabled(false)` registration there too. The exception is `RequestIdFilter` (PROD-18): not a
+`@Component`, registered for real there at `HIGHEST_PRECEDENCE` so it wraps the whole Security chain.
 
 **Coverage** (PROD-25a): `./mvnw verify` writes a JaCoCo report to `target/site/jacoco/index.html` and
 **fails if line coverage of the whole project drops below the floor**, the `jacoco.line-coverage.minimum`
@@ -1150,7 +1221,8 @@ consuming this API.
   authority on the flag is `CustomerAccountsPolicy`, the only class that reads it. See the PROD-07
   bullet in "Architecture" for why, and for what turning it on would require.
 - `/api/platform/**` (store onboarding) uses `X-Platform-Key`, not JWT, and only answers from the private
-  network (POS-6) — see "Multi-tenancy".
+  network (POS-6) — see "Multi-tenancy". An optional `X-Platform-Operator` names the operator for the audit
+  log (PROD-18).
 - POS integration (`/api/sync/**`, `/api/webhooks/pos/**`) uses its own HMAC/API-key filters, separate from JWT.
 
 ### External integrations — all "off until configured"
@@ -1266,6 +1338,10 @@ login (`/admin/login`) is separate and fully functional.
     `AdminInvitationTest` all query the row. When a test needs to age a timestamp the service
     itself just wrote, it does so with a native `UPDATE` — and **`flush()` before `clear()`**, or
     `clear()` discards the endpoint's own pending writes and the row reads as if nothing happened.
+  - **Audit rows written inside a `REQUIRES_NEW` commit even under `IntegrationTestSupport`** (PROD-18):
+    today that's only `RefundIntentStore` (`REFUND_REQUEST`, the refund `FAILURE`), which no rolled-back test
+    reaches. Tests of those paths confirm for real and purge (`support/CommittedFixtures.purgeStore`, also used by
+    `AdminLoginAuditCommitTest`); `StoreOnboardingCommitTest` deletes its `audit_events` too.
 - **`./mvnw test-compile` without `clean` can report BUILD SUCCESS over stale classes.** After a
   signature change in `src/main`, the incremental compiler happily left the old `target/test-classes`
   in place and said nothing; `./mvnw -o clean test-compile` then reported 13 real errors. When you've

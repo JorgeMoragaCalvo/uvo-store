@@ -4,6 +4,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.uvo.uvostore.entity.audit.enums.AuditAction;
+import org.uvo.uvostore.entity.audit.enums.AuditTargetType;
 import org.uvo.uvostore.entity.security.Role;
 import org.uvo.uvostore.entity.security.User;
 import org.uvo.uvostore.entity.tenant.Store;
@@ -12,12 +14,16 @@ import org.uvo.uvostore.repository.UserRepository;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.security.TokenVersionService;
 import org.uvo.uvostore.service.BusinessException;
+import org.uvo.uvostore.service.audit.AuditDiff;
+import org.uvo.uvostore.service.audit.AuditEntry;
+import org.uvo.uvostore.service.audit.AuditTrail;
 import org.uvo.uvostore.service.catalog.FileStorageService;
 
 import java.time.Duration;
 import java.util.HashSet;
 import java.util.NoSuchElementException;
 import java.util.Set;
+import java.util.TreeSet;
 
 @Service
 public class UserServiceImpl implements UserService {
@@ -32,11 +38,12 @@ public class UserServiceImpl implements UserService {
     private final AdminInvitationPolicy invitationPolicy;
     // POS-6. El token y el correo de la invitación, compartidos con el alta de tiendas.
     private final AdminInvitationMailer invitationMailer;
+    private final AuditTrail auditTrail;
 
     public UserServiceImpl(UserRepository userRepository, RoleRepository roleRepository,
                             PasswordEncoder passwordEncoder, FileStorageService fileStorageService,
                             TokenVersionService tokenVersionService, AdminInvitationPolicy invitationPolicy,
-                            AdminInvitationMailer invitationMailer) {
+                            AdminInvitationMailer invitationMailer, AuditTrail auditTrail) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
@@ -44,6 +51,7 @@ public class UserServiceImpl implements UserService {
         this.tokenVersionService = tokenVersionService;
         this.invitationPolicy = invitationPolicy;
         this.invitationMailer = invitationMailer;
+        this.auditTrail = auditTrail;
     }
 
     @Override
@@ -91,6 +99,14 @@ public class UserServiceImpl implements UserService {
             saved.setRoles(resolveRoles(command.roleIds()));
         }
         saved = userRepository.save(saved);
+        // PROD-18. Ni la contraseña ni el token; tampoco teléfono ni notas, que no hacen falta para saber quién es.
+        auditTrail.record(AuditEntry.of(AuditAction.USER_CREATE, AuditTargetType.USER, saved.getId())
+                .details(AuditDiff.create()
+                        .with("email", saved.getEmail())
+                        .with("name", saved.getName())
+                        .with("invited", command.sendInvitation())
+                        .with("active", saved.isActive())
+                        .with("roles", roleNames(saved))));
 
         if (command.sendInvitation()) {
             invitationMailer.send(saved, store);
@@ -139,6 +155,8 @@ public class UserServiceImpl implements UserService {
 
         invitationMailer.issue(user);
         User saved = userRepository.save(user);
+        auditTrail.record(AuditEntry.of(AuditAction.USER_INVITATION_RESEND, AuditTargetType.USER, saved.getId())
+                .details(AuditDiff.create().with("email", saved.getEmail())));
         invitationMailer.send(saved, store);
         return saved;
     }
@@ -149,6 +167,16 @@ public class UserServiceImpl implements UserService {
         User user = userRepository.findById(id)
                 .filter(u -> u.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("User " + id + " not found"));
+        // PROD-18. Lo de antes, para dejar en la auditoría solo lo que cambió.
+        String previousEmail = user.getEmail();
+        String previousName = user.getName();
+        boolean previousActive = user.isActive();
+        boolean previousAdmin = user.isAdmin();
+        String previousPhone = user.getPhone();
+        String previousNotes = user.getNotes();
+        String previousAvatar = user.getAvatar();
+        boolean hadPassword = user.getPassword() != null;
+        Set<String> previousRoles = roleNames(user);
         applyCommonFields(user, command);
         if (command.password() != null && !command.password().isBlank()) {
             user.setPassword(passwordEncoder.encode(command.password()));
@@ -171,7 +199,22 @@ public class UserServiceImpl implements UserService {
         if (credentialsOrRolesChanged) {
             revokeTokens(user);
         }
-        return userRepository.save(user);
+        User saved = userRepository.save(user);
+        AuditDiff diff = AuditDiff.create()
+                .value("email", previousEmail, saved.getEmail())
+                .value("name", previousName, saved.getName())
+                .value("active", previousActive, saved.isActive())
+                .value("admin", previousAdmin, saved.isAdmin())
+                .members("roles", previousRoles, roleNames(saved))
+                .secretSubmitted("password", hadPassword, command.password() != null && !command.password().isBlank())
+                .opaque("phone", previousPhone, saved.getPhone())
+                .opaque("notes", previousNotes, saved.getNotes())
+                .opaque("avatar", previousAvatar, saved.getAvatar());
+        if (diff.hasChanges()) {
+            auditTrail.record(AuditEntry.of(AuditAction.USER_UPDATE, AuditTargetType.USER, saved.getId())
+                    .details(diff.with("email", saved.getEmail()).with("sessionsRevoked", credentialsOrRolesChanged)));
+        }
+        return saved;
     }
 
     @Override
@@ -204,7 +247,11 @@ public class UserServiceImpl implements UserService {
                 .orElseThrow(() -> new NoSuchElementException("User " + id + " not found"));
         user.setActive(!user.isActive());
         revokeTokens(user);
-        return userRepository.save(user);
+        User saved = userRepository.save(user);
+        auditTrail.record(AuditEntry.of(saved.isActive() ? AuditAction.USER_ACTIVATE : AuditAction.USER_DEACTIVATE,
+                        AuditTargetType.USER, saved.getId())
+                .details(AuditDiff.create().with("email", saved.getEmail())));
+        return saved;
     }
 
     @Override
@@ -213,6 +260,9 @@ public class UserServiceImpl implements UserService {
         User user = userRepository.findById(id)
                 .filter(u -> u.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("User " + id + " not found"));
+        // PROD-18. Antes de borrar: después ya no queda a quién nombrar.
+        auditTrail.record(AuditEntry.of(AuditAction.USER_DELETE, AuditTargetType.USER, user.getId())
+                .details(AuditDiff.create().with("email", user.getEmail()).with("roles", roleNames(user))));
         userRepository.delete(user);
         // No version to bump — the row is gone, so currentVersion() answers -1 and nothing matches.
         // The eviction is what matters: a cached version would otherwise keep a deleted admin's
@@ -225,6 +275,13 @@ public class UserServiceImpl implements UserService {
     private void revokeTokens(User user) {
         user.setTokenVersion(user.getTokenVersion() + 1);
         tokenVersionService.evict(TokenVersionService.ADMIN, user.getId());
+    }
+
+    // Por nombre y ordenados: el id de un rol no le dice nada a quien lee la auditoría.
+    private static Set<String> roleNames(User user) {
+        Set<String> names = new TreeSet<>();
+        user.getRoles().forEach(role -> names.add(role.getName()));
+        return names;
     }
 
     private void applyCommonFields(User user, UserCreateCommand command) {

@@ -10,6 +10,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
+import org.uvo.uvostore.entity.audit.enums.AuditAction;
+import org.uvo.uvostore.entity.audit.enums.AuditTargetType;
 import org.uvo.uvostore.entity.customer.Customer;
 import org.uvo.uvostore.entity.customer.enums.AccountStatus;
 import org.uvo.uvostore.entity.security.Role;
@@ -21,6 +23,10 @@ import org.uvo.uvostore.security.AccountAttemptThrottle;
 import org.uvo.uvostore.security.JwtService;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.security.TokenVersionService;
+import org.uvo.uvostore.service.audit.AuditActor;
+import org.uvo.uvostore.service.audit.AuditDiff;
+import org.uvo.uvostore.service.audit.AuditEntry;
+import org.uvo.uvostore.service.audit.AuditTrail;
 import org.uvo.uvostore.service.notification.EmailService;
 import org.uvo.uvostore.service.security.AdminInvitationPolicy;
 import org.uvo.uvostore.service.url.StorePublicUrlResolver;
@@ -54,11 +60,13 @@ public class AuthController {
     // AdminInvitationPolicy, que es también quien la escribe en el correo y quien acota el reenvío — tres
     // lecturas separadas de la misma propiedad es como acaban discrepando.
     private final AdminInvitationPolicy adminInvitationPolicy;
+    private final AuditTrail auditTrail;
 
     public AuthController(UserRepository userRepository, CustomerRepository customerRepository,
                            PasswordEncoder passwordEncoder, JwtService jwtService, EmailService emailService,
                            TokenVersionService tokenVersionService, AccountAttemptThrottle accountThrottle,
                            StorePublicUrlResolver publicUrls, AdminInvitationPolicy adminInvitationPolicy,
+                           AuditTrail auditTrail,
                            @Value("${app.customer-invitation.ttl-days:30}") int customerInvitationTtlDays) {
         this.userRepository = userRepository;
         this.customerRepository = customerRepository;
@@ -70,10 +78,15 @@ public class AuthController {
         this.publicUrls = publicUrls;
         this.customerInvitationTtl = Duration.ofDays(customerInvitationTtlDays);
         this.adminInvitationPolicy = adminInvitationPolicy;
+        this.auditTrail = auditTrail;
     }
 
     @PostMapping("/api/admin/auth/login")
-    @Transactional // also persists lastLoginAt; adminAuthorities() below walks the lazy User.roles/Role.permissions collections
+    // Also persists lastLoginAt; adminAuthorities() below walks the lazy User.roles/Role.permissions collections.
+    // PROD-18: noRollbackFor, para que el intento fallido quede en la auditoría. El camino del fallo no escribe nada
+    // más (una lectura y el limitador, que vive en memoria), así que confirmar es inocuo. No REQUIRES_NEW: serían dos
+    // conexiones por login fallido, y diez a la vez agotan el pool.
+    @Transactional(noRollbackFor = BadCredentialsException.class)
     public ResponseEntity<AuthResponse> adminLogin(@Valid @RequestBody AdminLoginRequest request) {
         Store store = TenantContext.requireCurrent();
         // F18: el presupuesto de ESTA cuenta, antes de mirar nada. El límite por IP de RateLimitFilter no
@@ -85,15 +98,30 @@ public class AuthController {
         accountThrottle.check(store.getId(), AccountAttemptThrottle.Flow.ADMIN_LOGIN, request.email());
 
         User user = userRepository.findByStoreIdAndEmail(store.getId(), request.email()).orElse(null);
-        if (user == null || !user.isActive() || !user.isAdmin()
-                || !passwordEncoder.matches(request.password(), user.getPassword())) {
+        String failure = loginFailure(user, request.password());
+        if (failure != null) {
             accountThrottle.recordFailure(store.getId(), AccountAttemptThrottle.Flow.ADMIN_LOGIN, request.email());
+            // PROD-18. Solo de una cuenta que existe, y a su nombre. Un correo desconocido no se guarda: es justo
+            // donde la gente escribe la contraseña por error. Y lo que frena el limitador de arriba no llega aquí,
+            // así que la fuerza bruta no llena la tabla.
+            if (user != null) {
+                auditTrail.record(AuditEntry.of(AuditAction.AUTH_LOGIN, AuditTargetType.USER, user.getId())
+                        .failed()
+                        .by(AuditActor.admin(user))
+                        .forStore(store.getId())
+                        .details(AuditDiff.create().with("reason", failure)));
+            }
             throw new BadCredentialsException("Credenciales inválidas");
         }
         accountThrottle.clear(store.getId(), AccountAttemptThrottle.Flow.ADMIN_LOGIN, request.email());
 
         user.setLastLoginAt(Instant.now());
         userRepository.save(user);
+        // El actor es la cuenta que entra, no el contexto: el panel manda también aquí el Bearer que tenga guardado,
+        // y puede ser el de otro admin (adminApi.ts).
+        auditTrail.record(AuditEntry.of(AuditAction.AUTH_LOGIN, AuditTargetType.USER, user.getId())
+                .by(AuditActor.admin(user))
+                .forStore(store.getId()));
 
         List<String> authorities = adminAuthorities(user);
         String token = jwtService.generateToken(user.getId(), user.getEmail(), "ADMIN", store.getId(),
@@ -102,6 +130,26 @@ public class AuthController {
         // permission names to decide which sections to show.
         List<String> permissions = authorities.stream().filter(a -> !a.startsWith("ROLE_")).toList();
         return ResponseEntity.ok(new AuthResponse(token, user.getId(), user.getName(), user.getEmail(), "ADMIN", permissions));
+    }
+
+    /**
+     * PROD-18. Por qué falla un login, o null si no falla. El orden mantiene el cortocircuito de siempre: bcrypt solo
+     * corre para un admin activo con contraseña.
+     */
+    private String loginFailure(User user, String password) {
+        if (user == null) {
+            return "UNKNOWN_ACCOUNT";
+        }
+        if (!user.isActive()) {
+            return "INACTIVE";
+        }
+        if (!user.isAdmin()) {
+            return "NOT_ADMIN";
+        }
+        if (user.getPassword() == null) {
+            return "NO_PASSWORD";
+        }
+        return passwordEncoder.matches(password, user.getPassword()) ? null : "BAD_PASSWORD";
     }
 
     @PostMapping("/api/customer/auth/login")
@@ -231,6 +279,10 @@ public class AuthController {
         // a poner una clave suya?", que es justo lo que no se podía saber.
         user.setInvitationAcceptedAt(Instant.now());
         User saved = userRepository.save(user);
+        // PROD-18. La cuenta es el actor: llega sin sesión (o con el Bearer viejo de otro admin).
+        auditTrail.record(AuditEntry.of(AuditAction.USER_INVITATION_ACCEPT, AuditTargetType.USER, saved.getId())
+                .by(AuditActor.admin(saved))
+                .forStore(store.getId()));
 
         List<String> authorities = adminAuthorities(saved);
         String token = jwtService.generateToken(saved.getId(), saved.getEmail(), "ADMIN", store.getId(),
@@ -294,7 +346,8 @@ public class AuthController {
         // mismo buzón, así que no es un atajo— y entonces quedaban dos cosas mal: un enlace de invitación
         // válido durante días después de que su dueño ya entró, y `invitation_accepted_at` en null, que
         // hace mentir a la única columna que responde "¿llegó a poner una clave suya?".
-        if (user.getInvitationToken() != null) {
+        boolean invitationClosed = user.getInvitationToken() != null;
+        if (invitationClosed) {
             user.setInvitationToken(null);
             if (user.getInvitationAcceptedAt() == null) {
                 user.setInvitationAcceptedAt(Instant.now());
@@ -305,6 +358,11 @@ public class AuthController {
         user.setTokenVersion(user.getTokenVersion() + 1);
         userRepository.save(user);
         tokenVersionService.evict(TokenVersionService.ADMIN, user.getId());
+        // PROD-18. En la tienda del usuario y no en la del Host: el token se busca sin mirar el Host.
+        auditTrail.record(AuditEntry.of(AuditAction.USER_PASSWORD_RESET, AuditTargetType.USER, user.getId())
+                .by(AuditActor.admin(user))
+                .forStore(user.getStore().getId())
+                .details(AuditDiff.create().with("invitationClosed", invitationClosed)));
         return ResponseEntity.ok().build();
     }
 

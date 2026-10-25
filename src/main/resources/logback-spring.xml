@@ -11,6 +11,10 @@
 
   El perfil `default` (desarrollo local) mantiene el patrón corto y con color de Spring Boot: ahí el
   log lo lee una persona en una terminal, no un agregador.
+
+  PROD-18: los dos patrones llevan ${LOG_CORRELATION_PATTERN}, que Boot llena con
+  logging.pattern.correlation (application.properties): el id de la petición entre corchetes. El de Boot ya
+  lo trae; el propio lo pone en el mismo lugar, antes del logger.
 -->
 <configuration>
     <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
@@ -26,7 +30,7 @@
         <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
             <encoder>
                 <charset>UTF-8</charset>
-                <pattern>%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX, UTC} %-5level [%thread] %logger{40} - %msg%n</pattern>
+                <pattern>%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX, UTC} %-5level [%thread] ${LOG_CORRELATION_PATTERN:-}%logger{40} - %msg%n</pattern>
             </encoder>
         </appender>
         <root level="INFO">

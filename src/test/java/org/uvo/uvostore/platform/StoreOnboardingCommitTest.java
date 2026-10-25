@@ -84,6 +84,8 @@ class StoreOnboardingCommitTest {
     void cleanUp() {
         for (String slug : slugs) {
             storeRepository.findBySlug(slug).map(Store::getId).ifPresent(storeId -> {
+                // PROD-18. La fila de auditoría del alta también se confirmó.
+                jdbc.update("DELETE FROM audit_events WHERE store_id = ?", storeId);
                 jdbc.update("UPDATE stores SET owner_user_id = NULL WHERE id = ?", storeId);
                 jdbc.update("DELETE FROM pos_connections WHERE store_id = ?", storeId);
                 jdbc.update("DELETE FROM settings WHERE store_id = ?", storeId);
@@ -129,6 +131,9 @@ class StoreOnboardingCommitTest {
 
         verify(mailer, never()).send(any(), any());
         assertThat(storeRepository.existsBySlug(alta.slug())).isFalse();
+        // PROD-18. Ni la fila de auditoría del alta: va en la misma transacción.
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_events WHERE action = 'STORE_CREATE' "
+                + "AND details->>'slug' = ?", Integer.class, alta.slug())).isZero();
     }
 
     @Test
@@ -204,6 +209,9 @@ class StoreOnboardingCommitTest {
             assertThat(a.created()).isTrue();
             assertThat(b.created()).isFalse();
             assertThat(b.storeId()).isEqualTo(a.storeId());
+            // PROD-18. Una sola fila de alta, confirmada: el reintento que esperó no escribe nada.
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_events WHERE action = 'STORE_CREATE' "
+                    + "AND store_id = ?", Integer.class, a.storeId())).isEqualTo(1);
         } finally {
             releaseA.countDown();
             executor.shutdownNow();

@@ -10,6 +10,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.uvo.uvostore.config.RequiredSecret;
@@ -19,6 +21,9 @@ import tools.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.Collections;
+import java.util.List;
+import java.util.regex.Pattern;
 
 // Guards /api/platform/** — store onboarding is done by the operator team, not by a per-store
 // admin (there's no tenant/JWT to check against yet when a store doesn't exist). A single shared
@@ -28,8 +33,19 @@ import java.security.MessageDigest;
 //
 // POS-6: and only from the private network (PlatformNetworkPolicy). The network is checked BEFORE the
 // key, so from outside the key isn't even evaluated: nobody on the Internet can try keys against it.
+//
+// PROD-18: con la clave correcta, deja en el contexto de seguridad un principal de plataforma con el operador
+// que mande X-Platform-Operator (opcional; obligatorio en PROD-19). Es el actor de la auditoría. Orden de los
+// rechazos: red (404) → clave (401) → operador mal formado (400).
 @Component
 public class PlatformApiKeyAuthFilter extends OncePerRequestFilter {
+
+    public static final String OPERATOR_HEADER = "X-Platform-Operator";
+    // El tipo de AuthPrincipal de una llamada de plataforma; AuditTrail lo traduce a AuditActorType.PLATFORM.
+    public static final String PRINCIPAL_TYPE = "PLATFORM";
+
+    // Un id opaco del operador en el sistema que llama (el backoffice del POS): un número, un usuario o un correo.
+    private static final Pattern OPERATOR = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:@-]{0,63}");
 
     private static final Logger log = LoggerFactory.getLogger(PlatformApiKeyAuthFilter.class);
 
@@ -70,6 +86,18 @@ public class PlatformApiKeyAuthFilter extends OncePerRequestFilter {
             return;
         }
 
+        // PROD-18. Después de la clave, a propósito: quien no la tiene no puede sondear este formato.
+        List<String> operators = Collections.list(request.getHeaders(OPERATOR_HEADER));
+        if (operators.size() > 1 || (operators.size() == 1 && !OPERATOR.matcher(operators.getFirst()).matches())) {
+            badRequest(response);
+            return;
+        }
+        String operator = operators.isEmpty() ? null : operators.getFirst();
+        // El principal es lo que AuditTrail lee para saber quién actúa. Pisa el de un Bearer que viniera además
+        // (JwtAuthenticationFilter corre antes, SecurityConfig): en esta ruta quien actúa es la plataforma.
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                new AuthPrincipal(null, operator, PRINCIPAL_TYPE, null), null, List.of()));
+
         filterChain.doFilter(request, response);
     }
 
@@ -86,10 +114,21 @@ public class PlatformApiKeyAuthFilter extends OncePerRequestFilter {
     // POS-6. 404 and not 403, same body as DeferredSurfaceGateFilter: from outside the private network
     // this API should look exactly like a route that was never written.
     private void notFound(HttpServletResponse response) throws IOException {
-        response.setStatus(HttpStatus.NOT_FOUND.value());
+        writeError(response, HttpStatus.NOT_FOUND, "Not Found", "El recurso solicitado no existe.");
+    }
+
+    // PROD-18. Un operador mal formado es un error del cliente (el backoffice del POS), y se le dice: tragárselo
+    // dejaría filas de auditoría sin operador sin que nadie se entere.
+    private void badRequest(HttpServletResponse response) throws IOException {
+        writeError(response, HttpStatus.BAD_REQUEST, "Bad Request", OPERATOR_HEADER
+                + " inválido: un solo valor, de 1 a 64 caracteres (letras, números y . _ : @ -).");
+    }
+
+    private void writeError(HttpServletResponse response, HttpStatus status, String error, String message)
+            throws IOException {
+        response.setStatus(status.value());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding("UTF-8");
-        objectMapper.writeValue(response.getWriter(),
-                ApiError.of(HttpStatus.NOT_FOUND.value(), "Not Found", "El recurso solicitado no existe."));
+        objectMapper.writeValue(response.getWriter(), ApiError.of(status.value(), error, message));
     }
 }
