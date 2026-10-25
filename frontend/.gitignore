@@ -13,6 +13,12 @@ dist-ssr
 *.local
 .env
 
+# PROD-14a: salidas de Playwright y el log del backend de la red
+/test-results/
+/playwright-report/
+/blob-report/
+/e2e/.logs/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

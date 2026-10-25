@@ -40,4 +40,16 @@ export default defineConfig([
       'react-refresh/only-export-components': 'off',
     },
   },
+  {
+    // PROD-14a: the Playwright suite runs under Node, not in the browser bundle. The React rules don't
+    // apply there, and rules-of-hooks would flag the `use(...)` that Playwright fixtures call.
+    files: ['e2e/**/*.ts', 'playwright.config.ts'],
+    languageOptions: {
+      globals: globals.node,
+    },
+    rules: {
+      'react-hooks/rules-of-hooks': 'off',
+      'react-refresh/only-export-components': 'off',
+    },
+  },
 ])

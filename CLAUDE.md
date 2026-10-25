@@ -44,6 +44,8 @@ Spring context per test class, and dependency resolution is the slowest part of 
 
 ```
 cd frontend && npm run dev        # Vite dev server (http://localhost:5173), proxies /api/* to VITE_DEV_PROXY_TARGET
+                                  #   (<slug>.localhost:5173 reaches that store — see "Browser E2E")
+cd frontend && npm run e2e        # Playwright browser suite; needs the jar first (./mvnw -o package -DskipTests)
 cd frontend && npm run build      # tsc -b && vite build
 cd frontend && npm run lint       # eslint .
 cd frontend && npm run test       # vitest run (npm run test:watch for watch mode)
@@ -122,7 +124,9 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
   email and there's no resend screen. `PUT /api/platform/stores/{id}/domain/verified` records the
   operator's check — **it does not probe DNS**; automating that waits on PROD-03. Changing the
   domain clears the flag, so a new domain never inherits it.
-- The frontend computes every API client's `baseURL` **at runtime** from `window.location.origin` (`frontend/src/services/api.ts`, `admin/services/adminApi.ts`, `platform/services/platformApi.ts`) — not from a build-time env var — so one deployed frontend build serves any tenant. In dev, Vite's own proxy (`vite.config.ts`) forwards `/api/*` to `VITE_DEV_PROXY_TARGET` (`frontend/.env`, default `http://demo.localhost:8080`) so the browser still sees same-origin requests, matching production. In production this assumes frontend static assets and the API are served from the same origin (a reverse proxy) — that infrastructure doesn't exist yet, see "Known gotchas".
+- The frontend computes every API client's `baseURL` **at runtime** from `window.location.origin` (`frontend/src/services/api.ts`, `admin/services/adminApi.ts`, `platform/services/platformApi.ts`) — not from a build-time env var — so one deployed frontend build serves any tenant. In dev, Vite's own proxy (`vite.config.ts`) forwards `/api/*` to `VITE_DEV_PROXY_TARGET` (`frontend/.env`, default `http://demo.localhost:8080`) so the browser still sees same-origin requests, matching production. Since
+PROD-14a the proxy keeps the browser's store: a page on `<slug>.localhost:5173` reaches the backend as
+`<slug>.localhost:8080`, and only a bare `localhost` goes to the target store. In production this assumes frontend static assets and the API are served from the same origin (a reverse proxy) — that infrastructure doesn't exist yet, see "Known gotchas".
 
 ## Local environment
 
@@ -1507,6 +1511,121 @@ Laravel `app.js` cart, in case of shared deploys/migration overlap). Cart totals
 absent (see Overview); the header's account icon is a disabled placeholder. The admin panel's own
 login (`/admin/login`) is separate and fully functional.
 
+### Browser E2E (PROD-14a)
+The backend suite rolls every test back, so nothing that happens **after commit** ever runs there: the
+emails, the stock decrement (`StockDecrementListener`) and the sale reaching the POS through the outbox.
+`frontend/e2e/` is a Playwright suite that drives the real thing: the packaged jar, Vite, and two
+doubles. It covers the whole circuit for two stores, `tienda-pos` and `tienda-panel`. `demo` can't be
+used because V8 seeds it with no admin, and the platform API can't create it.
+
+```
+./mvnw -o package -DskipTests                 # the launcher runs target/uvo-store-*.jar, so rebuild after backend changes
+cd frontend && npx playwright install chromium   # once
+cd frontend && npm run e2e                    # ~1-2 min; npm run e2e:report opens the last HTML report
+```
+
+**What runs.** `playwright.config.ts` starts three `webServer`s on their own ports, so the suite
+runs alongside the normal dev setup on 8080/5173:
+
+| Piece | Port | Notes |
+|---|---|---|
+| Doubles (`e2e/doubles/server.ts`) | 18089 HTTP, 12525 SMTP | One dependency-free Node process; it does need Node 24 to run `.ts` directly. Tests read what it received over HTTP (`/__doubles/pos/orders`, `/__doubles/mail?to=`), because they run in another process. |
+| Backend (`e2e/launch/backend.ts`) | 18080 | See below. Its log goes to `e2e/.logs/backend.log`. |
+| Vite | 15173 | `VITE_DEV_PROXY_TARGET=http://demo.localhost:18080` |
+
+**The launcher.** `e2e/launch/backend.ts`:
+- **Drops and recreates `uvostore_e2e` on every run** with `pg`, then runs `java -jar` against it.
+  It refuses any database name that doesn't end in `_e2e`.
+- **Database credentials** come from `E2E_DB_USERNAME`/`E2E_DB_PASSWORD`. Without them it falls back
+  to `DB_USERNAME`/`DB_PASSWORD` from the backend `.env`.
+- **Working directory** is a temp dir, so spring-dotenv does **not** load that `.env`, which points
+  at the dev database.
+- **Environment:**
+  - fixed test-only secrets, from `e2e/support/env.ts`;
+  - `POS_ENABLED=true` and `OUTBOX_INTERVAL_MS=1000`;
+  - SMTP pointed at the double, with no STARTTLS or auth;
+  - `PUBLIC_STOREFRONT_URL=http://{host}:15173`, so invitation links land on this Vite;
+  - rate limiting off, since every login comes from 127.0.0.1;
+  - the other scheduled jobs off.
+
+**The doubles.**
+- **POS double.** It implements the contract as `PosClient` does today; **POS-1 is still open**,
+  so it's the implemented contract, not a confirmed one.
+  - `POST /api/v1/orders/external` records the auth headers, `Idempotency-Key`, `X-Request-Id`
+    and the body.
+  - `POST /api/v1/products/snapshot` answers empty.
+- **SMTP double.** Just enough SMTP for JavaMail's `SimpleMailMessage`. It decodes
+  quoted-printable bodies and RFC 2047 subjects ("Confirmación…"), so tests read the link exactly
+  as the owner would.
+- **The POS side of each test** lives in `e2e/support/pos.ts`. It pushes the catalogue with
+  `/api/sync/product` and signs `stock-updated` webhooks as `HMAC-SHA256(body + timestamp)`.
+
+**The circuit** (`e2e/tests/circuito.spec.ts`, serial, shared module state). Steps 3–7 run for both
+stores; steps 8 onward use `tienda-pos`.
+
+1. **`tienda-pos` signs up** through the platform API with its POS link, the way the POS back office
+   will.
+2. **`tienda-panel` signs up** through `/plataforma/nueva-tienda`.
+3. **Owner access.** The owner opens the **invitation email's link**, sets a password, logs out and
+   logs in again.
+4. **Configuration in the panel.** A shipping zone, and "Envío habilitado" turned off. This is a
+   full settings PUT, and the later POS sale proves it didn't switch POS sync off.
+5. **Products.** The POS pushes `tienda-pos`'s product; `tienda-panel`'s is created in the panel form.
+6. **Purchase.** Find the product in `/shop`, then cart → 3-step checkout with "Pago contra
+   entrega". The "Recibimos tu pedido" email arrives.
+7. **Payment in the panel.** The order is set to `PAID` in its detail page. The stock drops in
+   `/admin/products` and the confirmation email arrives.
+8. **The sale reaches the POS double.**
+   - It carries `Bearer <apiKey>`, `X-Company-ID`, `Idempotency-Key=<order>:<company>`, an
+     `X-Request-Id` and the external `product_id`.
+   - `tienda-panel`'s sale doesn't go out, because that store has no POS link.
+9. **POS stock update.** A signed `stock.updated` shows up on the storefront page and in the panel.
+   Resending the same request gets 401 `REPLAYED_WEBHOOK`.
+10. **Tracking.** The panel saves a tracking number, and `/track-order` shows it.
+11. **Isolation.**
+    - **API:** `tienda-pos`'s token with `Host: tienda-panel.localhost` gets 401.
+    - **Browser:** that session placed in `tienda-panel`'s origin ends at `/admin/login` with the
+      token cleared.
+    - **Catalogue:** neither store's catalogue shows the other's product.
+12. **Direct reload** of `/admin/orders/:id`, `/admin/settings/general`, `/product/:slug` and
+    `/track-order?order=`.
+
+**Conventions.**
+- **Selectors** use role, label, placeholder or text; the app has no `data-testid`.
+  - The two Radix Selects in `OrderDetail` have no accessible name, because their `<Label>` doesn't
+    point at them. `setPaymentStatus` finds the payment one through the text's parent.
+  - The same gap exists for "Categoría" in `ProductForm`.
+- **Panel sessions** are captured once after the UI login, from `localStorage`
+  (`uvostore_admin_auth`). Later tests restore them with `restorePanelSession`, so each test keeps
+  its own fresh page and its trace.
+- **Direct API calls** go through `e2e/support/http.ts` (`node:http`):
+  - `fetch` refuses a custom `Host`;
+  - Node's resolver on Windows can't resolve `*.localhost`;
+  - so calls go to 127.0.0.1 with the store's `Host` set by hand.
+
+**The Vite proxy forwards the subdomain.** Before PROD-14a the proxy pinned `Host` to the target's
+host, so every store opened through Vite was really the target store (`demo`). Now `proxyReq`
+behaves like this:
+- a browser on `<slug>.localhost:<port>` reaches the backend as `<slug>.localhost:<target port>`;
+- a bare `localhost` or `127.0.0.1` still goes to the target, as before.
+
+This also makes several stores usable by hand in dev.
+
+**Tooling.**
+- `tsconfig.e2e.json` is referenced from `tsconfig.json`, so `tsc -b` (and `npm run build`)
+  type-check the suite.
+- Vitest excludes `e2e/**`; without that its default include would run the `*.spec.ts` files.
+- ESLint has its own block for `e2e/**` (Node globals; `rules-of-hooks` off because of Playwright's
+  `use`).
+
+**CI.** The `e2e` job in `ci.yml`:
+1. packages the jar with `-DskipTests` (the backend job runs the suite);
+2. installs Chromium with `--with-deps`;
+3. runs `npm run e2e` against its own `postgres:18` service.
+
+On failure it uploads `playwright-report/`, `test-results/` (traces and screenshots) and the
+backend log for 7 days. **#33 is pointing this same harness at staging.**
+
 ## Known gotchas
 
 - **`README.md` and `HELP.md` are unmodified Spring Initializr boilerplate.**
@@ -1535,7 +1654,7 @@ login (`/admin/login`) is separate and fully functional.
     network belongs in the outbox, not in a listener.
 - **Testing**: **530 backend tests across 100 classes** (as of PROD-13a) (JUnit + `IntegrationTestSupport`,
   one Spring-managed transaction per test, auto-rolled-back — `AFTER_COMMIT` listeners never fire
-  under this setup, which is intentional) and **142 frontend tests across 32 files** (Vitest +
+  under this setup, which is intentional; the Playwright suite of PROD-14a covers them, see "Browser E2E") and **142 frontend tests across 32 files** (Vitest +
   React Testing Library, `npm run test`), both wired into CI (`.github/workflows/ci.yml`) and the
   release workflow (`.github/workflows/release.yml`, triggered by pushing a `vX.Y.Z` tag — builds
   artifacts and publishes a GitHub Release with auto-generated notes). Most of that growth is the

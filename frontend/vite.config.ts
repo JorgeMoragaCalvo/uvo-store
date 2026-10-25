@@ -14,6 +14,14 @@ export default defineConfig(({ mode }) => {
   // TenantResolutionFilter on the backend still resolves the right store by subdomain.
   const connectHost = target.hostname === 'localhost' || target.hostname.endsWith('.localhost') ? '127.0.0.1' : target.hostname
 
+  // PROD-14a: the store comes from the browser's subdomain when it has one. With a fixed Host,
+  // "tienda-b.localhost:5173" reached the backend as the target's store, so only one store could be
+  // used through Vite. A bare "localhost" (or 127.0.0.1) still goes to the target, as before.
+  function backendHost(browserHost: string | undefined): string {
+    const slug = /^([a-z0-9-]+)\.localhost(:\d+)?$/i.exec(browserHost ?? '')?.[1]
+    return slug ? `${slug.toLowerCase()}.localhost${target.port ? `:${target.port}` : ''}` : target.host
+  }
+
   return {
     plugins: [react(), tailwindcss()],
     build: {
@@ -42,7 +50,11 @@ export default defineConfig(({ mode }) => {
         '/api': {
           target: `${target.protocol}//${connectHost}:${target.port}`,
           changeOrigin: false,
-          headers: { host: target.host },
+          configure: (proxy) => {
+            proxy.on('proxyReq', (proxyReq, req) => {
+              proxyReq.setHeader('host', backendHost(req.headers.host))
+            })
+          },
         },
       },
     },
