@@ -7,6 +7,7 @@ import org.uvo.uvostore.entity.audit.enums.AuditAction;
 import org.uvo.uvostore.entity.audit.enums.AuditActorType;
 import org.uvo.uvostore.entity.audit.enums.AuditResult;
 import org.uvo.uvostore.entity.audit.enums.AuditTargetType;
+import org.uvo.uvostore.entity.tenant.enums.StoreStatus;
 import org.uvo.uvostore.support.IntegrationTestSupport;
 
 import java.util.Arrays;
@@ -33,7 +34,9 @@ class AuditCatalogConsistencyTest extends IntegrationTestSupport {
                 Arguments.of("audit_events_action_valid", AuditAction.values()),
                 Arguments.of("audit_events_target_type_valid", AuditTargetType.values()),
                 Arguments.of("audit_events_actor_type_valid", AuditActorType.values()),
-                Arguments.of("audit_events_result_valid", AuditResult.values()));
+                Arguments.of("audit_events_result_valid", AuditResult.values()),
+                // PROD-23. No es de la auditoría, pero es la misma trampa: CLOSED sin V29 haría fallar el cierre.
+                Arguments.of("stores_status_valid", StoreStatus.values()));
     }
 
     @ParameterizedTest(name = "{0}")

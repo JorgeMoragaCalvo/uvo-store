@@ -1,5 +1,7 @@
 package org.uvo.uvostore.service.platform;
 
+import org.uvo.uvostore.entity.tenant.enums.StoreStatus;
+
 import java.time.Instant;
 
 /**
@@ -14,6 +16,9 @@ import java.time.Instant;
  * <p>POS-6 añade {@code created}: {@code false} cuando el POS reintenta un alta que ya se hizo y la respuesta es
  * la tienda que ya existía. Los cambios de dominio responden siempre {@code false}. <b>Nunca lleva los secretos
  * de la conexión</b>: los generó el POS y ya los tiene.
+ *
+ * <p>PROD-23 añade {@code status}: un reintento del alta sobre una tienda suspendida no la reactiva, y el POS lo ve
+ * aquí ({@code SUSPENDED}) para reactivarla con {@code POST /api/platform/stores/{id}/reactivate}.
  */
 public record StoreOnboardingResponse(
         Long storeId,
@@ -25,6 +30,7 @@ public record StoreOnboardingResponse(
         Instant domainVerifiedAt,
         String storefrontUrl,
         String adminUrl,
-        boolean created
+        boolean created,
+        StoreStatus status
 ) {
 }

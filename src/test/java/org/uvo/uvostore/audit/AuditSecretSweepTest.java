@@ -60,8 +60,9 @@ class AuditSecretSweepTest extends IntegrationTestSupport {
         settingsWithStripeAndPos();
         gatewaysAndCarrier();
         usersAndAuth(admin);
-        platformOnboardingWithPos();
+        String posStore = platformOnboardingWithPos();
         refundAndCoupon();
+        platformRecoveryAndClosing(posStore);
 
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
                 "SELECT action, result, actor_label, request_id, details::text AS details FROM audit_events "
@@ -77,7 +78,7 @@ class AuditSecretSweepTest extends IntegrationTestSupport {
                 "SETTINGS_STRIPE_UPDATE", "POS_CONNECTION_UPDATE", "PAYMENT_GATEWAY_UPDATE",
                 "SHIPPING_METHOD_CREDENTIALS_UPDATE", "USER_CREATE", "USER_UPDATE", "AUTH_LOGIN",
                 "USER_INVITATION_ACCEPT", "USER_PASSWORD_RESET", "STORE_CREATE", "REFUND_RECORD_EXTERNAL",
-                "COUPON_CREATE");
+                "COUPON_CREATE", "STORE_OWNER_ACCESS_RECOVERY", "STORE_STATUS_UPDATE", "STORE_CLOSE");
         assertThat(rows).anySatisfy(row -> {
             assertThat(row.get("action")).isEqualTo("AUTH_LOGIN");
             assertThat(row.get("result")).isEqualTo("FAILURE");
@@ -188,7 +189,8 @@ class AuditSecretSweepTest extends IntegrationTestSupport {
         token = loginAdmin(store, admin);
     }
 
-    private void platformOnboardingWithPos() throws Exception {
+    /** @return el id de la tienda creada */
+    private String platformOnboardingWithPos() throws Exception {
         long company = 891_000_000L + nextSeq();
         String body = """
                 {"slug":"audit-sweep-pos-%d","domain":"","storeName":"Tienda del POS","adminName":"Dueno",
@@ -196,11 +198,40 @@ class AuditSecretSweepTest extends IntegrationTestSupport {
                  "pos":{"companyId":%d,"companyName":"Empresa","apiUrl":"http://pos.internal/%s",
                         "apiKey":"uvp_%d_%s","webhookSecret":"%s"}}"""
                 .formatted(nextSeq(), nextSeq(), company, marker(), company, marker(), marker());
-        mockMvc.perform(post("/api/platform/stores")
+        String response = mockMvc.perform(post("/api/platform/stores")
                         .header("X-Platform-Key", platformKey)
                         .header("X-Platform-Operator", "op-sweep")
                         .contentType("application/json")
                         .content(body))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        return objectMapper.readTree(response).get("storeId").asText();
+    }
+
+    /**
+     * PROD-23. La recuperación de acceso (ni el token nuevo) y el cierre, que borra la conexión con el POS cuyos secretos
+     * marcó el alta: ninguno puede aparecer en la fila del cierre.
+     */
+    private void platformRecoveryAndClosing(String storeId) throws Exception {
+        // Con otro correo: el alta acaba de invitar al dueño, y con el mismo habría que esperar.
+        mockMvc.perform(post("/api/platform/stores/" + storeId + "/owner/access-recovery")
+                        .header("X-Platform-Key", platformKey)
+                        .contentType("application/json")
+                        .content("{\"email\":\"dueno-recuperado-" + nextSeq() + "@test.local\"}"))
+                .andExpect(status().isOk());
+        Long ownerId = storeRepository.findById(Long.valueOf(storeId)).orElseThrow().getOwnerUserId();
+        markers.add(userRepository.findById(ownerId).orElseThrow().getInvitationToken());
+
+        mockMvc.perform(post("/api/platform/stores/" + storeId + "/suspend")
+                        .header("X-Platform-Key", platformKey)
+                        .contentType("application/json")
+                        .content("{\"reason\":\"MODULE_DEACTIVATED\"}"))
+                .andExpect(status().isOk());
+        String slug = storeRepository.findById(Long.valueOf(storeId)).orElseThrow().getSlug();
+        mockMvc.perform(post("/api/platform/stores/" + storeId + "/close")
+                        .header("X-Platform-Key", platformKey)
+                        .contentType("application/json")
+                        .content("{\"confirmSlug\":\"" + slug + "\",\"reason\":\"MODULE_DEACTIVATED\"}"))
                 .andExpect(status().isOk());
     }
 

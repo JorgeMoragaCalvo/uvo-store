@@ -63,7 +63,8 @@ class PosStoreOnboardingTest extends IntegrationTestSupport {
         mockMvc.perform(onboard(alta.body()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.created").value(true))
-                .andExpect(jsonPath("$.slug").value(alta.slug()));
+                .andExpect(jsonPath("$.slug").value(alta.slug()))
+                .andExpect(jsonPath("$.status").value("ACTIVE"));
 
         Store store = storeRepository.findBySlug(alta.slug()).orElseThrow();
         PosConnection connection = connectionRepository.findByCompanyId(alta.companyId()).orElseThrow();
@@ -142,6 +143,28 @@ class PosStoreOnboardingTest extends IntegrationTestSupport {
         assertThat(AuditRows.forStore(jdbcTemplate, objectMapper.readTree(first).get("storeId").asLong(), "STORE_CREATE"))
                 .singleElement()
                 .satisfies(row -> assertThat(row.json().path("posCompanyId").asLong()).isEqualTo(alta.companyId()));
+    }
+
+    @Test
+    @DisplayName("PROD-23: un reintento sobre una tienda suspendida no la reactiva, y la respuesta lo dice")
+    void aRetryOnASuspendedStoreDoesNotReactivateIt() throws Exception {
+        // Si el POS vuelve a activar el módulo, el reintento del alta le devuelve la tienda con SUSPENDED, y el POS
+        // tiene que reactivarla de forma explícita: un reintento atrasado no puede revivir una tienda suspendida.
+        Alta alta = Alta.nueva();
+        mockMvc.perform(onboard(alta.body())).andExpect(status().isOk());
+        Store store = storeRepository.findBySlug(alta.slug()).orElseThrow();
+        mockMvc.perform(post("/api/platform/stores/" + store.getId() + "/suspend")
+                        .header("X-Platform-Key", platformKey)
+                        .contentType("application/json")
+                        .content("{\"reason\":\"MODULE_DEACTIVATED\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(onboard(alta.body()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.created").value(false))
+                .andExpect(jsonPath("$.status").value("SUSPENDED"));
+
+        assertThat(storeRepository.findById(store.getId()).orElseThrow().isSuspended()).isTrue();
     }
 
     @Test

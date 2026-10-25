@@ -119,4 +119,16 @@ public interface OutboxMessageRepository extends JpaRepository<OutboxMessage, Lo
             """)
     int reschedule(@Param("id") Long id, @Param("attempts") int attempts, @Param("error") String error,
                    @Param("nextAttemptAt") Instant nextAttemptAt, @Param("now") Instant now);
+
+    /**
+     * PROD-23. Lo que el outbox todavía tiene que entregar por una tienda (la venta al POS, los correos de las
+     * órdenes). Cerrar con algo aquí borraría la conexión con el POS antes de que la venta llegue.
+     */
+    @Query("""
+            select count(m) from OutboxMessage m
+            where m.order.store.id = :storeId
+              and m.status in (org.uvo.uvostore.entity.outbox.enums.OutboxStatus.PENDING,
+                               org.uvo.uvostore.entity.outbox.enums.OutboxStatus.IN_FLIGHT)
+            """)
+    long countUnfinishedForStore(@Param("storeId") Long storeId);
 }

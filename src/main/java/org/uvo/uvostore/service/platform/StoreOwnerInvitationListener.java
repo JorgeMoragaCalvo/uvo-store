@@ -13,7 +13,8 @@ import org.uvo.uvostore.repository.UserRepository;
 import org.uvo.uvostore.service.security.AdminInvitationMailer;
 
 /**
- * POS-6. Manda la invitación al dueño de una tienda recién creada, <b>después del commit</b> del alta.
+ * POS-6. Manda la invitación al dueño de una tienda recién creada, <b>después del commit</b> del alta. PROD-23: también
+ * la de la recuperación de acceso ({@code StoreLifecycleServiceImpl.recoverOwnerAccess}), con el mismo evento.
  *
  * <p>Antes no: si el alta se deshiciera después de enviar, el dueño recibiría un enlace con un token que no
  * existe. La invitación de {@code UserServiceImpl} sí se envía dentro de la transacción, pero allí nada se
@@ -21,8 +22,9 @@ import org.uvo.uvostore.service.security.AdminInvitationMailer;
  *
  * <p><b>No es durable.</b> Si el proceso cae entre el commit y el envío, o el SMTP falla, el correo no sale y queda
  * en el log y en Sentry. El dueño no queda sin salida: «¿Olvidaste tu contraseña?» funciona con una cuenta sin
- * contraseña y cierra la invitación pendiente ({@code AuthController.adminResetPassword}). El reenvío desde la
- * plataforma es PROD-23. El outbox no sirve para esto tal como está: sus filas cuelgan de una orden.
+ * contraseña y cierra la invitación pendiente ({@code AuthController.adminResetPassword}), y la plataforma puede
+ * mandar otra ({@code POST /api/platform/stores/{id}/owner/access-recovery}, PROD-23). El outbox no sirve para esto tal
+ * como está: sus filas cuelgan de una orden.
  *
  * <p><b>Un fallo aquí no cambia la respuesta del alta</b>, que ya está confirmada: Spring corre los oyentes
  * {@code AFTER_COMMIT} dentro de {@code afterCompletion} y {@code TransactionSynchronizationUtils} captura y registra

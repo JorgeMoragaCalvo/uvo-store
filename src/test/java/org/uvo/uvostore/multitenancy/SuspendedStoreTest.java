@@ -21,7 +21,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * G5. {@code stores.status} existía desde V8 y no lo leía nadie: una tienda suspendida seguía
  * vendiendo, cobrando y emitiendo documentos igual que una activa. Desde V18 el estado es un enum
  * respaldado por un CHECK, y {@code TenantResolutionFilter} rechaza con 403 todo lo que llegue a una
- * tienda SUSPENDED — salvo {@code /api/platform/**}, que es por donde el operador la reactiva.
+ * tienda SUSPENDED — salvo {@code /api/platform/**}, que es por donde el operador la reactiva, y desde
+ * PROD-23 los retornos y avisos de pago. Una tienda CLOSED no recibe ni eso.
  */
 class SuspendedStoreTest extends IntegrationTestSupport {
 
@@ -100,6 +101,68 @@ class SuspendedStoreTest extends IntegrationTestSupport {
                         .content("{\"domain\":\"" + domain + "\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.domain").value(domain));
+    }
+
+    @Test
+    @DisplayName("PROD-23: con la tienda suspendida, los retornos y avisos de pago pasan; crear un pago, no")
+    void paymentCallbacksStillGoThroughForASuspendedStore() throws Exception {
+        Store store = createStore("susp-callbacks", StoreStatus.SUSPENDED);
+
+        // Lo que pase después da igual (sin token no hay nada que confirmar, y sin firma el aviso se rechaza): lo que
+        // importa es que el filtro no los corte. Un comprador que pagó justo antes de la suspensión necesita que su
+        // pago se confirme.
+        mockMvc.perform(post("/api/v1/webpay/return")
+                        .header("Host", hostHeader(store))
+                        .param("TBK_TOKEN", "abandonado"))
+                .andExpect(notTheSuspendedRejection());
+        mockMvc.perform(post("/api/v1/mercadopago/webhook")
+                        .header("Host", hostHeader(store))
+                        .contentType("application/json")
+                        .content("{}"))
+                .andExpect(notTheSuspendedRejection());
+        mockMvc.perform(post("/api/v1/stripe/webhook")
+                        .header("Host", hostHeader(store))
+                        .contentType("application/json")
+                        .content("{}"))
+                .andExpect(notTheSuspendedRejection());
+
+        mockMvc.perform(post("/api/v1/webpay/create")
+                        .header("Host", hostHeader(store))
+                        .contentType("application/json")
+                        .content("{\"orderId\":1}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("Esta tienda está suspendida"));
+    }
+
+    @Test
+    @DisplayName("PROD-23: una tienda cerrada responde 403 a todo, retornos de pago incluidos; la plataforma sigue pasando")
+    void aClosedStoreRefusesEverythingButThePlatform() throws Exception {
+        Store store = createStore("susp-closed", StoreStatus.CLOSED);
+
+        mockMvc.perform(get("/api/v1/products").header("Host", hostHeader(store)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("Esta tienda está cerrada"));
+        for (String callback : new String[]{"/api/v1/webpay/return", "/api/v1/mercadopago/webhook", "/api/v1/stripe/webhook"}) {
+            mockMvc.perform(post(callback)
+                            .header("Host", hostHeader(store))
+                            .param("TBK_TOKEN", "abandonado"))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.message").value("Esta tienda está cerrada"));
+        }
+
+        mockMvc.perform(get("/api/platform/stores/" + store.getId())
+                        .header("Host", hostHeader(store))
+                        .header("X-Platform-Key", platformKey))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CLOSED"));
+    }
+
+    private static org.springframework.test.web.servlet.ResultMatcher notTheSuspendedRejection() {
+        return result -> {
+            org.assertj.core.api.Assertions.assertThat(result.getResponse().getStatus()).isNotEqualTo(403);
+            org.assertj.core.api.Assertions.assertThat(result.getResponse().getContentAsString())
+                    .doesNotContain("Esta tienda está suspendida");
+        };
     }
 
     @Test

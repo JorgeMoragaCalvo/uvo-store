@@ -47,4 +47,16 @@ public interface OrderRefundRepository extends JpaRepository<OrderRefund, Long> 
             group by r.order.id
             """)
     List<Object[]> refundedByOrder(@Param("orderIds") Collection<Long> orderIds);
+
+    /**
+     * PROD-23. Intenciones de reembolso de una tienda cuyo resultado no se conoce (F12): la pasarela pudo haber
+     * devuelto el dinero. Hay que resolverlas antes de cerrar, porque el cierre borra las credenciales con las que
+     * se consulta.
+     */
+    @Query("""
+            select count(r) from OrderRefund r
+            where r.order.store.id = :storeId
+              and r.status = org.uvo.uvostore.entity.order.enums.RefundStatus.PENDING
+            """)
+    long countPendingForStore(@Param("storeId") Long storeId);
 }

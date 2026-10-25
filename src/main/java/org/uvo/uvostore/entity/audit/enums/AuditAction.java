@@ -36,11 +36,13 @@ public enum AuditAction {
     ROLE_UPDATE,
     ROLE_DELETE,
 
-    // Plataforma. STORE_STATUS_UPDATE queda reservada para PROD-23: hoy nada cambia el estado de una tienda.
+    // Plataforma. Desde PROD-23 (V29) también suspender o reactivar, cerrar y recuperar el acceso del dueño.
     STORE_CREATE,
     STORE_DOMAIN_UPDATE,
     STORE_DOMAIN_VERIFY,
     STORE_STATUS_UPDATE,
+    STORE_CLOSE,
+    STORE_OWNER_ACCESS_RECOVERY,
 
     // Lo que cambia cuánto se cobra.
     COUPON_CREATE,

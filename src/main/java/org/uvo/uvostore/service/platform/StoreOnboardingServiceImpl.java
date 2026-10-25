@@ -8,15 +8,12 @@ import org.springframework.transaction.annotation.Transactional;
 import org.uvo.uvostore.entity.audit.enums.AuditAction;
 import org.uvo.uvostore.entity.audit.enums.AuditTargetType;
 import org.uvo.uvostore.entity.pos.PosConnection;
-import org.uvo.uvostore.entity.security.Role;
 import org.uvo.uvostore.entity.security.User;
 import org.uvo.uvostore.entity.settings.Setting;
 import org.uvo.uvostore.entity.settings.StoreSettings;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.entity.tenant.enums.StoreStatus;
-import org.uvo.uvostore.repository.PermissionRepository;
 import org.uvo.uvostore.repository.PosConnectionRepository;
-import org.uvo.uvostore.repository.RoleRepository;
 import org.uvo.uvostore.repository.SettingRepository;
 import org.uvo.uvostore.repository.StoreRepository;
 import org.uvo.uvostore.repository.StoreSettingsRepository;
@@ -49,12 +46,6 @@ import java.util.Set;
 @Service
 public class StoreOnboardingServiceImpl implements StoreOnboardingService {
 
-    /**
-     * F08. El mismo nombre que usó {@code V15__seed_permissions.sql} para las tiendas que ya existían
-     * entonces, para que una tienda nueva y una antigua se vean igual en la pantalla de Roles.
-     */
-    private static final String OWNER_ROLE_NAME = "Administrador";
-
     /** La clave de {@code settings} que lee y escribe {@code SettingsServiceImpl} para «Ajustes generales». */
     private static final String STORE_NAME_KEY = "store_name";
 
@@ -73,8 +64,7 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
 
     private final StoreRepository storeRepository;
     private final UserRepository userRepository;
-    private final RoleRepository roleRepository;
-    private final PermissionRepository permissionRepository;
+    private final StoreOwnerRole storeOwnerRole;
     private final StoreSettingsRepository storeSettingsRepository;
     private final SettingRepository settingRepository;
     private final PosConnectionRepository posConnectionRepository;
@@ -86,7 +76,7 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
     private final AuditTrail auditTrail;
 
     public StoreOnboardingServiceImpl(StoreRepository storeRepository, UserRepository userRepository,
-                                      RoleRepository roleRepository, PermissionRepository permissionRepository,
+                                      StoreOwnerRole storeOwnerRole,
                                       StoreSettingsRepository storeSettingsRepository,
                                       SettingRepository settingRepository,
                                       PosConnectionRepository posConnectionRepository,
@@ -95,8 +85,7 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
                                       StorePublicUrlResolver publicUrls, AuditTrail auditTrail) {
         this.storeRepository = storeRepository;
         this.userRepository = userRepository;
-        this.roleRepository = roleRepository;
-        this.permissionRepository = permissionRepository;
+        this.storeOwnerRole = storeOwnerRole;
         this.storeSettingsRepository = storeSettingsRepository;
         this.settingRepository = settingRepository;
         this.posConnectionRepository = posConnectionRepository;
@@ -151,7 +140,7 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
         invitationMailer.issue(admin);
         admin.setActive(true);
         admin.setAdmin(true);
-        admin.setRoles(new HashSet<>(Set.of(ownerRole(savedStore))));
+        admin.setRoles(new HashSet<>(Set.of(storeOwnerRole.create(savedStore))));
         User savedAdmin = userRepository.save(admin);
 
         savedStore.setOwnerUserId(savedAdmin.getId());
@@ -223,8 +212,11 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
      * <p>Si el reintento es el mismo alta (mismo nick, mismos secretos, mismo dueño), devuelve la tienda que ya
      * existe. Si algo de eso cambió, se rechaza en vez de actualizar. Actualizar los secretos parecería más
      * cómodo, pero un reintento atrasado de una activación anterior volvería a poner unos secretos que el POS ya
-     * no tiene, y desde ese momento ninguna llamada autenticaría. Y tampoco puede revivir ni cambiarle las
-     * credenciales a una conexión desactivada o a una tienda suspendida, que es cosa de PROD-23.
+     * no tiene, y desde ese momento ninguna llamada autenticaría. Y tampoco revive ni le cambia las credenciales
+     * a una conexión desactivada o a una tienda suspendida: devuelve la tienda con su estado
+     * ({@code StoreOnboardingResponse.status}), y reactivarla es una llamada aparte y explícita (PROD-23,
+     * {@code StoreLifecycleService}). Una tienda cerrada ya no tiene conexión, así que su empresa no llega aquí: es
+     * un alta nueva.
      *
      * <p>Tampoco deja fila de auditoría (PROD-18): no cambia nada, y el alta original ya quedó registrada.
      */
@@ -278,6 +270,7 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
     public StoreOnboardingResponse updateDomain(Long storeId, String domain) {
         Store store = storeRepository.findById(storeId)
                 .orElseThrow(() -> new NoSuchElementException("Store " + storeId + " not found"));
+        requireNotClosed(store);
 
         String normalized = normalizeDomain(domain);
         if (normalized != null && !normalized.equals(store.getDomain()) && storeRepository.existsByDomain(normalized)) {
@@ -321,6 +314,7 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
     public StoreOnboardingResponse setDomainVerified(Long storeId, boolean verified) {
         Store store = storeRepository.findById(storeId)
                 .orElseThrow(() -> new NoSuchElementException("Store " + storeId + " not found"));
+        requireNotClosed(store);
         if (verified && (store.getDomain() == null || store.getDomain().isBlank())) {
             throw new BusinessException("Esta tienda no tiene dominio propio que verificar");
         }
@@ -337,30 +331,11 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
         return toResponse(saved, admin, false);
     }
 
-    /**
-     * F08. El rol de dueño de la tienda, con el catálogo de permisos entero.
-     *
-     * <p>Sin esto el alta entregaba un administrador <b>sin ningún rol</b>, y como
-     * {@code AuthController.adminAuthorities} compone el token con {@code ROLE_ADMIN} más los permisos
-     * de sus roles, el dueño entraba con una sola autoridad. El síntoma no era ni un 403 claro: el menú
-     * del panel se dibuja a partir de esos permisos, así que el cliente veía un panel sin secciones
-     * —incluida la de Roles, la única que habría servido para arreglarlo— y la salida era SQL a mano.
-     * Funcionaba solo para las tiendas anteriores a {@code V15__seed_permissions.sql}, que les creó
-     * este mismo rol por migración.
-     *
-     * <p><b>Esto es una foto del catálogo en el momento del alta.</b> Un permiso nuevo añadido por una
-     * migración futura no aparece aquí por sí solo: hay que concederlo también a los roles que ya
-     * existen, como hace {@code V19__order_refunds.sql} con {@code orders.refund} (y lo hace de forma
-     * genérica, sobre cualquier rol que tenga {@code orders.manage}, así que cubre también los roles
-     * que crea este método). Mantener ese patrón.
-     */
-    private Role ownerRole(Store store) {
-        Role role = new Role();
-        role.setStore(store);
-        role.setName(OWNER_ROLE_NAME);
-        // guardName se queda en su default "web", que es lo que espera UNIQUE(store_id, name, guard_name).
-        role.setPermissions(new HashSet<>(permissionRepository.findAll()));
-        return roleRepository.save(role);
+    /** PROD-23. El dominio de una tienda cerrada se liberó al cerrarla, y no vuelve. */
+    private static void requireNotClosed(Store store) {
+        if (store.isClosed()) {
+            throw new BusinessException("La tienda está cerrada");
+        }
     }
 
     /**
@@ -410,7 +385,8 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
                 store.getDomainVerifiedAt(),
                 publicUrls.storefrontOrigin(store),
                 publicUrls.storefrontUrl(store, "/admin/login"),
-                created
+                created,
+                store.getStatus()
         );
     }
 }
