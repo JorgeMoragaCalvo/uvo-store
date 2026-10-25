@@ -4,6 +4,7 @@ import jakarta.servlet.Filter;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.Ordered;
 import org.uvo.uvostore.security.DeferredSurfaceGateFilter;
 import org.uvo.uvostore.security.JwtAuthenticationFilter;
 import org.uvo.uvostore.security.PlatformApiKeyAuthFilter;
@@ -33,6 +34,11 @@ import org.uvo.uvostore.security.TenantResolutionFilter;
  *
  * <p>Desactivar el registro automático deja a {@code SecurityConfig} como el único lugar donde se
  * decide el orden, que es donde alguien lo va a buscar.
+ *
+ * <p>La excepción es {@link RequestIdFilter} (PROD-18): ese sí se registra de verdad aquí, como filtro de servlet
+ * con la máxima precedencia, fuera y antes de la cadena de Security. Tiene que envolver todo, incluidos los 401,
+ * 404 y 429 que escriben los filtros de Security, para que también esas respuestas y sus líneas de log lleven el
+ * id. No es un {@code @Component}, así que no hay registro automático que desactivar.
  */
 @Configuration
 public class FilterRegistrationConfig {
@@ -70,6 +76,13 @@ public class FilterRegistrationConfig {
     @Bean
     public FilterRegistrationBean<PlatformApiKeyAuthFilter> platformApiKeyAuthFilterRegistration(PlatformApiKeyAuthFilter filter) {
         return disableAutoRegistration(filter);
+    }
+
+    @Bean
+    public FilterRegistrationBean<RequestIdFilter> requestIdFilterRegistration() {
+        FilterRegistrationBean<RequestIdFilter> registration = new FilterRegistrationBean<>(new RequestIdFilter());
+        registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
+        return registration;
     }
 
     private static <T extends Filter> FilterRegistrationBean<T> disableAutoRegistration(T filter) {

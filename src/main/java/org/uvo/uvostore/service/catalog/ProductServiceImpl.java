@@ -3,17 +3,24 @@ package org.uvo.uvostore.service.catalog;
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import org.uvo.uvostore.entity.audit.enums.AuditAction;
+import org.uvo.uvostore.entity.audit.enums.AuditTargetType;
 import org.uvo.uvostore.entity.catalog.Category;
 import org.uvo.uvostore.entity.catalog.Product;
 import org.uvo.uvostore.entity.catalog.enums.ProductType;
 import org.uvo.uvostore.repository.CategoryRepository;
 import org.uvo.uvostore.repository.ProductRepository;
 import org.uvo.uvostore.security.TenantContext;
+import org.uvo.uvostore.service.audit.AuditDiff;
+import org.uvo.uvostore.service.audit.AuditEntry;
+import org.uvo.uvostore.service.audit.AuditTrail;
 
 import java.math.BigDecimal;
 import java.security.SecureRandom;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
 
@@ -24,16 +31,19 @@ public class ProductServiceImpl implements ProductService {
     private final CategoryRepository categoryRepository;
     private final ProductImageService productImageService;
     private final PosCatalogOwnership posOwnership;
+    private final AuditTrail auditTrail;
 
     public ProductServiceImpl(
             ProductRepository productRepository,
             CategoryRepository categoryRepository,
             ProductImageService productImageService,
-            PosCatalogOwnership posOwnership) {
+            PosCatalogOwnership posOwnership,
+            AuditTrail auditTrail) {
         this.productRepository = productRepository;
         this.categoryRepository = categoryRepository;
         this.productImageService = productImageService;
         this.posOwnership = posOwnership;
+        this.auditTrail = auditTrail;
     }
 
     @Override
@@ -91,6 +101,7 @@ public class ProductServiceImpl implements ProductService {
         // POS-2: antes de tocar nada. Si rechazara después, el producto ya estaría cambiado en la sesión (y la
         // consulta de mapeos lo volcaría) y las imágenes de abajo ya estarían en disco.
         Set<PosOwnedField> posOwned = posOwnership.checkUpdate(product, command);
+        Map<String, Object> pricesBefore = priceFields(product);
         applyCommonFields(product, command, posOwned);
         if (product.getProductType() == ProductType.SIMPLE) {
             if (!posOwned.contains(PosOwnedField.SKU)) {
@@ -107,6 +118,13 @@ public class ProductServiceImpl implements ProductService {
             }
         }
         Product saved = productRepository.save(product);
+        // PROD-18. Solo el precio: el resto de la ficha no cambia cuánto se cobra. Los cambios que manda el POS
+        // (/api/sync, webhooks) no pasan por aquí y no se auditan: ya quedan en sync_webhook_logs.
+        AuditDiff prices = AuditDiff.create().values(pricesBefore, priceFields(saved));
+        if (prices.hasChanges()) {
+            auditTrail.record(AuditEntry.of(AuditAction.PRODUCT_PRICE_UPDATE, AuditTargetType.PRODUCT, saved.getId())
+                    .details(prices.with("sku", saved.getSku())));
+        }
         // The update path used to drop featuredImage/images on the floor even though ProductRequest
         // accepted them, so the admin panel had no way to add or change a photo after creation —
         // the only fix was deleting the product and making it again. persistImages skips null/empty
@@ -144,6 +162,18 @@ public class ProductServiceImpl implements ProductService {
                 .orElseThrow(() -> new NoSuchElementException("Product " + productId + " not found"));
         product.setFeatured(!product.isFeatured());
         return productRepository.save(product);
+    }
+
+    // PROD-18. Lo que decide el precio que se cobra, oferta incluida.
+    private static Map<String, Object> priceFields(Product product) {
+        Map<String, Object> fields = new LinkedHashMap<>();
+        fields.put("price", product.getPrice());
+        fields.put("salePrice", product.getSalePrice());
+        fields.put("discountPercentage", product.getDiscountPercentage());
+        fields.put("onSale", product.isOnSale());
+        fields.put("saleStartsAt", product.getSaleStartsAt());
+        fields.put("saleEndsAt", product.getSaleEndsAt());
+        return fields;
     }
 
     // Ports the base $data array ProductCreate.php::save() builds before the simple/variable

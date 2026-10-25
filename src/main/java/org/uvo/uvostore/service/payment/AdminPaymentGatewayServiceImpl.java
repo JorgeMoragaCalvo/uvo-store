@@ -2,10 +2,15 @@ package org.uvo.uvostore.service.payment;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.uvo.uvostore.entity.audit.enums.AuditAction;
+import org.uvo.uvostore.entity.audit.enums.AuditTargetType;
 import org.uvo.uvostore.entity.payment.PaymentGatewayConfig;
 import org.uvo.uvostore.entity.payment.enums.PaymentGatewayType;
 import org.uvo.uvostore.repository.PaymentGatewayConfigRepository;
 import org.uvo.uvostore.security.TenantContext;
+import org.uvo.uvostore.service.audit.AuditDiff;
+import org.uvo.uvostore.service.audit.AuditEntry;
+import org.uvo.uvostore.service.audit.AuditTrail;
 
 import java.util.HashMap;
 import java.util.List;
@@ -15,9 +20,11 @@ import java.util.Map;
 public class AdminPaymentGatewayServiceImpl implements AdminPaymentGatewayService {
 
     private final PaymentGatewayConfigRepository repository;
+    private final AuditTrail auditTrail;
 
-    public AdminPaymentGatewayServiceImpl(PaymentGatewayConfigRepository repository) {
+    public AdminPaymentGatewayServiceImpl(PaymentGatewayConfigRepository repository, AuditTrail auditTrail) {
         this.repository = repository;
+        this.auditTrail = auditTrail;
     }
 
     @Override
@@ -36,6 +43,10 @@ public class AdminPaymentGatewayServiceImpl implements AdminPaymentGatewayServic
             created.setGateway(gateway);
             return created;
         });
+        // PROD-18. Lo de antes, en claro y en memoria (el conversor ya lo descifró al cargar).
+        boolean created = config.getId() == null;
+        boolean wasEnabled = config.isEnabled();
+        Map<String, String> previousCredentials = new HashMap<>(config.getCredentials());
         config.setEnabled(command.enabled());
         if (command.credentials() != null) {
             Map<String, String> merged = new HashMap<>(config.getCredentials());
@@ -55,7 +66,17 @@ public class AdminPaymentGatewayServiceImpl implements AdminPaymentGatewayServic
             }
         }
 
-        return toDto(repository.save(config));
+        PaymentGatewayConfig saved = repository.save(config);
+        // De las credenciales, solo qué clave se puso, se reemplazó o se borró: ningún valor, tampoco las públicas.
+        AuditDiff diff = AuditDiff.create()
+                .value("enabled", wasEnabled, saved.isEnabled())
+                .credentials("credentials", previousCredentials, saved.getCredentials());
+        if (created || diff.hasChanges()) {
+            auditTrail.record(AuditEntry.of(AuditAction.PAYMENT_GATEWAY_UPDATE, AuditTargetType.PAYMENT_GATEWAY_CONFIG,
+                            saved.getId())
+                    .details(diff.with("gateway", gateway).with("created", created)));
+        }
+        return toDto(saved);
     }
 
     private PaymentGatewayConfigDto toDto(PaymentGatewayConfig config) {

@@ -2,6 +2,8 @@ package org.uvo.uvostore.service.settings;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.uvo.uvostore.entity.audit.enums.AuditAction;
+import org.uvo.uvostore.entity.audit.enums.AuditTargetType;
 import org.uvo.uvostore.entity.pos.PosConnection;
 import org.uvo.uvostore.entity.settings.Setting;
 import org.uvo.uvostore.entity.tenant.Store;
@@ -9,6 +11,9 @@ import org.uvo.uvostore.repository.PosConnectionRepository;
 import org.uvo.uvostore.repository.SettingRepository;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.BusinessException;
+import org.uvo.uvostore.service.audit.AuditDiff;
+import org.uvo.uvostore.service.audit.AuditEntry;
+import org.uvo.uvostore.service.audit.AuditTrail;
 import org.uvo.uvostore.service.pos.PosApiKey;
 import org.uvo.uvostore.service.pos.PosIntegrationPolicy;
 
@@ -18,12 +23,14 @@ public class SettingsServiceImpl implements SettingsService {
     private final SettingRepository settingRepository;
     private final PosConnectionRepository posConnectionRepository;
     private final PosIntegrationPolicy posPolicy;
+    private final AuditTrail auditTrail;
 
     public SettingsServiceImpl(SettingRepository settingRepository, PosConnectionRepository posConnectionRepository,
-                               PosIntegrationPolicy posPolicy) {
+                               PosIntegrationPolicy posPolicy, AuditTrail auditTrail) {
         this.settingRepository = settingRepository;
         this.posConnectionRepository = posConnectionRepository;
         this.posPolicy = posPolicy;
+        this.auditTrail = auditTrail;
     }
 
     @Override
@@ -62,26 +69,35 @@ public class SettingsServiceImpl implements SettingsService {
                 command.freeShippingThreshold(), "el monto mínimo para envío gratis");
         requireStripeCredentials(command);
 
+        // PROD-18. El formulario se guarda entero cada vez, así que set() devuelve lo que había y la auditoría se
+        // queda con lo que cambió, en tres grupos: dinero (F17), Stripe y POS. El resto (nombre, SEO, redes) no se
+        // audita.
+        AuditDiff money = AuditDiff.create();
+        AuditDiff stripe = AuditDiff.create();
+        AuditDiff pos = AuditDiff.create();
+        boolean stripeSecretWasSet = isSet("stripe_secret_key");
+
         set("store_name", command.storeName());
         set("store_email", command.storeEmail());
         set("store_phone", command.storePhone());
         set("admin_email", command.adminEmail());
-        set("currency", currency);
-        set("currency_symbol", command.currencySymbol().trim());
-        set("tax_rate", taxRate);
-        set("prices_include_tax", String.valueOf(command.pricesIncludeTax()));
-        set("shipping_enabled", String.valueOf(command.shippingEnabled()));
-        set("default_shipping_cost", defaultShippingCost);
-        set("free_shipping_enabled", String.valueOf(command.freeShippingEnabled()));
-        set("free_shipping_threshold", freeShippingThreshold);
+        setAudited(money, "currency", currency);
+        setAudited(money, "currency_symbol", command.currencySymbol().trim());
+        setAudited(money, "tax_rate", taxRate);
+        setAudited(money, "prices_include_tax", String.valueOf(command.pricesIncludeTax()));
+        setAudited(money, "shipping_enabled", String.valueOf(command.shippingEnabled()));
+        setAudited(money, "default_shipping_cost", defaultShippingCost);
+        setAudited(money, "free_shipping_enabled", String.valueOf(command.freeShippingEnabled()));
+        setAudited(money, "free_shipping_threshold", freeShippingThreshold);
         set("allow_guest_checkout", String.valueOf(command.allowGuestCheckout()));
         set("require_phone", String.valueOf(command.requirePhone()));
         set("require_company", String.valueOf(command.requireCompany()));
-        set("stripe_public_key", command.stripePublicKey());
-        setSecret("stripe_secret_key", command.stripeSecretKey());
-        set("stripe_enabled", String.valueOf(command.stripeEnabled()));
-        set("pos_api_url", command.posApiUrl());
-        set("pos_sync_enabled", String.valueOf(command.posSyncEnabled()));
+        // La clave pública no es secreta, pero se registra igual que las credenciales de las pasarelas: solo si cambió.
+        stripe.secret("stripe_public_key", set("stripe_public_key", command.stripePublicKey()), command.stripePublicKey());
+        stripe.secretSubmitted("stripe_secret_key", stripeSecretWasSet, setSecret("stripe_secret_key", command.stripeSecretKey()));
+        setAudited(stripe, "stripe_enabled", String.valueOf(command.stripeEnabled()));
+        setAudited(pos, "pos_api_url", command.posApiUrl());
+        setAudited(pos, "pos_sync_enabled", String.valueOf(command.posSyncEnabled()));
         set("meta_title", command.metaTitle());
         set("meta_description", command.metaDescription());
         set("meta_keywords", command.metaKeywords());
@@ -99,6 +115,12 @@ public class SettingsServiceImpl implements SettingsService {
                     .orElseThrow(() -> new IllegalArgumentException("API key inválida"));
             Store store = TenantContext.requireCurrent();
             PosConnection connection = posConnectionRepository.findByStoreId(store.getId()).orElseGet(PosConnection::new);
+            // PROD-18. Lo de antes, en claro y en memoria (EncryptedStringConverter ya lo descifró al cargar).
+            boolean created = connection.getId() == null;
+            Long previousCompanyId = connection.getCompanyId();
+            String previousApiKey = connection.getApiKey();
+            String previousWebhookSecret = connection.getWebhookSecret();
+            boolean wasActive = connection.isActive();
             connection.setStore(store);
             connection.setCompanyId(companyId);
             connection.setApiKey(command.posApiToken());
@@ -115,10 +137,40 @@ public class SettingsServiceImpl implements SettingsService {
             if (connection.getApiUrl() == null) {
                 connection.setApiUrl(command.posApiUrl() == null ? "" : command.posApiUrl());
             }
-            posConnectionRepository.save(connection);
+            PosConnection saved = posConnectionRepository.save(connection);
+            pos.value("companyId", previousCompanyId, saved.getCompanyId())
+                    .secret("apiKey", previousApiKey, saved.getApiKey())
+                    .secret("webhookSecret", previousWebhookSecret, saved.getWebhookSecret())
+                    .value("active", wasActive, saved.isActive());
+            if (created) {
+                pos.with("connectionCreated", true);
+            }
+        }
+
+        recordIfChanged(AuditAction.SETTINGS_MONEY_UPDATE, money);
+        recordIfChanged(AuditAction.SETTINGS_STRIPE_UPDATE, stripe);
+        if (pos.hasChanges()) {
+            Long storeId = TenantContext.requireStoreId();
+            PosConnection connection = posConnectionRepository.findByStoreId(storeId).orElse(null);
+            auditTrail.record(connection == null
+                    ? AuditEntry.of(AuditAction.POS_CONNECTION_UPDATE, AuditTargetType.STORE, storeId).details(pos)
+                    : AuditEntry.of(AuditAction.POS_CONNECTION_UPDATE, AuditTargetType.POS_CONNECTION, connection.getId())
+                            .details(pos));
         }
 
         return getGeneralSettings();
+    }
+
+    // Escribe el ajuste y deja en la auditoría su antes y después, si cambió.
+    private void setAudited(AuditDiff diff, String key, String value) {
+        diff.value(key, set(key, value), value);
+    }
+
+    private void recordIfChanged(AuditAction action, AuditDiff diff) {
+        if (diff.hasChanges()) {
+            Long storeId = TenantContext.requireStoreId();
+            auditTrail.record(AuditEntry.of(action, AuditTargetType.STORE, storeId).details(diff));
+        }
     }
 
     /**
@@ -183,24 +235,31 @@ public class SettingsServiceImpl implements SettingsService {
         return settingRepository.findByStoreIdAndSettingKey(TenantContext.requireStoreId(), key).map(Setting::getValue).filter(SettingsServiceImpl::notBlank).isPresent();
     }
 
-    private void set(String key, String value) {
+    // Devuelve lo que había (null si el ajuste no existía), para la auditoría.
+    private String set(String key, String value) {
         Store store = TenantContext.requireCurrent();
         Setting setting = settingRepository.findByStoreIdAndSettingKey(store.getId(), key).orElseGet(Setting::new);
+        String previous = setting.getValue();
         setting.setStore(store);
         setting.setSettingKey(key);
         setting.setValue(value);
         settingRepository.save(setting);
+        return previous;
     }
 
     // Encrypts before persisting (AES-256-GCM, see SecretCrypto) and, unlike set(), leaves the
     // stored value untouched when the incoming value is blank — the admin UI can't pre-fill this
     // field with the real secret (it's never returned by getGeneralSettings), so a save that
     // doesn't touch it must not wipe out what's already configured.
-    private void setSecret(String key, String value) {
+    //
+    // Devuelve si se guardó uno nuevo. La auditoría no compara con el anterior: habría que descifrarlo, y si la
+    // clave de cifrado rotó eso falla justo en el guardado que lo arregla.
+    private boolean setSecret(String key, String value) {
         if (!notBlank(value)) {
-            return;
+            return false;
         }
         set(key, SecretCrypto.encrypt(value));
+        return true;
     }
 
     private static boolean notBlank(String value) {

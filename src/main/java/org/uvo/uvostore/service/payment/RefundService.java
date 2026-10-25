@@ -4,6 +4,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.uvo.uvostore.entity.audit.enums.AuditAction;
+import org.uvo.uvostore.entity.audit.enums.AuditTargetType;
 import org.uvo.uvostore.entity.order.Order;
 import org.uvo.uvostore.entity.order.OrderRefund;
 import org.uvo.uvostore.entity.order.OrderStatusHistory;
@@ -18,6 +20,8 @@ import org.uvo.uvostore.repository.UserRepository;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.BusinessException;
 import org.uvo.uvostore.service.Money;
+import org.uvo.uvostore.service.audit.AuditEntry;
+import org.uvo.uvostore.service.audit.AuditTrail;
 import org.uvo.uvostore.service.order.OrderStatusService;
 import org.uvo.uvostore.service.order.PaymentService;
 
@@ -52,12 +56,13 @@ public class RefundService {
     private final WebpayService webpayService;
     private final MercadoPagoService mercadoPagoService;
     private final RefundIntentStore intentStore;
+    private final AuditTrail auditTrail;
 
     public RefundService(OrderRepository orderRepository, OrderRefundRepository refundRepository,
                          OrderStatusHistoryRepository historyRepository, UserRepository userRepository,
                          OrderStatusService orderStatusService, PaymentService paymentService,
                          WebpayService webpayService, MercadoPagoService mercadoPagoService,
-                         RefundIntentStore intentStore) {
+                         RefundIntentStore intentStore, AuditTrail auditTrail) {
         this.orderRepository = orderRepository;
         this.refundRepository = refundRepository;
         this.historyRepository = historyRepository;
@@ -67,6 +72,7 @@ public class RefundService {
         this.webpayService = webpayService;
         this.mercadoPagoService = mercadoPagoService;
         this.intentStore = intentStore;
+        this.auditTrail = auditTrail;
     }
 
     /**
@@ -158,6 +164,11 @@ public class RefundService {
         String detail = describe(type, amount, reference, command.reason());
         log.info("Reembolso registrado order_id={} order_number={} monto={} tipo={} referencia={}",
                 order.getId(), order.getOrderNumber(), amount, type, reference);
+        // PROD-18. En la transacción del reembolso: si lo local se cae después de la pasarela, esta fila se
+        // deshace con él, y queda la de la intención (REFUND_REQUEST, ya confirmada) para reconciliar.
+        auditTrail.record(AuditEntry.of(type == RefundType.EXTERNAL ? AuditAction.REFUND_RECORD_EXTERNAL
+                        : AuditAction.REFUND_ISSUE, AuditTargetType.ORDER, order.getId())
+                .details(RefundIntentStore.refundDetails(refund, order).with("closesOrder", closesOrder)));
 
         if (closesOrder) {
             // Se devolvió todo el saldo: la compra queda deshecha. markRefunded es idempotente y

@@ -5,6 +5,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.ResultSetExtractor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.uvo.uvostore.entity.audit.enums.AuditAction;
+import org.uvo.uvostore.entity.audit.enums.AuditTargetType;
 import org.uvo.uvostore.entity.pos.PosConnection;
 import org.uvo.uvostore.entity.security.Role;
 import org.uvo.uvostore.entity.security.User;
@@ -20,6 +22,9 @@ import org.uvo.uvostore.repository.StoreRepository;
 import org.uvo.uvostore.repository.StoreSettingsRepository;
 import org.uvo.uvostore.repository.UserRepository;
 import org.uvo.uvostore.service.BusinessException;
+import org.uvo.uvostore.service.audit.AuditDiff;
+import org.uvo.uvostore.service.audit.AuditEntry;
+import org.uvo.uvostore.service.audit.AuditTrail;
 import org.uvo.uvostore.service.pos.PosApiKey;
 import org.uvo.uvostore.service.pos.PosIntegrationPolicy;
 import org.uvo.uvostore.service.security.AdminInvitationMailer;
@@ -78,6 +83,7 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
     private final ApplicationEventPublisher events;
     private final JdbcTemplate jdbcTemplate;
     private final StorePublicUrlResolver publicUrls;
+    private final AuditTrail auditTrail;
 
     public StoreOnboardingServiceImpl(StoreRepository storeRepository, UserRepository userRepository,
                                       RoleRepository roleRepository, PermissionRepository permissionRepository,
@@ -86,7 +92,7 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
                                       PosConnectionRepository posConnectionRepository,
                                       PosIntegrationPolicy posPolicy, AdminInvitationMailer invitationMailer,
                                       ApplicationEventPublisher events, JdbcTemplate jdbcTemplate,
-                                      StorePublicUrlResolver publicUrls) {
+                                      StorePublicUrlResolver publicUrls, AuditTrail auditTrail) {
         this.storeRepository = storeRepository;
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
@@ -99,6 +105,7 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
         this.events = events;
         this.jdbcTemplate = jdbcTemplate;
         this.publicUrls = publicUrls;
+        this.auditTrail = auditTrail;
     }
 
     @Override
@@ -155,6 +162,19 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
             connect(savedStore, pos);
         }
 
+        // PROD-18. Con la tienda nueva dicha explícitamente: el Host de esta llamada puede ser el de otra tienda.
+        // Del bloque pos solo la empresa: ni el token, ni el secreto, ni la URL.
+        auditTrail.record(AuditEntry.of(AuditAction.STORE_CREATE, AuditTargetType.STORE, savedStore.getId())
+                .forStore(savedStore.getId())
+                .details(AuditDiff.create()
+                        .with("slug", slug)
+                        .with("domain", domain)
+                        .with("name", command.storeName())
+                        .with("ownerUserId", savedAdmin.getId())
+                        .with("ownerEmail", savedAdmin.getEmail())
+                        .with("origin", pos != null ? "POS" : "OPERATOR")
+                        .with("posCompanyId", pos != null ? pos.companyId() : null)));
+
         // El correo sale después del commit (StoreOwnerInvitationListener): si el alta se deshiciera, el dueño
         // recibiría un enlace con un token que no existe.
         events.publishEvent(new StoreOwnerInvitedEvent(savedAdmin.getId()));
@@ -205,6 +225,8 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
      * cómodo, pero un reintento atrasado de una activación anterior volvería a poner unos secretos que el POS ya
      * no tiene, y desde ese momento ninguna llamada autenticaría. Y tampoco puede revivir ni cambiarle las
      * credenciales a una conexión desactivada o a una tienda suspendida, que es cosa de PROD-23.
+     *
+     * <p>Tampoco deja fila de auditoría (PROD-18): no cambia nada, y el alta original ya quedó registrada.
      */
     private StoreOnboardingResponse replay(PosConnection connection, String slug, StoreOnboardingCommand command) {
         StoreOnboardingCommand.PosLink pos = command.pos();
@@ -265,11 +287,19 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
         // PROD-04. Un dominio distinto es un dominio sin comprobar: si la verificación se heredara, el
         // primer correo saldría con un enlace a un dominio cuyo DNS puede no apuntar aquí todavía. Volver
         // al subdominio de plataforma mientras tanto es el estado seguro, y funciona siempre.
+        String previous = store.getDomain();
+        boolean wasVerified = store.getDomainVerifiedAt() != null;
         if (!java.util.Objects.equals(normalized, store.getDomain())) {
             store.setDomainVerifiedAt(null);
         }
         store.setDomain(normalized);
         Store saved = storeRepository.save(store);
+        AuditDiff diff = AuditDiff.create().value("domain", previous, normalized);
+        if (diff.hasChanges()) {
+            auditTrail.record(AuditEntry.of(AuditAction.STORE_DOMAIN_UPDATE, AuditTargetType.STORE, saved.getId())
+                    .forStore(saved.getId())
+                    .details(diff.with("verificationCleared", wasVerified)));
+        }
         User admin = saved.getOwnerUserId() == null ? null : userRepository.findById(saved.getOwnerUserId()).orElse(null);
         return toResponse(saved, admin, false);
     }
@@ -294,8 +324,15 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
         if (verified && (store.getDomain() == null || store.getDomain().isBlank())) {
             throw new BusinessException("Esta tienda no tiene dominio propio que verificar");
         }
+        boolean wasVerified = store.getDomainVerifiedAt() != null;
         store.setDomainVerifiedAt(verified ? Instant.now() : null);
         Store saved = storeRepository.save(store);
+        AuditDiff diff = AuditDiff.create().value("verified", wasVerified, verified);
+        if (diff.hasChanges()) {
+            auditTrail.record(AuditEntry.of(AuditAction.STORE_DOMAIN_VERIFY, AuditTargetType.STORE, saved.getId())
+                    .forStore(saved.getId())
+                    .details(diff.with("domain", saved.getDomain())));
+        }
         User admin = saved.getOwnerUserId() == null ? null : userRepository.findById(saved.getOwnerUserId()).orElse(null);
         return toResponse(saved, admin, false);
     }

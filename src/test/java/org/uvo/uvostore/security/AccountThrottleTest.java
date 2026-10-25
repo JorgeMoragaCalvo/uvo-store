@@ -9,6 +9,7 @@ import org.uvo.uvostore.support.IntegrationTestSupport;
 
 import java.util.HashMap;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -50,6 +51,12 @@ class AccountThrottleTest extends IntegrationTestSupport {
         // frenara los fallos, el atacante seguiría pudiendo confirmar un acierto.
         mockMvc.perform(login(store, "198.51.100.201", admin.getEmail(), TEST_PASSWORD))
                 .andExpect(status().isTooManyRequests());
+
+        // PROD-18. Los cuatro fallos quedan en la auditoría; lo que frena el presupuesto, no: no llega a evaluarse,
+        // y así la fuerza bruta no puede llenar la tabla.
+        assertThat(auditRows(store, "AUTH_LOGIN"))
+                .hasSize(4)
+                .allSatisfy(row -> assertThat(row.result()).isEqualTo("FAILURE"));
     }
 
     @Test

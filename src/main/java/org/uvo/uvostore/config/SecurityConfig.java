@@ -46,7 +46,7 @@ public class SecurityConfig {
             // a propósito: con springdoc apagado esos endpoints no existen y responden 404, igual que
             // cualquier ruta inexistente. Quitarlas de esta lista las llevaría a anyRequest().authenticated()
             // y un anónimo vería el 401 de "vuelve a entrar" sobre algo que no está. El interruptor es la
-            // propiedad, no esta lista.
+            // propiedad, no está lista.
             "/v3/api-docs/**",
             "/swagger-ui/**",
             "/swagger-ui.html"

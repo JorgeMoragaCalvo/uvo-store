@@ -3,6 +3,8 @@ package org.uvo.uvostore.service.payment;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.uvo.uvostore.entity.audit.enums.AuditAction;
+import org.uvo.uvostore.entity.audit.enums.AuditTargetType;
 import org.uvo.uvostore.entity.order.Order;
 import org.uvo.uvostore.entity.order.OrderRefund;
 import org.uvo.uvostore.entity.order.enums.RefundStatus;
@@ -10,6 +12,9 @@ import org.uvo.uvostore.entity.order.enums.RefundType;
 import org.uvo.uvostore.entity.security.User;
 import org.uvo.uvostore.repository.OrderRefundRepository;
 import org.uvo.uvostore.repository.UserRepository;
+import org.uvo.uvostore.service.audit.AuditDiff;
+import org.uvo.uvostore.service.audit.AuditEntry;
+import org.uvo.uvostore.service.audit.AuditTrail;
 
 import java.math.BigDecimal;
 
@@ -27,16 +32,23 @@ import java.math.BigDecimal;
  * que la transacción nueva no se abriría nunca: la fila se escribiría en la transacción del reembolso y
  * se desharía con ella. El arreglo quedaría inerte y nada lo delataría. Si alguien vuelve a "simplificar"
  * esto metiéndolo en el servicio, deja de funcionar sin dar un solo error.
+ *
+ * <p>PROD-18. Las dos filas de auditoría del reembolso que tienen que sobrevivir a su rollback se escriben aquí,
+ * dentro de estas mismas transacciones: la intención ({@code REFUND_REQUEST}), que queda aunque después la
+ * transacción local se pierda, y el rechazo de la pasarela ({@code REFUND_ISSUE} con FAILURE).
  */
 @Component
 public class RefundIntentStore {
 
     private final OrderRefundRepository refundRepository;
     private final UserRepository userRepository;
+    private final AuditTrail auditTrail;
 
-    public RefundIntentStore(OrderRefundRepository refundRepository, UserRepository userRepository) {
+    public RefundIntentStore(OrderRefundRepository refundRepository, UserRepository userRepository,
+                             AuditTrail auditTrail) {
         this.refundRepository = refundRepository;
         this.userRepository = userRepository;
+        this.auditTrail = auditTrail;
     }
 
     /**
@@ -51,7 +63,7 @@ public class RefundIntentStore {
         String key = "refund:" + order.getId()
                 + ":" + refundRepository.totalRefunded(order.getId()).setScale(0)
                 + ":" + amount.setScale(0);
-        return refundRepository.save(OrderRefund.builder()
+        OrderRefund intent = refundRepository.save(OrderRefund.builder()
                 .order(order)
                 .amount(amount)
                 .type(type)
@@ -60,6 +72,9 @@ public class RefundIntentStore {
                 .status(RefundStatus.PENDING)
                 .idempotencyKey(key)
                 .build());
+        auditTrail.record(AuditEntry.of(AuditAction.REFUND_REQUEST, AuditTargetType.ORDER, order.getId())
+                .details(refundDetails(intent, order)));
+        return intent;
     }
 
     /**
@@ -72,6 +87,20 @@ public class RefundIntentStore {
         refundRepository.findById(refundId).ifPresent(refund -> {
             refund.setStatus(RefundStatus.FAILED);
             refundRepository.save(refund);
+            Order order = refund.getOrder();
+            auditTrail.record(AuditEntry.of(AuditAction.REFUND_ISSUE, AuditTargetType.ORDER, order.getId())
+                    .failed()
+                    .details(refundDetails(refund, order)));
         });
+    }
+
+    // Ni el motivo (texto libre, ya está en order_refunds y en el historial) ni la clave de idempotencia.
+    static AuditDiff refundDetails(OrderRefund refund, Order order) {
+        return AuditDiff.create()
+                .with("refundId", refund.getId())
+                .with("orderNumber", order.getOrderNumber())
+                .with("amount", refund.getAmount())
+                .with("type", refund.getType())
+                .with("paymentMethod", order.getPaymentMethod());
     }
 }

@@ -2,6 +2,8 @@ package org.uvo.uvostore.service.catalog;
 
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
+import org.uvo.uvostore.entity.audit.enums.AuditAction;
+import org.uvo.uvostore.entity.audit.enums.AuditTargetType;
 import org.uvo.uvostore.entity.catalog.AttributeValue;
 import org.uvo.uvostore.entity.catalog.Product;
 import org.uvo.uvostore.entity.catalog.ProductVariation;
@@ -11,6 +13,9 @@ import org.uvo.uvostore.repository.ProductRepository;
 import org.uvo.uvostore.repository.ProductVariationAttributeRepository;
 import org.uvo.uvostore.repository.ProductVariationRepository;
 import org.uvo.uvostore.security.TenantContext;
+import org.uvo.uvostore.service.audit.AuditDiff;
+import org.uvo.uvostore.service.audit.AuditEntry;
+import org.uvo.uvostore.service.audit.AuditTrail;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -26,13 +31,15 @@ public class ProductVariationServiceImpl implements ProductVariationService{
     private final ProductVariationAttributeRepository variationAttributeRepository;
     // needs a deleteByVariationId(Long) method, not yet listed in repositories.md
     private final PosCatalogOwnership posOwnership;
+    private final AuditTrail auditTrail;
 
-    public ProductVariationServiceImpl(ProductRepository productRepository, ProductVariationRepository variationRepository, AttributeValueRepository attributeValueRepository, ProductVariationAttributeRepository variationAttributeRepository, PosCatalogOwnership posOwnership) {
+    public ProductVariationServiceImpl(ProductRepository productRepository, ProductVariationRepository variationRepository, AttributeValueRepository attributeValueRepository, ProductVariationAttributeRepository variationAttributeRepository, PosCatalogOwnership posOwnership, AuditTrail auditTrail) {
         this.productRepository = productRepository;
         this.variationRepository = variationRepository;
         this.attributeValueRepository = attributeValueRepository;
         this.variationAttributeRepository = variationAttributeRepository;
         this.posOwnership = posOwnership;
+        this.auditTrail = auditTrail;
     }
 
     // POS-5: las tres escrituras bloquean el producto padre antes de tocar la variación, que es el orden de todo lo
@@ -69,10 +76,18 @@ public class ProductVariationServiceImpl implements ProductVariationService{
         posOwnership.requireNotMapped(variation.getProduct().getId());
         productRepository.findByIdForUpdate(variation.getProduct().getId());
 
+        BigDecimal previousPrice = variation.getPrice();
         variation.setSku(command.sku());
         variation.setPrice(command.price());
         variation.setStock(command.stock());
         ProductVariation saved = variationRepository.save(variation);
+        // PROD-18. Solo el precio, como en el producto.
+        AuditDiff diff = AuditDiff.create().value("price", previousPrice, saved.getPrice());
+        if (diff.hasChanges()) {
+            auditTrail.record(AuditEntry.of(AuditAction.VARIATION_PRICE_UPDATE, AuditTargetType.PRODUCT_VARIATION,
+                            saved.getId())
+                    .details(diff.with("productId", saved.getProduct().getId()).with("sku", saved.getSku())));
+        }
 
         // Ports ProductVariations.php::updateVariation() — detach then reattach rather than a
         // diff/sync, matching the Laravel behavior exactly (detach() then re-attach() in a loop).

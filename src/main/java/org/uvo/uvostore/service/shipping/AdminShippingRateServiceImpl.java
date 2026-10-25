@@ -2,6 +2,8 @@ package org.uvo.uvostore.service.shipping;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.uvo.uvostore.entity.audit.enums.AuditAction;
+import org.uvo.uvostore.entity.audit.enums.AuditTargetType;
 import org.uvo.uvostore.entity.shipping.ShippingMethod;
 import org.uvo.uvostore.entity.shipping.ShippingRate;
 import org.uvo.uvostore.entity.shipping.ShippingZone;
@@ -10,9 +12,14 @@ import org.uvo.uvostore.repository.ShippingMethodRepository;
 import org.uvo.uvostore.repository.ShippingRateRepository;
 import org.uvo.uvostore.repository.ShippingZoneRepository;
 import org.uvo.uvostore.security.TenantContext;
+import org.uvo.uvostore.service.audit.AuditDiff;
+import org.uvo.uvostore.service.audit.AuditEntry;
+import org.uvo.uvostore.service.audit.AuditTrail;
 
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 
 @Service
@@ -21,12 +28,14 @@ public class AdminShippingRateServiceImpl implements AdminShippingRateService {
     private final ShippingRateRepository shippingRateRepository;
     private final ShippingMethodRepository shippingMethodRepository;
     private final ShippingZoneRepository shippingZoneRepository;
+    private final AuditTrail auditTrail;
 
     public AdminShippingRateServiceImpl(ShippingRateRepository shippingRateRepository, ShippingMethodRepository shippingMethodRepository,
-                                         ShippingZoneRepository shippingZoneRepository) {
+                                         ShippingZoneRepository shippingZoneRepository, AuditTrail auditTrail) {
         this.shippingRateRepository = shippingRateRepository;
         this.shippingMethodRepository = shippingMethodRepository;
         this.shippingZoneRepository = shippingZoneRepository;
+        this.auditTrail = auditTrail;
     }
 
     @Override
@@ -52,21 +61,34 @@ public class AdminShippingRateServiceImpl implements AdminShippingRateService {
         ShippingRate rate = new ShippingRate();
         rate.setStore(TenantContext.requireCurrent());
         applyCommonFields(rate, command);
-        return toDto(shippingRateRepository.save(rate));
+        ShippingRate saved = shippingRateRepository.save(rate);
+        auditTrail.record(AuditEntry.of(AuditAction.SHIPPING_RATE_CREATE, AuditTargetType.SHIPPING_RATE, saved.getId())
+                .details(AuditDiff.create().withAll(auditFields(saved))));
+        return toDto(saved);
     }
 
     @Override
     @Transactional
     public ShippingRateDto update(Long id, ShippingRateCommand command) {
         ShippingRate rate = findOrThrow(id);
+        Map<String, Object> before = auditFields(rate);
         applyCommonFields(rate, command);
-        return toDto(shippingRateRepository.save(rate));
+        ShippingRate saved = shippingRateRepository.save(rate);
+        AuditDiff diff = AuditDiff.create().values(before, auditFields(saved));
+        if (diff.hasChanges()) {
+            auditTrail.record(AuditEntry.of(AuditAction.SHIPPING_RATE_UPDATE, AuditTargetType.SHIPPING_RATE, saved.getId())
+                    .details(diff.with("rate", saved.getName())));
+        }
+        return toDto(saved);
     }
 
     @Override
     @Transactional
     public void delete(Long id) {
-        shippingRateRepository.delete(findOrThrow(id));
+        ShippingRate rate = findOrThrow(id);
+        auditTrail.record(AuditEntry.of(AuditAction.SHIPPING_RATE_DELETE, AuditTargetType.SHIPPING_RATE, rate.getId())
+                .details(AuditDiff.create().withAll(auditFields(rate))));
+        shippingRateRepository.delete(rate);
     }
 
     @Override
@@ -74,7 +96,30 @@ public class AdminShippingRateServiceImpl implements AdminShippingRateService {
     public ShippingRateDto toggleStatus(Long id) {
         ShippingRate rate = findOrThrow(id);
         rate.setActive(!rate.isActive());
-        return toDto(shippingRateRepository.save(rate));
+        ShippingRate saved = shippingRateRepository.save(rate);
+        auditTrail.record(AuditEntry.of(AuditAction.SHIPPING_RATE_STATUS_TOGGLE, AuditTargetType.SHIPPING_RATE, saved.getId())
+                .details(AuditDiff.create().with("rate", saved.getName()).value("active", !saved.isActive(), saved.isActive())));
+        return toDto(saved);
+    }
+
+    // PROD-18. Todo lo que decide cuánto cobra la tarifa y a quién se le aplica.
+    private static Map<String, Object> auditFields(ShippingRate r) {
+        Map<String, Object> fields = new LinkedHashMap<>();
+        fields.put("methodId", r.getMethod() == null ? null : r.getMethod().getId());
+        fields.put("zoneId", r.getZone() == null ? null : r.getZone().getId());
+        fields.put("name", r.getName());
+        fields.put("rateType", r.getRateType());
+        fields.put("flatRate", r.getFlatRate());
+        fields.put("weightRatePerKg", r.getWeightRatePerKg());
+        fields.put("baseWeightRate", r.getBaseWeightRate());
+        fields.put("minOrderAmount", r.getMinOrderAmount());
+        fields.put("maxOrderAmount", r.getMaxOrderAmount());
+        fields.put("minWeight", r.getMinWeight());
+        fields.put("maxWeight", r.getMaxWeight());
+        fields.put("freeShippingThreshold", r.getFreeShippingThreshold());
+        fields.put("active", r.isActive());
+        fields.put("sortOrder", r.getSortOrder());
+        return fields;
     }
 
     private void applyCommonFields(ShippingRate rate, ShippingRateCommand command) {
