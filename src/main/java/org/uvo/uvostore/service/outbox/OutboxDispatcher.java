@@ -8,6 +8,7 @@ import org.springframework.context.event.ContextClosedEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
+import org.uvo.uvostore.config.LogContext;
 import org.uvo.uvostore.entity.outbox.OutboxMessage;
 import org.uvo.uvostore.entity.outbox.enums.OutboxChannel;
 import org.uvo.uvostore.entity.outbox.enums.OutboxStatus;
@@ -15,6 +16,7 @@ import org.uvo.uvostore.entity.outbox.enums.OutboxType;
 import org.uvo.uvostore.repository.OutboxMessageRepository;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.AdvisoryLock;
+import org.uvo.uvostore.service.metrics.BusinessMetrics;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -63,6 +65,7 @@ public class OutboxDispatcher {
     private final int batchSize;
     private final Duration giveUpAfter;
     private final Duration inFlightTimeout;
+    private final BusinessMetrics metrics;
 
     /** Se enciende al cerrar el contexto: a partir de ahí no se reclama ninguna fila nueva. */
     private volatile boolean stopping;
@@ -72,7 +75,9 @@ public class OutboxDispatcher {
                             @Value("${app.pos.retry.enabled:false}") boolean posRetryEnabled,
                             @Value("${app.outbox.batch-size:50}") int batchSize,
                             @Value("${app.outbox.give-up-after-hours:48}") int giveUpAfterHours,
-                            @Value("${app.outbox.in-flight-timeout-seconds:120}") int inFlightTimeoutSeconds) {
+                            @Value("${app.outbox.in-flight-timeout-seconds:120}") int inFlightTimeoutSeconds,
+                            BusinessMetrics metrics) {
+        this.metrics = metrics;
         this.repository = repository;
         this.store = store;
         this.advisoryLock = advisoryLock;
@@ -172,7 +177,8 @@ public class OutboxDispatcher {
         if (result.outcome() == OutboxResult.Outcome.DELIVERED) {
             OutboxResult delivered = result;
             try {
-                TenantContext.runWithin(message.getOrder().getStore(), () -> handler.afterDelivered(message, delivered));
+                withRequestIdOf(message, () -> TenantContext.runWithin(message.getOrder().getStore(),
+                        () -> handler.afterDelivered(message, delivered)));
             } catch (Exception e) {
                 log.error("Fallo después de entregar la fila del outbox id={} error={}", message.getId(), e.getMessage());
                 Sentry.captureException(e);
@@ -184,8 +190,26 @@ public class OutboxDispatcher {
     private OutboxResult handleWithin(OutboxHandler handler, OutboxMessage message) {
         // Cada fila con el tenant de SU tienda: un job no tiene petición, así que nadie lo ha puesto por él.
         AtomicReference<OutboxResult> result = new AtomicReference<>();
-        TenantContext.runWithin(message.getOrder().getStore(), () -> result.set(handler.handle(message)));
+        withRequestIdOf(message, () ->
+                TenantContext.runWithin(message.getOrder().getStore(), () -> result.set(handler.handle(message))));
         return result.get();
+    }
+
+    /**
+     * PROD-15b. Durante la entrega, el id de la petición que encoló la fila: lo llevan las líneas de log de la
+     * entrega y {@code PosClient} lo manda al POS. Al salir vuelve el de la pasada del despacho. Una fila anterior
+     * a V30 no tiene id y se entrega con el de la pasada.
+     */
+    private static void withRequestIdOf(OutboxMessage message, Runnable action) {
+        String previous = LogContext.requestId();
+        if (message.getRequestId() != null) {
+            LogContext.putRequestId(message.getRequestId());
+        }
+        try {
+            action.run();
+        } finally {
+            LogContext.putRequestId(previous);
+        }
     }
 
     /**
@@ -200,6 +224,9 @@ public class OutboxDispatcher {
     }
 
     private void apply(OutboxMessage message, int attempts, OutboxResult result) {
+        // PROD-15b. Lo que dijo el intento, no en qué estado quedó la fila: eso lo cuenta el gauge
+        // uvostore_outbox_failed (OperationalBacklogMetrics). Una huérfana cuenta como incierta.
+        metrics.outboxDelivery(message.getType().channel(), result.outcome());
         Instant now = Instant.now();
         switch (result.outcome()) {
             case DELIVERED -> close(message, attempts, OutboxStatus.SENT, null, now);

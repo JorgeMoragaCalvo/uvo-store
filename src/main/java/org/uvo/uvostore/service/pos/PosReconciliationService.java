@@ -22,6 +22,7 @@ import org.uvo.uvostore.repository.ProductSyncMappingRepository;
 import org.uvo.uvostore.repository.ProductVariationRepository;
 import org.uvo.uvostore.repository.ProductVariationSyncMappingRepository;
 import org.uvo.uvostore.service.BusinessException;
+import org.uvo.uvostore.service.metrics.BusinessMetrics;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -93,6 +94,7 @@ public class PosReconciliationService {
     private final TransactionTemplate transactions;
     private final TransactionTemplate readOnlyTransactions;
     private final int batchSize;
+    private final BusinessMetrics metrics;
 
     public PosReconciliationService(PosConnectionRepository connectionRepository,
                                     ProductSyncMappingRepository mappingRepository,
@@ -102,7 +104,9 @@ public class PosReconciliationService {
                                     OrderRepository orderRepository, PosClient posClient,
                                     PosCatalogWriter catalogWriter, PosInboundLog inboundLog,
                                     PosIntegrationPolicy posPolicy, PlatformTransactionManager transactionManager,
-                                    @Value("${app.pos.reconciliation.batch-size:200}") int batchSize) {
+                                    @Value("${app.pos.reconciliation.batch-size:200}") int batchSize,
+                                    BusinessMetrics metrics) {
+        this.metrics = metrics;
         this.connectionRepository = connectionRepository;
         this.mappingRepository = mappingRepository;
         this.variantMappingRepository = variantMappingRepository;
@@ -179,7 +183,18 @@ public class PosReconciliationService {
 
         record(connection, trigger, tally, failure);
         alert(connection, tally, failure);
+        countDivergences(tally);
         return tally.toSummary(failure);
+    }
+
+    /**
+     * PROD-15b. Lo mismo que el aviso, como contador y sin la tienda (ver {@link BusinessMetrics}). Una venta en
+     * vuelo no cuenta, por lo mismo que no avisa.
+     */
+    private void countDivergences(Tally tally) {
+        metrics.stockDivergences(BusinessMetrics.DivergenceSource.RECONCILIATION_STOCK, tally.stockCorrected.size());
+        metrics.stockDivergences(BusinessMetrics.DivergenceSource.RECONCILIATION_CATALOG, tally.catalogCorrected.size());
+        metrics.stockDivergences(BusinessMetrics.DivergenceSource.RECONCILIATION_MISSING, tally.missingInPos.size());
     }
 
     /** La foto del lote: valores, no entidades, porque las correcciones limpian el contexto de persistencia. */

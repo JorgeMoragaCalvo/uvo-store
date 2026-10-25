@@ -1,5 +1,6 @@
 package org.uvo.uvostore.pos;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.uvo.uvostore.entity.catalog.Product;
@@ -14,6 +15,7 @@ import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.repository.PosConnectionRepository;
 import org.uvo.uvostore.repository.ProductSyncMappingRepository;
 import org.uvo.uvostore.repository.ProductVariationSyncMappingRepository;
+import org.uvo.uvostore.service.metrics.BusinessMetrics;
 import org.uvo.uvostore.service.outbox.OutboxResult;
 import org.uvo.uvostore.service.outbox.PosSaleOutboxHandler;
 import org.uvo.uvostore.service.pos.PosClient;
@@ -66,7 +68,7 @@ class PosNotifierDisabledTest {
     private void assertNothingLeavesWith(PosIntegrationPolicy policy) {
         PosOrderNotifier notifier = new PosOrderNotifier(orderRepository, mappingRepository, variantMappingRepository,
                 connectionRepository,
-                new PosOrderPayloadMapper(), policy, 3);
+                new PosOrderPayloadMapper(), policy, 3, new BusinessMetrics(new SimpleMeterRegistry()));
         Order order = paidOrderWithASyncedItem();
 
         assertThat(notifier.companiesToNotify(order)).isEmpty();

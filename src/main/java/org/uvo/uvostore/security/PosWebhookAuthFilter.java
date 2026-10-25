@@ -8,6 +8,7 @@ import org.jspecify.annotations.NonNull;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.uvo.uvostore.config.LogContext;
 import org.uvo.uvostore.entity.pos.PosConnection;
 import org.uvo.uvostore.repository.PosConnectionRepository;
 
@@ -112,7 +113,13 @@ public class PosWebhookAuthFilter extends OncePerRequestFilter {
         }
 
         cachedRequest.setAttribute("posConnection", connection.get());
-        filterChain.doFilter(cachedRequest, response);
+        // PROD-15b. Como en PosApiKeyAuthFilter: la tienda sale de la conexión, no del Host.
+        LogContext.putStore(PosApiKeyAuthFilter.storeIdOf(connection.get()));
+        try {
+            filterChain.doFilter(cachedRequest, response);
+        } finally {
+            LogContext.removeStore();
+        }
     }
 
     private static String hmacSha256Hex(String data, String secret) {

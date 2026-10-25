@@ -220,6 +220,25 @@ class ProductionConfigurationRulesTest {
     }
 
     @Test
+    @DisplayName("PROD-15b: sin METRICS_TOKEN solo se advierte; uno corto impide el arranque")
+    void theMetricsTokenIsOptionalButNotWeak() {
+        MockEnvironment without = production();
+        without.setProperty("app.metrics.token", "");
+        Findings missing = check(AppEnvironment.PRODUCTION, without, sentry("production"), APP_ROLE);
+        assertThat(missing.errors()).isEmpty();
+        assertThat(missing.warnings()).singleElement().asString().startsWith("METRICS_TOKEN").contains("openssl");
+
+        MockEnvironment weak = production();
+        weak.setProperty("app.metrics.token", "x".repeat(ProductionConfigurationRules.METRICS_TOKEN_MIN_LENGTH - 1));
+        assertThat(check(AppEnvironment.STAGING, weak, sentry("staging"), APP_ROLE).errors())
+                .singleElement().asString().startsWith("METRICS_TOKEN").contains("31 caracteres");
+
+        MockEnvironment enough = production();
+        enough.setProperty("app.metrics.token", "x".repeat(ProductionConfigurationRules.METRICS_TOKEN_MIN_LENGTH));
+        assertThat(check(AppEnvironment.PRODUCTION, enough, sentry("production"), APP_ROLE).errors()).isEmpty();
+    }
+
+    @Test
     @DisplayName("Las advertencias no impiden el arranque")
     void theWarningsDoNotStopTheStartup() {
         MockEnvironment properties = production();
@@ -252,8 +271,11 @@ class ProductionConfigurationRulesTest {
                 .withProperty("spring.datasource.username", "uvostore_app")
                 .withProperty("app.flyway.user", "uvostore_migrador")
                 .withProperty("app.pos.enabled", "true")
-                .withProperty("app.rate-limit.trusted-proxies", "10.0.0.0/8");
+                .withProperty("app.rate-limit.trusted-proxies", "10.0.0.0/8")
+                .withProperty("app.metrics.token", METRICS_TOKEN);
     }
+
+    private static final String METRICS_TOKEN = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
     /** El application.properties que se despacha, sin ninguna variable de entorno: lo que arranca sin configurar. */
     static MockEnvironment shippedDefaults() throws IOException {

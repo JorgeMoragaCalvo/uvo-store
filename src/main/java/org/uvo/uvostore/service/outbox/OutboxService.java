@@ -3,6 +3,7 @@ package org.uvo.uvostore.service.outbox;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.uvo.uvostore.config.LogContext;
 import org.uvo.uvostore.entity.customer.Customer;
 import org.uvo.uvostore.entity.order.Order;
 import org.uvo.uvostore.entity.outbox.OutboxMessage;
@@ -83,6 +84,9 @@ public class OutboxService {
                 .nextAttemptAt(now)
                 .createdAt(now)
                 .updatedAt(now)
+                // PROD-15b. Quien encola: el retorno o el webhook del pago, el panel, o la pasada de la
+                // conciliación ("job-…"). Viaja al POS con la venta.
+                .requestId(LogContext.requestId())
                 .build());
     }
 }

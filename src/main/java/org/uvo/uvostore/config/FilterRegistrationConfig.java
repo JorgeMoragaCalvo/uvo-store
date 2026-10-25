@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
 import org.uvo.uvostore.security.DeferredSurfaceGateFilter;
 import org.uvo.uvostore.security.JwtAuthenticationFilter;
+import org.uvo.uvostore.security.MetricsAuthFilter;
 import org.uvo.uvostore.security.PlatformApiKeyAuthFilter;
 import org.uvo.uvostore.security.PosApiKeyAuthFilter;
 import org.uvo.uvostore.security.PosWebhookAuthFilter;
@@ -39,6 +40,8 @@ import org.uvo.uvostore.security.TenantResolutionFilter;
  * con la máxima precedencia, fuera y antes de la cadena de Security. Tiene que envolver todo, incluidos los 401,
  * 404 y 429 que escriben los filtros de Security, para que también esas respuestas y sus líneas de log lleven el
  * id. No es un {@code @Component}, así que no hay registro automático que desactivar.
+ *
+ * <p>PROD-15b suma un octavo filtro de seguridad, {@link MetricsAuthFilter}, con el mismo trato que los siete.
  */
 @Configuration
 public class FilterRegistrationConfig {
@@ -75,6 +78,11 @@ public class FilterRegistrationConfig {
 
     @Bean
     public FilterRegistrationBean<PlatformApiKeyAuthFilter> platformApiKeyAuthFilterRegistration(PlatformApiKeyAuthFilter filter) {
+        return disableAutoRegistration(filter);
+    }
+
+    @Bean
+    public FilterRegistrationBean<MetricsAuthFilter> metricsAuthFilterRegistration(MetricsAuthFilter filter) {
         return disableAutoRegistration(filter);
     }
 

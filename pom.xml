@@ -43,6 +43,12 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+        <!-- PROD-15b. Formato de Prometheus para /actuator/prometheus (MetricsAuthFilter lo protege).
+             La versión la fija el BOM de Boot. -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
         <!-- Core SDK, not the Spring Boot starter: sentry-spring-boot-starter-jakarta 8.16.0
              (latest as of this writing) references org.springframework.boot.web.client.RestClientCustomizer,
              a class Spring Boot 4 moved/removed — its autoconfiguration fails to load on this

@@ -1,5 +1,6 @@
 package org.uvo.uvostore.pos;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -33,6 +34,7 @@ import org.uvo.uvostore.repository.ProductVariationRepository;
 import org.uvo.uvostore.repository.ProductVariationSyncMappingRepository;
 import org.uvo.uvostore.repository.SyncWebHookLogRepository;
 import org.uvo.uvostore.service.BusinessException;
+import org.uvo.uvostore.service.metrics.BusinessMetrics;
 import org.uvo.uvostore.service.pos.PosCatalogSnapshot;
 import org.uvo.uvostore.service.pos.PosClient;
 import org.uvo.uvostore.service.pos.PosReconciliationService;
@@ -104,6 +106,12 @@ class PosReconciliationTest extends IntegrationTestSupport {
     private ProductVariationSyncMappingRepository variantMappingRepository;
     @Autowired
     private ProductVariationRepository variationRepository;
+    @Autowired
+    private MeterRegistry meterRegistry;
+
+    private double divergences(String source) {
+        return meterRegistry.get(BusinessMetrics.STOCK_DIVERGENCES).tag("source", source).counter().count();
+    }
 
     private Store store;
     private Category category;
@@ -124,12 +132,15 @@ class PosReconciliationTest extends IntegrationTestSupport {
     void aStockDivergenceIsCorrectedTowardsThePos() {
         Mapped mapped = mapped(10, 9990, 1);
         posSays(row(mapped, 1, 7, 9990));
+        double before = divergences("reconciliation_stock");
 
         PosReconciliationSummary summary = reconciliation.reconcileStore(store);
 
         assertThat(stock(mapped)).isEqualTo(7);
         assertThat(summary.checked()).isEqualTo(1);
         assertThat(summary.stockCorrected()).isEqualTo(1);
+        // PROD-15b: la misma corrección, como contador sin tienda.
+        assertThat(divergences("reconciliation_stock") - before).isEqualTo(1);
         SyncWebhookLog log = reconciliationLog(connection);
         assertThat(log.getStatus()).isEqualTo(WebhookStatus.SUCCESS);
         assertThat(log.getPayload()).containsEntry("trigger", "manual").containsEntry("stock_corrected", 1);
@@ -142,11 +153,13 @@ class PosReconciliationTest extends IntegrationTestSupport {
         // La venta ya descontó 1 aquí (10 → 9) y el POS todavía no la tiene: dice 10.
         saleOf(mapped, true, OutboxStatus.PENDING);
         posSays(row(mapped, 1, 10, 9990));
+        double before = divergences("reconciliation_stock");
 
         PosReconciliationSummary summary = reconciliation.reconcileStore(store);
 
         assertThat(stock(mapped)).as("igualarlo al POS devolvería la unidad vendida").isEqualTo(9);
         assertThat(summary.pendingInFlight()).isEqualTo(1);
+        assertThat(divergences("reconciliation_stock")).as("una venta en vuelo no es una divergencia").isEqualTo(before);
         assertThat(summary.stockCorrected()).isZero();
     }
 

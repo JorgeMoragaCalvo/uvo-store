@@ -68,7 +68,8 @@ class RequestIdIntegrationTest extends IntegrationTestSupport {
     @DisplayName("El espacio final va dentro de un grupo: suelto al final del valor, la carga de propiedades lo recorta")
     void theTrailingSpaceSurvivesInsideAGroup() {
         // Pasó de verdad: con "[%X{requestId:-}] " el log salía "[id]o.u.u.security..." (theIdReachesTheLog).
-        assertThat(correlationPattern).isEqualTo("%([%X{requestId:-}] ){}");
+        // PROD-15b agregó la tienda dentro del mismo grupo (LogCorrelationTest la renderiza).
+        assertThat(correlationPattern).startsWith("%([%X{requestId:-}").endsWith("] ){}");
     }
 
     @Test

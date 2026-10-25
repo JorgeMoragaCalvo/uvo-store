@@ -3,6 +3,7 @@ package org.uvo.uvostore.pos;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import org.junit.jupiter.api.AfterEach;
@@ -36,6 +37,7 @@ import org.uvo.uvostore.repository.ProductSyncMappingRepository;
 import org.uvo.uvostore.repository.ProductVariationRepository;
 import org.uvo.uvostore.repository.ProductVariationSyncMappingRepository;
 import org.uvo.uvostore.repository.SyncWebHookLogRepository;
+import org.uvo.uvostore.service.metrics.BusinessMetrics;
 import org.uvo.uvostore.service.pos.PosOrderNotifier;
 import org.uvo.uvostore.service.pos.PosSaleRequest;
 import org.uvo.uvostore.service.pos.PosSyncService;
@@ -98,6 +100,8 @@ class PosVariantsTest extends IntegrationTestSupport {
     private OrderRepository orderRepository;
     @PersistenceContext
     private EntityManager entityManager;
+    @Autowired
+    private MeterRegistry meterRegistry;
 
     private Store store;
     private PosConnection connection;
@@ -342,14 +346,18 @@ class PosVariantsTest extends IntegrationTestSupport {
     @DisplayName("Una variante que se movió desde que el POS la leyó no se pisa, y un evento repetido se descarta")
     void aVariantStockEventFollowsTheSameRulesAsAProduct() {
         Fixture fixture = variable();
+        double before = webhookDivergences();
 
         SyncWebhookLog stale = posWebhookService.handleStockUpdated(stockUpdated(fixture, fixture.m, 7, 1));
         assertThat(stale.getStatus()).isEqualTo(WebhookStatus.FAILED);
         assertThat(stale.getErrorMessage()).contains("Divergencia").contains("variación");
+        // PROD-15b: la divergencia cuenta; el repetido de abajo no, porque no lo es.
+        assertThat(webhookDivergences() - before).isEqualTo(1);
 
         posWebhookService.handleStockUpdated(stockUpdated(fixture, fixture.m, 4, 1));
         SyncWebhookLog repeated = posWebhookService.handleStockUpdated(stockUpdated(fixture, fixture.m, 4, 1));
         assertThat(repeated.getStatus()).isEqualTo(WebhookStatus.DISCARDED);
+        assertThat(webhookDivergences() - before).isEqualTo(1);
         fresh();
         assertThat(variation(fixture, fixture.m).getStock()).isEqualTo(1);
     }
@@ -433,6 +441,10 @@ class PosVariantsTest extends IntegrationTestSupport {
     }
 
     // --- fixtures ----------------------------------------------------------------------------------
+
+    private double webhookDivergences() {
+        return meterRegistry.get(BusinessMetrics.STOCK_DIVERGENCES).tag("source", "webhook").counter().count();
+    }
 
     /** Un producto del POS con dos variantes: M (9990, stock 4) y L (10990, stock 2), en la versión 1. */
     private record Fixture(Long productId, long externalId, long m, long l) {

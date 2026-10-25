@@ -891,6 +891,79 @@ integration), so it needs no such filter. Not covered: `main()` itself (one line
 `SentryBootstrap`); and the customer-invitation e-mail links to `/cuenta/activar?token=…`, a route the SPA
 does not have (the customer surface is deferred).
 
+**PROD-15b — correlatable logs and metrics.** PROD-18 already put the request id in the logs; this adds the
+store, an id for scheduled jobs, the id on the way to the POS, and Prometheus metrics.
+- **MDC keys** live in `config/LogContext`: `requestId` and `storeId`.
+  - `TenantContext.set`/`clear` write `storeId`, so requests, jobs and outbox deliveries carry it through
+    `runWithin` without touching them.
+  - `PosApiKeyAuthFilter` and `PosWebhookAuthFilter` don't resolve the store by Host, so they put it themselves,
+    from the connection, and remove it in `finally`.
+  - The pattern is `logging.pattern.correlation=%([%X{requestId:-}%replace(%X{storeId:-}){'^(.+)$', ' store=$1'}] ){}`.
+    It renders as `[<id> store=<n>] `, or `[<id>] ` without a store. The `%replace` turns a non-empty `storeId`
+    into ` store=<n>` and leaves an empty one empty. The PROD-18 logback traps still apply: the group and the
+    trailing `{}`.
+- **Job ids:** `SchedulingConfig` registers a `ThreadPoolTaskSchedulerCustomizer` that decorates every
+  scheduled run.
+  - Each run gets `requestId = job-<12 hex>`, which matches `RequestIdFilter`'s accepted format. The decorator
+    restores the whole MDC afterwards.
+  - It's a customizer and not a `TaskDecorator` bean, because Boot would apply such a bean to the application
+    task executor too.
+  - An audit row or an outbox row written by a job carries that id.
+- **To the POS:** V30 adds `outbox_messages.request_id`. `OutboxService.enqueue` fills it from the MDC: the
+  Webpay return or webhook that confirmed the payment, the panel request, or the reconciliation's `job-…`.
+  - `OutboxDispatcher` puts the row's id in the MDC while it handles the row and runs `afterDelivered`, then
+    restores the run's id. Older rows have no id and keep the run's id.
+  - `PosClient` has a request interceptor that sends `X-Request-Id` from the MDC, on both `notifyOrder` and
+    `readCatalog`.
+- **Endpoint:** `/actuator/prometheus` (`micrometer-registry-prometheus`; exposure is `health,prometheus`;
+  `/actuator/metrics` is still not exposed) on the same port. `security/MetricsAuthFilter` guards it in three
+  steps:
+  1. outside `PlatformNetworkPolicy` it's a 404, and the token isn't checked;
+  2. without `METRICS_TOKEN` (the default) it's a 404;
+  3. a missing or wrong `Authorization: Bearer <METRICS_TOKEN>` is a 401 (constant-time compare).
+  The path is in `PUBLIC_PATHS` because the filter authenticates it. `ProductionConfigurationRules` warns when the
+  token is empty and errors when it's shorter than 32 characters.
+- **Metrics:** none of the custom metrics carries the store as a label, because series would grow with the
+  number of stores. Logs (`store=`) and Sentry say which store. `management.metrics.tags.application=uvo-store`.
+  - Gauges, from `service/metrics/OperationalBacklogMetrics` (a `MeterBinder`):
+    - **Snapshot:** one snapshot for all gauges, computed on read and kept for `app.metrics.backlog-refresh-seconds`
+      (60). No job and no scheduler thread; nobody scraping means no queries.
+    - **Failures:** a failed read keeps the previous snapshot. If there never was one, gauges report `NaN`, not 0.
+    - **Gauges:**
+      - `uvostore_orders_paid_without_stock`: `PAID`, `stock_applied = false`, `paid_at` older than
+        `app.stock-recovery.after-minutes`;
+      - `uvostore_orders_pending_stale`: `status = PENDING`, older than `app.reconciliation.stale-hours`;
+      - `uvostore_refunds_pending`;
+      - `uvostore_outbox_pending{channel}`: `PENDING` + `IN_FLIGHT`;
+      - `uvostore_outbox_oldest_pending_seconds{channel}`: measured against the read time, so it keeps growing
+        between snapshots. With `pos`, this is the signal for "the POS isn't getting the sales";
+      - `uvostore_outbox_failed{channel}`: with `pos`, the sales the POS doesn't have, waiting for manual review.
+        **It never goes down**, because nothing resolves a `FAILED` row, so alert on increases.
+    - **Queries:** the counts are global on purpose. The two on `OrderRepository` are in
+      `RepositoryTenantScopeTest.GLOBAL_ON_PURPOSE`; the refund and outbox counts aren't checked there, because
+      those entities have no store of their own.
+  - Counters, from `service/metrics/BusinessMetrics`, all registered at startup at zero so alerts have a series
+    before the first event:
+    - `uvostore_pos_stock_divergences_total{source}`, where `source` is one of:
+      - `reconciliation_stock`, `reconciliation_catalog`, `reconciliation_missing`: the sizes of each
+        reconciliation pass, but not sales in flight;
+      - `webhook`: the two divergences in `PosWebhookServiceImpl`;
+      - `order_response`: `PosOrderNotifier.checkStockDivergence`, only above the alert threshold;
+    - `uvostore_outbox_deliveries_total{channel,outcome}`: `outcome` is the attempt's `OutboxResult.Outcome`
+      (`delivered`, `skipped`, `retryable`, `uncertain`, `permanent`), counted in `OutboxDispatcher.apply`; an
+      orphan counts as `uncertain`. The final state is the `failed` gauge.
+  - Boot adds, for free: JVM, Hikari, Tomcat, `http.server.requests` (templated `uri`) and `executor_*` for the
+    scheduler.
+- **Tests:**
+  - `config/LogCorrelationTest`, `SchedulerRequestIdTest`, `MetricsEndpointTest` and `MetricsWithoutTokenTest`;
+    the metrics tests use `@AutoConfigureMetrics`, because otherwise the test registry has no Prometheus
+    endpoint and every 404 would pass;
+  - `pos/PosClientRequestIdTest` (real sockets);
+  - `outbox/OutboxRequestIdTest`;
+  - `service/metrics/OperationalBacklogMetricsTest`, which measures deltas because the counts are system-wide;
+  - new cases in `OutboxDispatcherTest`, `PosOrderNotifierTest`, `PosReconciliationTest`, `PosVariantsTest`,
+    `ProductionConfigurationRulesTest` and `RepositoryTenantScopeTest`.
+
 **PROD-08a — production configuration check and a separate Flyway role.** Every default in
 `application.properties` is the *development* value, and until now nothing stopped a deployment from booting
 on them. The signal is explicit: `APP_ENVIRONMENT` → `app.environment`, one of `development` (default),
@@ -1074,7 +1147,7 @@ are in V28's `REVISIÓN MANUAL` block; the store panel doesn't read it.
   `!default` pattern, where `%logger` follows, every line printed `%logger{40}` verbatim — hence the empty options
   `{}` (Boot's own pattern does `%clr(...){}`). `RequestIdIntegrationTest` renders that pattern with logback's
   `PatternLayout`, since the suite runs on the default profile. It's a correlation aid, not proof: anyone can
-  choose it. PROD-15b adds the store and the POS.
+  choose it. PROD-15b adds the store, job ids and the id on the way to the POS (see the PROD-15b section).
 - **Tests:** `audit/*` — `AuditTrailTransactionTest` and `AdminLoginAuditCommitTest` / `RefundAuditCommitTest`
   (committed transactions, `support/CommittedFixtures` + `purgeStore`), `AuditCatalogConsistencyTest`,
   `PlatformAuditTest`, `AuthAuditTest`, `UserRoleAuditTest`, `MoneyConfigAuditTest`, `SettingsAuditTest`,
@@ -1260,8 +1333,8 @@ fetch join over a collection with pagination makes Hibernate page in memory. `@O
 is the other trap — it can't be proxied, so it costs one SELECT per row no matter what `fetch` says.
 `ProductListingQueryCountTest` fails if any of this is undone.
 
-**Database**: PostgreSQL via Flyway, schema in `src/main/resources/db/migration/` — **29 migrations,
-currently up to `V29__store_lifecycle.sql`**, well past the original catalog/settings ones.
+**Database**: PostgreSQL via Flyway, schema in `src/main/resources/db/migration/` — **30 migrations,
+currently up to `V30__outbox_request_id.sql`**, well past the original catalog/settings ones.
 Everything from V8 on is a hardening or new capability rather than the original port: V8 stores, V11
 store domains, V12 password reset, V13 stock/coupon integrity, V14 token versions, V15 the
 permission catalogue, V16 the listing indexes, V17 TIMESTAMPTZ + the enum CHECK constraints, V18
@@ -1269,7 +1342,7 @@ store status, V19 order refunds, V20 `order_items.stock_applied`, V21 refund int
 `users.password` (admin invitations), V23 `stores.domain_verified_at` (PROD-04), V24 `orders.paid_at`,
 V25 the outbox, V26 the POS ordered inputs, V27 POS variants, V28 `audit_events` (PROD-18, the first
 plpgsql: its immutability trigger), V29 the store lifecycle (PROD-23: `CLOSED`, `status_changed_at`, two audit
-actions).
+actions), V30 `outbox_messages.request_id` (PROD-15b).
 `spring.jpa.hibernate.ddl-auto=validate`, so any entity change must be paired with a new Flyway
 migration — **never edit an already-applied one**, add the next number (`V24__...sql`).
 

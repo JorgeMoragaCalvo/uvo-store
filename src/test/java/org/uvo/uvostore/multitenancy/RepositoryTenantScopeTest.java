@@ -76,7 +76,12 @@ class RepositoryTenantScopeTest {
                             + "tienda) y solo devuelve ids de esos mismos productos"),
             Map.entry("PosConnectionRepository.findAllActive",
                     "trabajo programado (PosReconciliationJob): recorre todas las tiendas; cada conexión trae la "
-                            + "suya y la integración se comprueba por tienda")));
+                            + "suya y la integración se comprueba por tienda"),
+            Map.entry("OrderRepository.countPaidWithoutStockApplied",
+                    "métrica PROD-15b (OperationalBacklogMetrics): un conteo de todo el sistema, sin la tienda como "
+                            + "etiqueta, que solo lee /actuator/prometheus"),
+            Map.entry("OrderRepository.countPendingCreatedBefore",
+                    "métrica PROD-15b (OperationalBacklogMetrics): un conteo de todo el sistema")));
 
     @Test
     @DisplayName("Toda consulta de un repositorio de tienda está acotada o es una global justificada")

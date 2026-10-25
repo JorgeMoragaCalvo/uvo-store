@@ -73,6 +73,7 @@ public final class ProductionConfigurationRules {
         mail(properties, errors);
         swagger(properties, errors);
         platformNetworks(properties, errors);
+        metricsToken(properties, errors, warnings);
         encryptionKey(properties, errors);
         sentry(environment, processEnv, errors, warnings);
         databaseRole(properties, database, errors);
@@ -174,6 +175,24 @@ public final class ProductionConfigurationRules {
             errors.add("PLATFORM_ALLOWED_NETWORKS es '" + networks + "' e incluye un rango /0: la API de plataforma, "
                     + "que crea tiendas, queda abierta a todo Internet. Pon solo la red privada desde la que llama "
                     + "UvoPOS, por ejemplo 10.0.0.0/8.");
+        }
+    }
+
+    /**
+     * PROD-15b. Sin token, {@code /actuator/prometheus} no existe ({@code MetricsAuthFilter}): no hay riesgo, pero
+     * tampoco métricas, y las alertas de PROD-15c dependen de ellas. Con un token corto, la única defensa que queda
+     * dentro de la red privada se adivina.
+     */
+    static final int METRICS_TOKEN_MIN_LENGTH = 32;
+
+    private static void metricsToken(PropertyResolver properties, List<String> errors, List<String> warnings) {
+        String token = text(properties, "app.metrics.token", "").trim();
+        if (token.isEmpty()) {
+            warnings.add("METRICS_TOKEN está vacío: /actuator/prometheus no existe y no hay métricas de pendientes ni "
+                    + "de divergencias con el POS para alertar. Genera uno con: openssl rand -hex 32");
+        } else if (token.length() < METRICS_TOKEN_MIN_LENGTH) {
+            errors.add("METRICS_TOKEN tiene " + token.length() + " caracteres; hacen falta al menos "
+                    + METRICS_TOKEN_MIN_LENGTH + ". Genera uno con: openssl rand -hex 32");
         }
     }
 

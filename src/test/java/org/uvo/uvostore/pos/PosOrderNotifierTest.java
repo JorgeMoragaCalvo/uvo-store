@@ -1,5 +1,6 @@
 package org.uvo.uvostore.pos;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.uvo.uvostore.entity.catalog.Product;
@@ -14,6 +15,7 @@ import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.repository.PosConnectionRepository;
 import org.uvo.uvostore.repository.ProductSyncMappingRepository;
 import org.uvo.uvostore.repository.ProductVariationSyncMappingRepository;
+import org.uvo.uvostore.service.metrics.BusinessMetrics;
 import org.uvo.uvostore.service.pos.PosOrderNotifier;
 import org.uvo.uvostore.service.pos.PosOrderPayloadMapper;
 import org.uvo.uvostore.service.pos.PosSaleRequest;
@@ -49,9 +51,10 @@ class PosOrderNotifierTest {
 
     // PROD-12: con la política habilitada. Que no se encole ni se envíe nada cuando está apagada es
     // PosNotifierDisabledTest.
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
     private final PosOrderNotifier notifier = new PosOrderNotifier(
             orderRepository, mappingRepository, variantMappingRepository, connectionRepository, new PosOrderPayloadMapper(),
-            PosPolicyFixture.enabled(), 3);
+            PosPolicyFixture.enabled(), 3, new BusinessMetrics(meterRegistry));
 
     @Test
     @DisplayName("Las empresas salen de los mapeos, sin repetir y ordenadas")
@@ -152,6 +155,31 @@ class PosOrderNotifierTest {
         when(mappingRepository.findByProductIdAndCompanyId(any(), any())).thenReturn(Optional.empty());
 
         assertThat(notifier.prepare(order.getId(), 1L).kind()).isEqualTo(PosSaleRequest.Kind.SKIP);
+    }
+
+    @Test
+    @DisplayName("PROD-15b: una divergencia en la respuesta del POS cuenta solo si supera el umbral, como el aviso")
+    void aDivergenceInThePosResponseIsCountedAboveTheThreshold() {
+        Product product = new Product();
+        product.setId(5L);
+        product.setStock(10);
+        when(mappingRepository.findByExternalIdAndCompanyId(500L, 1L)).thenReturn(Optional.of(mapping(product, 1L, 500L)));
+
+        // Umbral 3: una diferencia de 1 es lo normal mientras las dos puntas venden a la vez.
+        notifier.checkStockDivergence(posResponse(9), 1L);
+        assertThat(orderResponseDivergences()).isZero();
+
+        notifier.checkStockDivergence(posResponse(2), 1L);
+        assertThat(orderResponseDivergences()).isEqualTo(1);
+    }
+
+    private double orderResponseDivergences() {
+        return meterRegistry.get(BusinessMetrics.STOCK_DIVERGENCES).tag("source", "order_response").counter().count();
+    }
+
+    private static Map<String, Object> posResponse(int newStockWeb) {
+        return Map.of("data", Map.of("results", List.of(
+                Map.of("success", true, "product_id", 500L, "new_stock_web", newStockWeb))));
     }
 
     // --- fixtures ---------------------------------------------------------------------------------

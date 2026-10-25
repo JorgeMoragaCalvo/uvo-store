@@ -19,6 +19,7 @@ import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.repository.PosConnectionRepository;
 import org.uvo.uvostore.repository.ProductSyncMappingRepository;
 import org.uvo.uvostore.repository.ProductVariationSyncMappingRepository;
+import org.uvo.uvostore.service.metrics.BusinessMetrics;
 
 import java.util.List;
 import java.util.Map;
@@ -54,12 +55,15 @@ public class PosOrderNotifier {
     private final PosOrderPayloadMapper payloadMapper;
     private final PosIntegrationPolicy posPolicy;
     private final int divergenceAlertThreshold;
+    private final BusinessMetrics metrics;
 
     public PosOrderNotifier(OrderRepository orderRepository, ProductSyncMappingRepository mappingRepository,
                             ProductVariationSyncMappingRepository variantMappingRepository,
                             PosConnectionRepository posConnectionRepository, PosOrderPayloadMapper payloadMapper,
                             PosIntegrationPolicy posPolicy,
-                            @Value("${app.pos.stock-divergence-alert-threshold:3}") int divergenceAlertThreshold) {
+                            @Value("${app.pos.stock-divergence-alert-threshold:3}") int divergenceAlertThreshold,
+                            BusinessMetrics metrics) {
+        this.metrics = metrics;
         this.orderRepository = orderRepository;
         this.mappingRepository = mappingRepository;
         this.variantMappingRepository = variantMappingRepository;
@@ -227,6 +231,7 @@ public class PosOrderNotifier {
                 // una diferencia grande significa que una de las dos está mal, y eso sí hay que
                 // mirarlo. El umbral separa lo uno de lo otro sin inundar Sentry.
                 if (gap > divergenceAlertThreshold) {
+                    metrics.stockDivergences(BusinessMetrics.DivergenceSource.ORDER_RESPONSE, 1);
                     Sentry.captureMessage("Divergencia de stock con el POS: %s tiene %d en la tienda y %d según el POS"
                             .formatted(what, ourStock, posStock));
                 }
