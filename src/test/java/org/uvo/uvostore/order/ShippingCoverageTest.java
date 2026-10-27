@@ -3,14 +3,18 @@ package org.uvo.uvostore.order;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.web.servlet.ResultActions;
 import org.uvo.uvostore.entity.catalog.Category;
 import org.uvo.uvostore.entity.catalog.Product;
+import org.uvo.uvostore.entity.order.Coupon;
 import org.uvo.uvostore.entity.order.Order;
+import org.uvo.uvostore.entity.order.enums.CouponType;
 import org.uvo.uvostore.entity.shipping.ShippingMethod;
 import org.uvo.uvostore.entity.shipping.ShippingRate;
 import org.uvo.uvostore.entity.shipping.ShippingZone;
 import org.uvo.uvostore.entity.shipping.enums.RateType;
 import org.uvo.uvostore.entity.tenant.Store;
+import org.uvo.uvostore.repository.CouponRepository;
 import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.repository.ShippingMethodRepository;
 import org.uvo.uvostore.repository.ShippingRateRepository;
@@ -43,6 +47,8 @@ class ShippingCoverageTest extends IntegrationTestSupport {
     private ShippingRateRepository rateRepository;
     @Autowired
     private OrderRepository orderRepository;
+    @Autowired
+    private CouponRepository couponRepository;
 
     // --- coverage endpoint ---------------------------------------------------------------------
 
@@ -209,7 +215,132 @@ class ShippingCoverageTest extends IntegrationTestSupport {
                 .andExpect(jsonPath("$.discountAmount").value(0));
     }
 
+    // --- zona de región entera tal como la guarda el panel ---------------------------------------
+
+    @Test
+    @DisplayName("Una zona guardada con comunas [] cubre cualquier comuna de su región al cobrar")
+    void aWholeRegionZoneSavedAsEmptyListMatchesAnyCommune() throws Exception {
+        // El panel guarda [] —no null— cuando el campo de comunas queda en blanco. La cobertura lo leía
+        // como región entera y el cálculo no: con una comuna en la solicitud, la zona no servía.
+        Store store = createStore("ship-whole-empty");
+        setSetting(store, "tax_rate", "0");
+        seedZone(store, "Todo Valparaíso", List.of("Valparaíso"), List.of(), BigDecimal.valueOf(4990));
+        Category category = createCategory(store, "Cat");
+        Product product = createProduct(store, category, "Producto", BigDecimal.valueOf(1000));
+
+        calculate(store, product, 1, "Valparaíso", "Viña del Mar", null)
+                .andExpect(jsonPath("$.shippingAvailable").value(true))
+                .andExpect(jsonPath("$.shippingCost").value(4990));
+        calculate(store, product, 1, "Magallanes", "Punta Arenas", null)
+                .andExpect(jsonPath("$.shippingAvailable").value(false));
+
+        Order order = checkoutAndLoad(store, product, "Valparaíso", "Viña del Mar");
+        assertThat(order.getShippingCost()).isEqualByComparingTo(BigDecimal.valueOf(4990));
+    }
+
+    // --- envío gratis de la configuración general ------------------------------------------------
+
+    @Test
+    @DisplayName("Bajo el monto del envío gratis se cobra la tarifa")
+    void belowTheFreeShippingThresholdTheRateIsCharged() throws Exception {
+        Store store = freeShippingStore("free-below", "true");
+        Product product = createProduct(store, createCategory(store, "Cat"), "Producto", BigDecimal.valueOf(1000));
+
+        calculate(store, product, 2, "Metropolitana", "Santiago", null)
+                .andExpect(jsonPath("$.shippingAvailable").value(true))
+                .andExpect(jsonPath("$.shippingCost").value(3990));
+    }
+
+    @Test
+    @DisplayName("Desde el monto del envío gratis el despacho es cero y la orden conserva el método")
+    void fromTheFreeShippingThresholdShippingIsFree() throws Exception {
+        Store store = freeShippingStore("free-reached", "true");
+        Product product = createProduct(store, createCategory(store, "Cat"), "Producto", BigDecimal.valueOf(3000));
+
+        calculate(store, product, 2, "Metropolitana", "Santiago", null)
+                .andExpect(jsonPath("$.shippingAvailable").value(true))
+                .andExpect(jsonPath("$.shippingCost").value(0));
+
+        Order order = checkoutAndLoad(store, product, "Metropolitana", "Santiago");
+        assertThat(order.getShippingCost()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(order.getTotal()).isEqualByComparingTo(BigDecimal.valueOf(6000));
+        assertThat(order.getShippingMethod()).isEqualTo("Despacho a domicilio");
+    }
+
+    @Test
+    @DisplayName("Con el envío gratis apagado el monto no cuenta")
+    void theThresholdIsIgnoredWhileFreeShippingIsOff() throws Exception {
+        Store store = freeShippingStore("free-off", "false");
+        Product product = createProduct(store, createCategory(store, "Cat"), "Producto", BigDecimal.valueOf(3000));
+
+        calculate(store, product, 2, "Metropolitana", "Santiago", null)
+                .andExpect(jsonPath("$.shippingCost").value(3990));
+    }
+
+    @Test
+    @DisplayName("El envío gratis no da cobertura a una dirección que ninguna zona cubre")
+    void freeShippingDoesNotCoverAnUncoveredAddress() throws Exception {
+        Store store = freeShippingStore("free-uncovered", "true");
+        Product product = createProduct(store, createCategory(store, "Cat"), "Producto", BigDecimal.valueOf(3000));
+
+        calculate(store, product, 2, "Magallanes", "Punta Arenas", null)
+                .andExpect(jsonPath("$.shippingAvailable").value(false));
+    }
+
+    @Test
+    @DisplayName("El monto del envío gratis se compara antes del cupón, igual que en las tarifas")
+    void theFreeShippingThresholdIsCheckedBeforeTheCoupon() throws Exception {
+        Store store = freeShippingStore("free-coupon", "true");
+        Product product = createProduct(store, createCategory(store, "Cat"), "Producto", BigDecimal.valueOf(3000));
+        Coupon coupon = new Coupon();
+        coupon.setStore(store);
+        coupon.setCode("MENOS-" + nextSeq());
+        coupon.setName("2000 de descuento");
+        coupon.setType(CouponType.FIXED);
+        coupon.setValue(BigDecimal.valueOf(2000));
+        coupon.setActive(true);
+        couponRepository.save(coupon);
+
+        // 6000 de productos, 4000 después del cupón: sigue sobre el umbral de 5000 porque se mide antes.
+        calculate(store, product, 2, "Metropolitana", "Santiago", coupon.getCode())
+                .andExpect(jsonPath("$.couponApplied").value(true))
+                .andExpect(jsonPath("$.shippingCost").value(0))
+                .andExpect(jsonPath("$.total").value(4000));
+    }
+
     // --- helpers ---------------------------------------------------------------------------------
+
+    private Store freeShippingStore(String slug, String freeShippingEnabled) {
+        Store store = createStore(slug);
+        setSetting(store, "tax_rate", "0");
+        setSetting(store, "free_shipping_enabled", freeShippingEnabled);
+        setSetting(store, "free_shipping_threshold", "5000");
+        seedZone(store, "Zona Centro", List.of("Metropolitana"), List.of("Santiago"), BigDecimal.valueOf(3990));
+        return store;
+    }
+
+    private ResultActions calculate(Store store, Product product, int quantity, String region, String commune,
+                                    String couponCode) throws Exception {
+        String coupon = couponCode == null ? "" : ",\"couponCode\":\"%s\"".formatted(couponCode);
+        String body = """
+                {"items":[{"id":%d,"type":"product","quantity":%d}],"region":"%s","commune":"%s"%s}
+                """.formatted(product.getId(), quantity, region, commune, coupon);
+        return mockMvc.perform(post("/api/v1/cart/calculate")
+                        .header("Host", hostHeader(store))
+                        .contentType("application/json").content(body))
+                .andExpect(status().isOk());
+    }
+
+    private Order checkoutAndLoad(Store store, Product product, String region, String commune) throws Exception {
+        String response = mockMvc.perform(post("/api/v1/checkout")
+                        .header("Host", hostHeader(store))
+                        .contentType("application/json")
+                        .content(checkoutBody(product.getId(), region, commune)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        long orderId = objectMapper.readTree(response).get("orderId").asLong();
+        return orderRepository.findById(orderId).orElseThrow();
+    }
 
     private ShippingZone seedZone(Store store, String name, List<String> regions, List<String> communes, BigDecimal flatRate) {
         ShippingZone zone = new ShippingZone();

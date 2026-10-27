@@ -45,7 +45,7 @@ public class ShippingCoverageService {
             if (zone.getRegions() == null) {
                 continue;
             }
-            boolean wholeRegion = zone.getCommunes() == null || zone.getCommunes().isEmpty();
+            boolean wholeRegion = zone.coversWholeRegion();
             for (String region : zone.getRegions()) {
                 if (region == null || region.isBlank()) {
                     continue;

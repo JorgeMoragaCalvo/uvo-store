@@ -116,6 +116,13 @@ public class CartPricingServiceImpl implements CartPricingService {
         Optional<ShippingOption> best = shippingRateService.getBestOption(region, commune, subtotalWithTax, totalWeight);
         // F06: la tarifa por peso y las cotizaciones de los transportistas pueden traer decimales.
         BigDecimal shippingCost = Money.round(best.map(ShippingOption::cost).orElse(BigDecimal.ZERO));
+        // El envío gratis de la configuración general se anunciaba en el encabezado de la tienda y no se
+        // aplicaba: el cobro salía solo de las tarifas. Mismas condiciones que el anuncio (Header.tsx), y
+        // contra el mismo monto que el "envío gratis desde" de cada tarifa, que es el subtotal antes del
+        // cupón. Exige una opción de envío: lo gratis no da cobertura a una dirección que no la tiene (A7).
+        if (shippingEnabled && best.isPresent() && freeShippingReached(storeId, subtotalWithTax)) {
+            shippingCost = BigDecimal.ZERO;
+        }
         // A7: the cost alone can't distinguish "free shipping" from "no zone covers this address",
         // and that ambiguity is exactly why every order shipped for $0 — the SPA never sent a
         // region, no zone ever matched, and .orElse(ZERO) made it look deliberate. A store that
@@ -157,6 +164,16 @@ public class CartPricingServiceImpl implements CartPricingService {
         return new CartTotals(subtotalWithoutTax, taxAmount, subtotalWithTax, shippingCost, discountAmount, total,
                 shippingAvailable, couponApplied, appliedCoupon, customerRejectionReason,
                 best.orElse(null));
+    }
+
+    private boolean freeShippingReached(Long storeId, BigDecimal orderAmount) {
+        boolean enabled = settingRepository.findByStoreIdAndSettingKey(storeId, "free_shipping_enabled")
+                .map(s -> Boolean.parseBoolean(s.getValue())).orElse(false);
+        if (!enabled) {
+            return false;
+        }
+        BigDecimal threshold = decimalSetting(storeId, "free_shipping_threshold", BigDecimal.ZERO);
+        return threshold.signum() > 0 && orderAmount.compareTo(threshold) >= 0;
     }
 
     private BigDecimal decimalSetting(Long storeId, String key, BigDecimal fallback) {

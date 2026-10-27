@@ -139,7 +139,9 @@ public class ShippingRateServiceImpl implements ShippingRateService {
         }
         for (ShippingZone zone : zoneRepository.findByStoreIdAndIsActiveTrueOrderBySortOrderAsc(TenantContext.requireStoreId())) {
             if (zone.getRegions() != null && zone.getRegions().contains(region)){
-                if (zone.getCommunes() != null && commune != null) {
+                // Antes bastaba con que la lista no fuera nula, y el panel guarda [] para "toda la región": la
+                // cobertura ofrecía la región y aquí, si llegaba una comuna, la zona no servía.
+                if (!zone.coversWholeRegion() && commune != null) {
                     if (zone.getCommunes().contains(commune)) return zone;
                 } else {
                     return zone;
