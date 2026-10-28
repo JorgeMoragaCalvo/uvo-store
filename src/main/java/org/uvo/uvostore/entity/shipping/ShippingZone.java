@@ -82,13 +82,4 @@ public class ShippingZone {
     @UpdateTimestamp
     @Column(name = "updated_at")
     private Instant updatedAt;
-
-    /**
-     * Sin comunas, la zona cubre sus regiones enteras. Vacía y nula significan lo mismo: el panel guarda
-     * {@code []} cuando el campo queda en blanco. La cobertura que ve el comprador y el cálculo que cobra
-     * leen esto mismo, para que no vuelvan a discrepar.
-     */
-    public boolean coversWholeRegion() {
-        return communes == null || communes.isEmpty();
-    }
 }

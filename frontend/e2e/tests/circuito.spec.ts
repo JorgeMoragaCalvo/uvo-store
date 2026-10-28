@@ -42,7 +42,9 @@ import {
 test.describe.configure({ mode: 'serial' })
 
 const PASSWORD = 'Clave-E2e-Circuito-2026'
-const REGION = 'Metropolitana'
+// Nombres canónicos del catálogo de comunas: la zona se marca con ellos y el checkout los ofrece así.
+const REGION = 'Metropolitana de Santiago'
+const COMMUNE = 'Santiago'
 
 interface StoreUnderTest {
   slug: string
@@ -68,6 +70,7 @@ function buyer(email: string): Buyer {
     city: 'Santiago',
     postalCode: '8320000',
     region: REGION,
+    commune: COMMUNE,
   }
 }
 

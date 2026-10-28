@@ -12,6 +12,7 @@ export interface Buyer {
   city: string
   postalCode: string
   region: string
+  commune: string
 }
 
 /** Busca el producto en /shop y entra a su ficha. */
@@ -42,6 +43,7 @@ export async function checkoutWithManualPayment(page: Page, buyer: Buyer): Promi
   await page.getByPlaceholder('Ciudad').fill(buyer.city)
   await page.getByPlaceholder('Código postal').fill(buyer.postalCode)
   await page.getByLabel('Región').selectOption(buyer.region)
+  await page.getByLabel('Comuna').selectOption(buyer.commune)
   await page.getByRole('button', { name: 'Continuar' }).click()
 
   await page.getByLabel('Pago contra entrega').check()

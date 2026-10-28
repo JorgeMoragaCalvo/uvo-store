@@ -8,6 +8,7 @@ import type {
   CheckoutConfig,
   CheckoutRequestPayload,
   CheckoutSessionResult,
+  GeoRegion,
   HomeBanner,
   MercadoPagoPreferenceResult,
   OrderConfirmation,
@@ -69,9 +70,12 @@ export const api = {
     ): Promise<CartCalculationResult> => client.post('/cart/calculate', { items, region, commune, couponCode }),
   },
   shipping: {
-    // A7: the regions/communes the store actually delivers to. Zone matching is an exact string
-    // compare against free text an admin typed, so the checkout has to offer these verbatim.
+    // A7: the regions/communes the store actually delivers to, in the catalogue's canonical names.
     coverage: (): Promise<ShippingCoverage[]> => client.get('/shipping/coverage'),
+  },
+  geo: {
+    // Lo usa el formulario de zonas del panel: las zonas se arman eligiendo de esta lista.
+    regions: (): Promise<GeoRegion[]> => client.get('/geo/regions'),
   },
   checkout: {
     getConfig: (): Promise<CheckoutConfig> => client.get('/checkout/config'),

@@ -148,11 +148,24 @@ export interface CartCalculationResult {
   couponApplied: boolean
 }
 
-// One region the store delivers to. An empty `communes` means the whole region is covered, so no
-// commune needs picking — see ShippingCoverageDto on the backend.
+// One region the store delivers to, with the communes a buyer can pick in it — never empty: a region
+// covered whole lists all its communes from the catalogue. Names are canonical (see GeoCatalog and
+// ShippingCoverageDto on the backend), and the checkout always asks for one.
 export interface ShippingCoverage {
   region: string
   communes: string[]
+}
+
+// Catálogo de regiones y comunas de Chile (GET /api/v1/geo/regions), de norte a sur.
+export interface GeoCommune {
+  code: string
+  name: string
+}
+
+export interface GeoRegion {
+  code: string
+  name: string
+  communes: GeoCommune[]
 }
 
 export interface CartValidatedItem {

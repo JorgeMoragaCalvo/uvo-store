@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import Checkout from './Checkout'
@@ -81,9 +81,10 @@ const baseConfig: CheckoutConfig = {
   requirePhone: true,
 } as CheckoutConfig
 
+// Catálogo de comunas: la cobertura trae siempre las comunas elegibles, con su nombre canónico.
 const coverage: ShippingCoverage[] = [
-  { region: 'Metropolitana', communes: ['Santiago', 'Providencia'] },
-  { region: 'Valparaíso', communes: [] },
+  { region: 'Metropolitana de Santiago', communes: ['Providencia', 'Santiago'] },
+  { region: 'Valparaíso', communes: ['Quilpué', 'Viña del Mar'] },
 ]
 
 function calculation(overrides: Partial<CartCalculationResult> = {}): CartCalculationResult {
@@ -126,7 +127,7 @@ async function fillAddressStep(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByPlaceholderText('Dirección'), 'Calle Falsa 123')
   await user.type(screen.getByPlaceholderText('Ciudad'), 'Santiago')
   await user.type(screen.getByPlaceholderText('Código postal'), '8320000')
-  await user.selectOptions(await screen.findByLabelText('Región'), 'Metropolitana')
+  await user.selectOptions(await screen.findByLabelText('Región'), 'Metropolitana de Santiago')
   await user.selectOptions(await screen.findByLabelText('Comuna'), 'Santiago')
   await user.click(screen.getByRole('button', { name: /continuar/i }))
 }
@@ -180,16 +181,42 @@ describe('Checkout page', () => {
     expect(await screen.findByText('Selecciona una región')).toBeInTheDocument()
   })
 
-  it('offers the communes of the chosen region, and none for a region covered whole', async () => {
+  it('offers the communes of the chosen region', async () => {
     const user = userEvent.setup()
     renderCheckout()
     await fillContactStep(user)
 
-    await user.selectOptions(await screen.findByLabelText('Región'), 'Metropolitana')
-    expect(await screen.findByLabelText('Comuna')).toBeInTheDocument()
-
-    await user.selectOptions(screen.getByLabelText('Región'), 'Valparaíso')
     expect(screen.queryByLabelText('Comuna')).not.toBeInTheDocument()
+    await user.selectOptions(await screen.findByLabelText('Región'), 'Valparaíso')
+    const communes = within(await screen.findByLabelText('Comuna')).getAllByRole('option').map((o) => o.textContent)
+    expect(communes).toEqual(['Elige una comuna', 'Quilpué', 'Viña del Mar'])
+  })
+
+  it('refuses to advance without choosing a commune — it decides the zone', async () => {
+    const user = userEvent.setup()
+    renderCheckout()
+    await fillContactStep(user)
+
+    await user.type(screen.getByPlaceholderText('Dirección'), 'Calle Falsa 123')
+    await user.type(screen.getByPlaceholderText('Ciudad'), 'Santiago')
+    await user.type(screen.getByPlaceholderText('Código postal'), '8320000')
+    await user.selectOptions(await screen.findByLabelText('Región'), 'Metropolitana de Santiago')
+    await user.click(screen.getByRole('button', { name: /continuar/i }))
+
+    expect(await screen.findByText('Selecciona una comuna')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /confirmar pedido/i })).not.toBeInTheDocument()
+  })
+
+  it('clears the commune when the region changes, so it never travels with the wrong region', async () => {
+    const user = userEvent.setup()
+    renderCheckout()
+    await fillContactStep(user)
+
+    await user.selectOptions(await screen.findByLabelText('Región'), 'Metropolitana de Santiago')
+    await user.selectOptions(await screen.findByLabelText('Comuna'), 'Santiago')
+    await user.selectOptions(screen.getByLabelText('Región'), 'Valparaíso')
+
+    expect(screen.getByLabelText('Comuna')).toHaveValue('')
   })
 
   it('advances to the address step and back to contact', async () => {
@@ -231,7 +258,7 @@ describe('Checkout page', () => {
 
     await vi.waitFor(() => expect(api.checkout.createOrder).toHaveBeenCalled())
     expect(vi.mocked(api.checkout.createOrder).mock.calls[0][0]).toMatchObject({
-      region: 'Metropolitana',
+      region: 'Metropolitana de Santiago',
       commune: 'Santiago',
     })
   })

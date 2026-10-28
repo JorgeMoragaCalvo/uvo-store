@@ -107,7 +107,7 @@ export default function Checkout() {
       state: values.region,
       postalCode: values.postalCode,
     })
-    await setDestination(values.region, values.commune ?? '')
+    await setDestination(values.region, values.commune)
     setStep(2)
   }
 
@@ -231,6 +231,8 @@ export default function Checkout() {
                 onChange={(e) => {
                   regionField.onChange(e)
                   setSelectedRegion(e.target.value)
+                  // La comuna de la región anterior no es de esta: si se quedaba, se enviaba con la región nueva.
+                  addressForm.setValue('commune', '')
                 }}
               >
                 <option value="">Elige una región</option>
@@ -241,7 +243,7 @@ export default function Checkout() {
               <FieldError message={addressForm.formState.errors.region?.message} />
             </div>
 
-            {communesForRegion.length > 0 && (
+            {selectedRegion && (
               <div>
                 <label className="mb-1 block text-sm text-secondary" htmlFor="commune">Comuna</label>
                 <select id="commune" className={inputClass} {...addressForm.register('commune')}>
@@ -250,6 +252,7 @@ export default function Checkout() {
                     <option key={c} value={c}>{c}</option>
                   ))}
                 </select>
+                <FieldError message={addressForm.formState.errors.commune?.message} />
               </div>
             )}
 

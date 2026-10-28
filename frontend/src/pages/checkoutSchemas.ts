@@ -23,11 +23,12 @@ export const addressSchema = z.object({
   addressLine2: z.string().trim().optional(),
   city: z.string().trim().min(2, 'Ingresa tu ciudad'),
   postalCode: z.string().trim().min(3, 'Ingresa tu código postal'),
-  // Chosen from the store's own coverage, never typed: zone matching is an exact string compare
-  // against free text an admin entered, so a typed value would almost never match — which is how
-  // shipping ended up free on every order.
+  // Chosen from the store's own coverage, never typed — a typed value would almost never match a zone,
+  // which is how shipping ended up free on every order.
   region: z.string().min(1, 'Selecciona una región'),
-  commune: z.string().optional(),
+  // Catálogo de comunas: siempre hay comunas que elegir, y la comuna decide la zona. Sin ella, una región
+  // con una zona por comunas y otra de región entera no puede saber cuál cobrar.
+  commune: z.string().min(1, 'Selecciona una comuna'),
 })
 
 export type ContactValues = z.infer<typeof contactSchema>

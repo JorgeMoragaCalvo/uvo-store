@@ -16,10 +16,11 @@ function zone(overrides: Partial<ShippingZoneDto> = {}): ShippingZoneDto {
     id: 1,
     name: 'Región Metropolitana',
     description: null,
-    regions: ['Región Metropolitana'],
+    regions: ['Metropolitana de Santiago'],
     communes: [],
     active: true,
     sortOrder: 0,
+    unrecognized: [],
     ...overrides,
   }
 }

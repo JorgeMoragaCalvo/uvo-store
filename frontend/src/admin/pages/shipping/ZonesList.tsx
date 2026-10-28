@@ -98,10 +98,22 @@ export default function ZonesList() {
             {!loading &&
               zones.map((zone) => (
                 <TableRow key={zone.id}>
-                  <TableCell className="font-medium">{zone.name}</TableCell>
+                  <TableCell className="font-medium">
+                    {zone.name}
+                    {zone.unrecognized.length > 0 && (
+                      // Zonas escritas a mano antes del catálogo: lo que no se reconoce no cubre ni cobra.
+                      <Badge
+                        variant="outline"
+                        className="ml-2 border-amber-500 text-amber-700"
+                        title={`No están en el catálogo y no se usan para cobrar: ${zone.unrecognized.join(', ')}`}
+                      >
+                        Revisar
+                      </Badge>
+                    )}
+                  </TableCell>
                   <TableCell className="text-muted-foreground">{zone.regions.length} región(es)</TableCell>
                   <TableCell className="text-muted-foreground">
-                    {zone.communes.length > 0 ? `${zone.communes.length} comuna(s)` : 'Toda la región'}
+                    {zone.communes.length > 0 ? `${zone.communes.length} comuna(s)` : zone.regions.length > 1 ? 'Regiones enteras' : 'Toda la región'}
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">

@@ -166,6 +166,9 @@ export interface ShippingZoneDto {
   communes: string[]
   active: boolean
   sortOrder: number
+  // Regiones o comunas que el catálogo no reconoce: zonas escritas a mano antes de él. No cuentan para
+  // la cobertura ni el cobro hasta que la zona se edite.
+  unrecognized: string[]
 }
 
 export interface ShippingZoneRequest {
