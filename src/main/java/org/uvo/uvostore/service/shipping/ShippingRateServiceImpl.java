@@ -17,6 +17,7 @@ import org.uvo.uvostore.repository.ShippingRateRepository;
 import org.uvo.uvostore.repository.ShippingZoneRepository;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.Money;
+import org.uvo.uvostore.service.geo.GeoCatalog;
 import org.uvo.uvostore.service.order.CartLineCommand;
 import org.uvo.uvostore.service.shipping.carrier.ShippingCarrierPolicy;
 import org.uvo.uvostore.service.shipping.carrier.ShippingCarrierQuoteDispatcher;
@@ -28,6 +29,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 public class ShippingRateServiceImpl implements ShippingRateService {
@@ -40,6 +42,8 @@ public class ShippingRateServiceImpl implements ShippingRateService {
     private final SettingRepository settingRepository;
     private final ShippingCarrierQuoteDispatcher carrierQuoteDispatcher;
     private final ShippingCarrierPolicy carrierPolicy;
+    private final GeoCatalog geoCatalog;
+    private final ZoneGeography zoneGeography;
 
     public ShippingRateServiceImpl(
             ShippingZoneRepository zoneRepository,
@@ -49,7 +53,9 @@ public class ShippingRateServiceImpl implements ShippingRateService {
             ProductVariationRepository variationRepository,
             SettingRepository settingRepository,
             ShippingCarrierQuoteDispatcher carrierQuoteDispatcher,
-            ShippingCarrierPolicy carrierPolicy) {
+            ShippingCarrierPolicy carrierPolicy,
+            GeoCatalog geoCatalog,
+            ZoneGeography zoneGeography) {
         this.zoneRepository = zoneRepository;
         this.rateRepository = rateRepository;
         this.methodRepository = methodRepository;
@@ -58,6 +64,8 @@ public class ShippingRateServiceImpl implements ShippingRateService {
         this.settingRepository = settingRepository;
         this.carrierQuoteDispatcher = carrierQuoteDispatcher;
         this.carrierPolicy = carrierPolicy;
+        this.geoCatalog = geoCatalog;
+        this.zoneGeography = zoneGeography;
     }
 
     @Override
@@ -65,6 +73,9 @@ public class ShippingRateServiceImpl implements ShippingRateService {
     public List<ShippingOption> getAvailableOptions(String region, String commune, BigDecimal orderAmount, BigDecimal totalWeight) {
         List<ShippingOption> options = new ArrayList<>();
 
+        // Las cotizaciones de transportista reciben los nombres canónicos cuando los hay, igual que la zona.
+        String canonicalRegion = geoCatalog.resolveRegion(region).orElse(region);
+        String canonicalCommune = geoCatalog.resolveCommune(region, commune).orElse(commune);
         ShippingZone zone = findZone(region, commune);
         if (zone != null) {
             for (ShippingRate rate : rateRepository.findByZoneIdAndIsActiveTrue(zone.getId())) {
@@ -88,7 +99,7 @@ public class ShippingRateServiceImpl implements ShippingRateService {
             }
         }
 
-        options.addAll(carrierQuotes(region, commune, orderAmount, totalWeight));
+        options.addAll(carrierQuotes(canonicalRegion, canonicalCommune, orderAmount, totalWeight));
 
         options.sort(Comparator.comparing(ShippingOption::cost));
         return options;
@@ -137,18 +148,38 @@ public class ShippingRateServiceImpl implements ShippingRateService {
         if (region == null || region.isBlank()) {
             return null;
         }
-        for (ShippingZone zone : zoneRepository.findByStoreIdAndIsActiveTrueOrderBySortOrderAsc(TenantContext.requireStoreId())) {
-            if (zone.getRegions() != null && zone.getRegions().contains(region)){
-                // Antes bastaba con que la lista no fuera nula, y el panel guarda [] para "toda la región": la
-                // cobertura ofrecía la región y aquí, si llegaba una comuna, la zona no servía.
-                if (!zone.coversWholeRegion() && commune != null) {
-                    if (zone.getCommunes().contains(commune)) return zone;
-                } else {
-                    return zone;
-                }
+        // Catálogo de comunas: se compara por nombre canónico, no por el texto exacto que alguien escribió.
+        Optional<String> canonicalRegion = geoCatalog.resolveRegion(region);
+        if (canonicalRegion.isEmpty()) {
+            return null;
+        }
+        String resolvedRegion = canonicalRegion.get();
+        String resolvedCommune = null;
+        if (commune != null && !commune.isBlank()) {
+            // Una comuna que no es de esa región no cae en ninguna zona: ni siquiera en la de región entera.
+            resolvedCommune = geoCatalog.resolveCommune(resolvedRegion, commune).orElse(null);
+            if (resolvedCommune == null) {
+                return null;
             }
         }
-        return null;
+        // La zona más específica gana, y el orden solo desempata entre zonas del mismo tipo. Antes ganaba la
+        // primera por orden, y sin comuna servía también una zona por comunas: con una zona de solo Santiago y
+        // otra de la región entera, toda la región podía pagar la tarifa de Santiago.
+        ShippingZone wholeRegion = null;
+        for (ShippingZone zone : zoneRepository.findByStoreIdAndIsActiveTrueOrderBySortOrderAsc(TenantContext.requireStoreId())) {
+            Set<String> communes = zoneGeography.coverage(zone).get(resolvedRegion);
+            if (communes == null) {
+                continue;
+            }
+            if (communes.isEmpty()) {
+                if (wholeRegion == null) {
+                    wholeRegion = zone;
+                }
+            } else if (resolvedCommune != null && communes.contains(resolvedCommune)) {
+                return zone;
+            }
+        }
+        return wholeRegion;
     }
 
     @Override

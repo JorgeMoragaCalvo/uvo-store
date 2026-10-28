@@ -26,6 +26,7 @@ import org.uvo.uvostore.repository.ShippingRateRepository;
 import org.uvo.uvostore.service.catalog.EffectivePrice;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.customer.CustomerService;
+import org.uvo.uvostore.service.geo.GeoCatalog;
 import org.uvo.uvostore.service.outbox.OutboxService;
 import org.uvo.uvostore.service.settings.SettingValues;
 import org.uvo.uvostore.service.shipping.ShippingOption;
@@ -62,6 +63,7 @@ public class CheckoutServiceImpl implements CheckoutService {
     private final OutboxService outboxService;
     private final ShippingMethodRepository shippingMethodRepository;
     private final ShippingRateRepository shippingRateRepository;
+    private final GeoCatalog geoCatalog;
     private final int retryWindowMinutes;
 
     public CheckoutServiceImpl(
@@ -77,6 +79,7 @@ public class CheckoutServiceImpl implements CheckoutService {
             OutboxService outboxService,
             ShippingMethodRepository shippingMethodRepository,
             ShippingRateRepository shippingRateRepository,
+            GeoCatalog geoCatalog,
             @org.springframework.beans.factory.annotation.Value("${app.abandoned-orders.retry-window-minutes:60}") int retryWindowMinutes) {
         this.cartPricingService = cartPricingService;
         this.cartService = cartService;
@@ -90,6 +93,7 @@ public class CheckoutServiceImpl implements CheckoutService {
         this.outboxService = outboxService;
         this.shippingMethodRepository = shippingMethodRepository;
         this.shippingRateRepository = shippingRateRepository;
+        this.geoCatalog = geoCatalog;
         this.retryWindowMinutes = retryWindowMinutes;
     }
 
@@ -184,8 +188,10 @@ public class CheckoutServiceImpl implements CheckoutService {
         Address address = buildAddress(command);
         order.setShippingAddress(address);
         order.setBillingAddress(address);
-        order.setShippingRegion(command.region());
-        order.setShippingCommune(command.commune());
+        // Catálogo de comunas: el nombre canónico con que se cotizó. Si no se reconoce —una tienda con el envío
+        // apagado no exige cobertura—, el texto tal como llegó, que es lo que se guardaba antes.
+        order.setShippingRegion(geoCatalog.resolveRegion(command.region()).orElse(command.region()));
+        order.setShippingCommune(geoCatalog.resolveCommune(command.region(), command.commune()).orElse(command.commune()));
         order.setShippingPostalCode(command.shippingAddress().postalCode());
         applyShipping(order, totals.appliedShipping());
 

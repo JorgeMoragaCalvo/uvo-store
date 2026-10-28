@@ -54,11 +54,14 @@ export async function restorePanelSession(page: Page, slug: string, session: str
   )
 }
 
-/** Una zona de envío activa: sin ella el checkout no ofrece región y no se puede comprar. */
+/**
+ * Una zona de envío activa: sin ella el checkout no ofrece región y no se puede comprar. La región se marca en
+ * el catálogo con su nombre canónico, y «Toda la región» viene marcada.
+ */
 export async function createShippingZone(page: Page, slug: string, region: string): Promise<void> {
   await page.goto(storeUrl(slug, '/admin/shipping/zones/new'))
   await page.getByLabel('Nombre').fill(`Zona ${region}`)
-  await page.getByLabel('Regiones (una por línea)').fill(region)
+  await page.getByRole('switch', { name: region, exact: true }).click()
   await page.getByRole('button', { name: 'Guardar' }).click()
   await expect(page.getByText('Zona creada')).toBeVisible()
 }

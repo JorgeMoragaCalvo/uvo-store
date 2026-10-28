@@ -14,8 +14,10 @@ import org.uvo.uvostore.repository.ShippingMethodRepository;
 import org.uvo.uvostore.repository.ShippingRateRepository;
 import org.uvo.uvostore.repository.ShippingZoneRepository;
 import org.uvo.uvostore.security.TenantContext;
+import org.uvo.uvostore.service.geo.GeoCatalog;
 import org.uvo.uvostore.service.shipping.ShippingOption;
 import org.uvo.uvostore.service.shipping.ShippingRateServiceImpl;
+import org.uvo.uvostore.service.shipping.ZoneGeography;
 import org.uvo.uvostore.service.shipping.carrier.ShippingCarrierPolicy;
 import org.uvo.uvostore.service.shipping.carrier.ShippingCarrierQuoteClient;
 import org.uvo.uvostore.service.shipping.carrier.ShippingCarrierQuoteDispatcher;
@@ -138,9 +140,11 @@ class CarrierQuoteGateTest {
         // Sin zonas: lo que se mide es la rama de transportistas, no las tarifas propias.
         when(zoneRepository.findByStoreIdAndIsActiveTrueOrderBySortOrderAsc(1L)).thenReturn(List.of());
 
+        GeoCatalog geoCatalog = new GeoCatalog();
         ShippingRateServiceImpl service = new ShippingRateServiceImpl(
                 zoneRepository, rateRepository, methodRepository, mock(ProductRepository.class),
-                mock(ProductVariationRepository.class), settingRepository, dispatcher, policy);
+                mock(ProductVariationRepository.class), settingRepository, dispatcher, policy,
+                geoCatalog, new ZoneGeography(geoCatalog));
 
         return service.getAvailableOptions("Metropolitana", "Santiago", BigDecimal.valueOf(10000), BigDecimal.ONE);
     }

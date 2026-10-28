@@ -163,13 +163,19 @@ El costo del despacho **sale de las tarifas**, salvo cuando aplica el envío gra
 dirección que ninguna zona cubre no puede comprar: el checkout dice «No hay envío disponible para la dirección
 seleccionada». Se configura en tres pasos.
 
-1. **Zonas** (`Zonas de envío → Nueva`): qué lugares cubres.
-   - **Regiones:** una por línea, escritas igual que como aparecen en el checkout, por ejemplo «Región
-     Metropolitana».
-   - **Comunas:** una por línea, opcional. **Vacío cubre la región entera**, y el checkout no le pide comuna
-     al comprador.
-   - **Orden:** si una dirección cae en dos zonas, se usa la de menor número.
-   - **No mezcles** en una misma región una zona de región entera con zonas por comuna. Ver la sección 12.
+1. **Zonas** (`Zonas de envío → Nueva`): qué lugares cubres. Las regiones y comunas se eligen de la lista
+   oficial de Chile, no se escriben.
+   - **Regiones:** activa las regiones que cubre la zona.
+   - **Comunas:** cada región elegida viene con **Toda la región** activado. Si lo apagas, aparece la lista de
+     sus comunas, con un buscador, para marcar solo las que quieras.
+   - **Zonas mezcladas:** en una misma región puedes tener una zona de región entera y otras solo con algunas
+     comunas. Cada comuna elegida paga la tarifa de su zona, y el resto de la región paga la de la región
+     entera. La zona más específica gana siempre, sin importar el orden.
+   - **Orden:** solo desempata entre dos zonas del mismo tipo que cubren la misma comuna.
+   - **Zonas antiguas:** si una zona se escribió a mano antes de la lista y tiene algo que no se reconoce, la
+     lista de zonas la marca con **Revisar**. Lo no reconocido no cubre ni cobra; edita la zona y elige su
+     equivalente.
+   - En el checkout, el comprador elige siempre región y comuna, entre las que cubren tus zonas.
 2. **Métodos** (`Métodos de envío → Nuevo`): cómo entregas.
    - Nombre, **código** (un identificador corto, como `courier-rm`) y descripción.
    - Tipo: Courier, Retiro en tienda o Personalizado.
@@ -292,24 +298,18 @@ En la lista puedes filtrar por pestañas y buscar por número de orden o por cli
 Son cosas que el panel muestra pero que hoy no hacen lo que parece, o que todavía no existen. Salen de la
 revisión del código, no de pruebas en producción.
 
-1. **Zonas mezcladas en una misma región cobran la tarifa equivocada.**
-   - El caso: en una región hay una zona que la cubre entera y otra que lista algunas comunas.
-   - La tienda trata esa región como cubierta entera y no le pide comuna al comprador.
-   - Sin comuna, el cálculo toma la primera zona por orden que tenga la región, aunque sea la de comunas.
-   - Resultado: un comprador de cualquier comuna puede pagar la tarifa pensada solo para unas pocas.
-   - **Usa en cada región solo zonas por comuna, o solo una zona de región entera.**
-2. **«Envío habilitado» apagado no deja el despacho en cero.** Si una zona cubre la dirección, se cobra su
+1. **«Envío habilitado» apagado no deja el despacho en cero.** Si una zona cubre la dirección, se cobra su
    tarifa. Para no cobrar despacho, usa tarifas «Gratis» o desactiva las zonas.
-3. **«Costo de envío por defecto» de Config. general no se usa.** El costo sale siempre de las tarifas.
-4. **El producto no tiene campo de peso.** Las tarifas «Por peso» y los límites de peso no tienen con qué
+2. **«Costo de envío por defecto» de Config. general no se usa.** El costo sale siempre de las tarifas.
+3. **El producto no tiene campo de peso.** Las tarifas «Por peso» y los límites de peso no tienen con qué
    calcular; usa tarifas de monto fijo.
-5. **No hay precio de oferta en el formulario.** La sección «Ofertas» del inicio queda vacía; apágala en
+4. **No hay precio de oferta en el formulario.** La sección «Ofertas» del inicio queda vacía; apágala en
    Config. de tienda.
-6. **No hay variantes desde el panel,** como talla o color. Cada variante se carga como un producto aparte,
+5. **No hay variantes desde el panel,** como talla o color. Cada variante se carga como un producto aparte,
    igual que en UvoPOS, donde cada talla es un SKU.
-7. **Texto contradictorio sobre Stripe.** La página de Pasarelas de pago dice que Stripe se configura en la
+6. **Texto contradictorio sobre Stripe.** La página de Pasarelas de pago dice que Stripe se configura en la
    plataforma, pero el checkout usa las claves de Config. general → Stripe de cada tienda.
-8. **No hay consola para el operador.** Listar y buscar tiendas, suspenderlas, reactivarlas, cerrarlas o
+7. **No hay consola para el operador.** Listar y buscar tiendas, suspenderlas, reactivarlas, cerrarlas o
    verificar su dominio solo se puede hacer llamando a la API de plataforma (`/api/platform/stores`). La
    única pantalla es la de alta.
-9. **Contra entrega siempre visible:** no se puede apagar desde el panel.
+8. **Contra entrega siempre visible:** no se puede apagar desde el panel.

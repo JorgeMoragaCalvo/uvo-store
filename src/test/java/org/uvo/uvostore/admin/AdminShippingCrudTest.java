@@ -1,9 +1,14 @@
 package org.uvo.uvostore.admin;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.uvo.uvostore.entity.security.User;
+import org.uvo.uvostore.entity.shipping.ShippingZone;
 import org.uvo.uvostore.entity.tenant.Store;
+import org.uvo.uvostore.repository.ShippingZoneRepository;
 import org.uvo.uvostore.support.IntegrationTestSupport;
+
+import java.util.List;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -15,6 +20,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 // CRUD + cross-tenant coverage for /api/admin/shipping/{zones,methods,rates} — a rate always
 // references a method and a zone, so the rate tests create both first via the same admin.
 class AdminShippingCrudTest extends IntegrationTestSupport {
+
+    @Autowired
+    private ShippingZoneRepository zoneRepository;
 
     @Test
     void shippingZoneCanBeCreatedUpdatedToggledAndDeleted() throws Exception {
@@ -55,6 +63,69 @@ class AdminShippingCrudTest extends IntegrationTestSupport {
                         .header("Host", hostHeader(store))
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void shippingZoneIsSavedWithTheCatalogsCanonicalNames() throws Exception {
+        Store store = createStore("zone-canonical");
+        String token = loginAdmin(store, createAdmin(store, "zone-canonical"));
+
+        mockMvc.perform(post("/api/admin/shipping/zones")
+                        .header("Host", hostHeader(store))
+                        .header("Authorization", "Bearer " + token)
+                        .contentType("application/json")
+                        .content("{\"name\":\"Centro\",\"regions\":[\"Región Metropolitana\",\"RM\"],"
+                                + "\"communes\":[\"nunoa\",\"Santiago\"],\"active\":true,\"sortOrder\":0}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.regions.length()").value(1))
+                .andExpect(jsonPath("$.regions[0]").value("Metropolitana de Santiago"))
+                .andExpect(jsonPath("$.communes[0]").value("Ñuñoa"))
+                .andExpect(jsonPath("$.communes[1]").value("Santiago"))
+                .andExpect(jsonPath("$.unrecognized").isEmpty());
+    }
+
+    @Test
+    void shippingZoneRejectsNamesTheCatalogDoesNotHave() throws Exception {
+        Store store = createStore("zone-unknown");
+        String token = loginAdmin(store, createAdmin(store, "zone-unknown"));
+
+        mockMvc.perform(post("/api/admin/shipping/zones")
+                        .header("Host", hostHeader(store))
+                        .header("Authorization", "Bearer " + token)
+                        .contentType("application/json")
+                        .content("{\"name\":\"Mal\",\"regions\":[\"Región de Narnia\"],\"communes\":[],\"active\":true,\"sortOrder\":0}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Región no reconocida: Región de Narnia"));
+
+        // Viña del Mar existe, pero no en la Metropolitana.
+        mockMvc.perform(post("/api/admin/shipping/zones")
+                        .header("Host", hostHeader(store))
+                        .header("Authorization", "Bearer " + token)
+                        .contentType("application/json")
+                        .content("{\"name\":\"Mal\",\"regions\":[\"RM\"],\"communes\":[\"Viña del Mar\"],\"active\":true,\"sortOrder\":0}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(
+                        "La comuna Viña del Mar no pertenece a ninguna de las regiones de la zona"));
+    }
+
+    @Test
+    void aLegacyZoneReportsWhatTheCatalogDoesNotRecognize() throws Exception {
+        Store store = createStore("zone-legacy");
+        String token = loginAdmin(store, createAdmin(store, "zone-legacy"));
+        ShippingZone legacy = new ShippingZone();
+        legacy.setStore(store);
+        legacy.setName("Escrita a mano");
+        legacy.setRegions(List.of("Metropolitana", "Gran Santiago"));
+        legacy.setCommunes(List.of("Santiago", "Santiago Centro"));
+        legacy = zoneRepository.save(legacy);
+
+        mockMvc.perform(get("/api/admin/shipping/zones/" + legacy.getId())
+                        .header("Host", hostHeader(store))
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.unrecognized.length()").value(2))
+                .andExpect(jsonPath("$.unrecognized[0]").value("Gran Santiago"))
+                .andExpect(jsonPath("$.unrecognized[1]").value("Santiago Centro"));
     }
 
     @Test

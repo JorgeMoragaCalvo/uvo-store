@@ -53,20 +53,21 @@ class ShippingCoverageTest extends IntegrationTestSupport {
     // --- coverage endpoint ---------------------------------------------------------------------
 
     @Test
-    @DisplayName("La cobertura expone las regiones y comunas de las zonas activas")
+    @DisplayName("La cobertura expone las regiones y comunas de las zonas activas, con su nombre canónico")
     void coverageListsRegionsAndCommunesOfActiveZones() throws Exception {
         Store store = createStore("cov");
         seedZone(store, "Zona Centro", List.of("Metropolitana"), List.of("Santiago", "Providencia"), BigDecimal.valueOf(3990));
 
         mockMvc.perform(get("/api/v1/shipping/coverage").header("Host", hostHeader(store)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].region").value("Metropolitana"))
-                .andExpect(jsonPath("$[0].communes[0]").value("Santiago"))
-                .andExpect(jsonPath("$[0].communes[1]").value("Providencia"));
+                .andExpect(jsonPath("$[0].region").value("Metropolitana de Santiago"))
+                .andExpect(jsonPath("$[0].communes.length()").value(2))
+                .andExpect(jsonPath("$[0].communes[0]").value("Providencia"))
+                .andExpect(jsonPath("$[0].communes[1]").value("Santiago"));
     }
 
     @Test
-    @DisplayName("Una zona sin comunas cubre la región entera y devuelve la lista vacía")
+    @DisplayName("Una zona sin comunas cubre la región entera y ofrece todas sus comunas")
     void aZoneWithoutCommunesCoversTheWholeRegion() throws Exception {
         Store store = createStore("cov-whole");
         seedZone(store, "Todo Valparaíso", List.of("Valparaíso"), null, BigDecimal.valueOf(4990));
@@ -74,7 +75,8 @@ class ShippingCoverageTest extends IntegrationTestSupport {
         mockMvc.perform(get("/api/v1/shipping/coverage").header("Host", hostHeader(store)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].region").value("Valparaíso"))
-                .andExpect(jsonPath("$[0].communes").isEmpty());
+                .andExpect(jsonPath("$[0].communes.length()").value(38))
+                .andExpect(jsonPath("$[0].communes[0]").value("Algarrobo"));
     }
 
     @Test
@@ -125,7 +127,7 @@ class ShippingCoverageTest extends IntegrationTestSupport {
 
         // This is the regression: before the fix it was 0, on every single order.
         assertThat(order.getShippingCost()).isEqualByComparingTo(BigDecimal.valueOf(3990));
-        assertThat(order.getShippingRegion()).isEqualTo("Metropolitana");
+        assertThat(order.getShippingRegion()).isEqualTo("Metropolitana de Santiago");
         assertThat(order.getShippingCommune()).isEqualTo("Santiago");
         assertThat(order.getTotal()).isEqualByComparingTo(BigDecimal.valueOf(2000 + 3990));
     }
@@ -238,6 +240,79 @@ class ShippingCoverageTest extends IntegrationTestSupport {
         assertThat(order.getShippingCost()).isEqualByComparingTo(BigDecimal.valueOf(4990));
     }
 
+    // --- catálogo de comunas: zonas mezcladas y texto libre --------------------------------------
+
+    @Test
+    @DisplayName("En una región con zona entera y zona por comunas gana la más específica, no la primera por orden")
+    void theMostSpecificZoneWinsInAMixedRegion() throws Exception {
+        Store store = createStore("ship-mixed");
+        setSetting(store, "tax_rate", "0");
+        ShippingZone whole = seedZone(store, "Toda la RM", List.of("RM"), null, BigDecimal.valueOf(5990));
+        ShippingZone santiago = seedZone(store, "Solo Santiago", List.of("RM"), List.of("Santiago"), BigDecimal.valueOf(2990));
+        whole.setSortOrder(0);
+        santiago.setSortOrder(1);
+        zoneRepository.saveAll(List.of(whole, santiago));
+        Product product = createProduct(store, createCategory(store, "Cat"), "Producto", BigDecimal.valueOf(1000));
+
+        calculate(store, product, 1, "Metropolitana de Santiago", "Santiago", null)
+                .andExpect(jsonPath("$.shippingCost").value(2990));
+        calculate(store, product, 1, "Metropolitana de Santiago", "Puente Alto", null)
+                .andExpect(jsonPath("$.shippingCost").value(5990));
+        // Sin comuna ya no sirve la zona de Santiago: antes, esto cobraba la tarifa de Santiago a toda la región.
+        calculateWithoutCommune(store, product, "Metropolitana de Santiago")
+                .andExpect(jsonPath("$.shippingAvailable").value(true))
+                .andExpect(jsonPath("$.shippingCost").value(5990));
+
+        // La región se ofrece entera, así que el checkout pide comuna y puede elegir cualquiera de las 52.
+        mockMvc.perform(get("/api/v1/shipping/coverage").header("Host", hostHeader(store)))
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].communes.length()").value(52));
+    }
+
+    @Test
+    @DisplayName("Con solo zonas por comunas, una comuna no listada o sin comuna no tiene envío")
+    void onlyNamedCommunesAreCoveredWithoutAWholeRegionZone() throws Exception {
+        Store store = createStore("ship-named-only");
+        seedZone(store, "Solo Santiago", List.of("RM"), List.of("Santiago"), BigDecimal.valueOf(2990));
+        Product product = createProduct(store, createCategory(store, "Cat"), "Producto", BigDecimal.valueOf(1000));
+
+        calculate(store, product, 1, "Metropolitana de Santiago", "Puente Alto", null)
+                .andExpect(jsonPath("$.shippingAvailable").value(false));
+        calculateWithoutCommune(store, product, "Metropolitana de Santiago")
+                .andExpect(jsonPath("$.shippingAvailable").value(false));
+    }
+
+    @Test
+    @DisplayName("Una zona antigua escrita a mano sigue cotizando con lo que manda el checkout")
+    void aLegacyFreeTextZoneStillQuotes() throws Exception {
+        Store store = createStore("ship-legacy");
+        setSetting(store, "tax_rate", "0");
+        seedZone(store, "Escrita a mano", List.of("Región Metropolitana"), List.of("santiago", "nunoa"), BigDecimal.valueOf(3990));
+        Product product = createProduct(store, createCategory(store, "Cat"), "Producto", BigDecimal.valueOf(1000));
+
+        calculate(store, product, 1, "Metropolitana de Santiago", "Ñuñoa", null)
+                .andExpect(jsonPath("$.shippingAvailable").value(true))
+                .andExpect(jsonPath("$.shippingCost").value(3990));
+        mockMvc.perform(get("/api/v1/shipping/coverage").header("Host", hostHeader(store)))
+                .andExpect(jsonPath("$[0].region").value("Metropolitana de Santiago"))
+                .andExpect(jsonPath("$[0].communes[0]").value("Ñuñoa"))
+                .andExpect(jsonPath("$[0].communes[1]").value("Santiago"));
+    }
+
+    @Test
+    @DisplayName("Las comunas de una zona de dos regiones se leen por región: la otra queda entera")
+    void communesAreReadPerRegion() throws Exception {
+        Store store = createStore("ship-two-regions");
+        setSetting(store, "tax_rate", "0");
+        seedZone(store, "Centro", List.of("RM", "Valparaíso"), List.of("Santiago"), BigDecimal.valueOf(3990));
+        Product product = createProduct(store, createCategory(store, "Cat"), "Producto", BigDecimal.valueOf(1000));
+
+        calculate(store, product, 1, "Valparaíso", "Quilpué", null)
+                .andExpect(jsonPath("$.shippingAvailable").value(true));
+        calculate(store, product, 1, "Metropolitana de Santiago", "Puente Alto", null)
+                .andExpect(jsonPath("$.shippingAvailable").value(false));
+    }
+
     // --- envío gratis de la configuración general ------------------------------------------------
 
     @Test
@@ -325,6 +400,16 @@ class ShippingCoverageTest extends IntegrationTestSupport {
         String body = """
                 {"items":[{"id":%d,"type":"product","quantity":%d}],"region":"%s","commune":"%s"%s}
                 """.formatted(product.getId(), quantity, region, commune, coupon);
+        return mockMvc.perform(post("/api/v1/cart/calculate")
+                        .header("Host", hostHeader(store))
+                        .contentType("application/json").content(body))
+                .andExpect(status().isOk());
+    }
+
+    private ResultActions calculateWithoutCommune(Store store, Product product, String region) throws Exception {
+        String body = """
+                {"items":[{"id":%d,"type":"product","quantity":1}],"region":"%s"}
+                """.formatted(product.getId(), region);
         return mockMvc.perform(post("/api/v1/cart/calculate")
                         .header("Host", hostHeader(store))
                         .contentType("application/json").content(body))
