@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { useProductsStore } from '../stores/useProductsStore'
 import { useStoreSettingsStore } from '../stores/useStoreSettingsStore'
@@ -22,6 +22,7 @@ export default function Shop() {
   const { products, totalPages, page, loading } = useProductsStore()
   const search = useProductsStore((state) => state.search)
   const categories = useStoreSettingsStore((state) => state.categories)
+  const [filtersOpen, setFiltersOpen] = useState(false)
 
   const category = slug ?? searchParams.get('category') ?? ''
   const searchTerm = searchParams.get('search') ?? ''
@@ -69,8 +70,20 @@ export default function Shop() {
     <div className="mx-auto max-w-6xl p-4 py-8">
       <h1 className="mb-6 text-2xl font-semibold text-dark">{title}</h1>
 
+      {/* Bajo lg los filtros van encima de los productos; abiertos por defecto empujaban el catálogo
+          más de una pantalla hacia abajo en el celular. */}
+      <button
+        type="button"
+        onClick={() => setFiltersOpen((open) => !open)}
+        aria-expanded={filtersOpen}
+        aria-controls="shop-filters"
+        className="mb-4 rounded border border-gray-400 px-4 py-2 text-sm font-medium text-dark lg:hidden"
+      >
+        {filtersOpen ? 'Ocultar filtros' : 'Filtros'}
+      </button>
+
       <div className="grid gap-6 lg:grid-cols-4">
-        <aside className="space-y-6 lg:col-span-1">
+        <aside id="shop-filters" className={`${filtersOpen ? 'block' : 'hidden'} space-y-6 lg:col-span-1 lg:block`}>
           <div>
             <label className="mb-1 block text-sm font-medium text-dark">Buscar</label>
             <input
@@ -78,7 +91,7 @@ export default function Shop() {
               defaultValue={searchTerm}
               onBlur={(event) => updateParam('search', event.target.value || null)}
               placeholder="Buscar productos..."
-              className="w-full rounded border border-gray-400 px-3 py-1.5 text-sm"
+              className="w-full rounded border border-gray-400 px-3 py-1.5 text-base sm:text-sm"
             />
           </div>
 
@@ -108,7 +121,7 @@ export default function Shop() {
                 defaultValue={minPrice}
                 onBlur={(event) => updateParam('min_price', event.target.value || null)}
                 placeholder="Mín"
-                className="w-full rounded border border-gray-400 px-2 py-1.5 text-sm"
+                className="w-full rounded border border-gray-400 px-2 py-1.5 text-base sm:text-sm"
               />
               <span className="text-secondary">-</span>
               <input
@@ -116,7 +129,7 @@ export default function Shop() {
                 defaultValue={maxPrice}
                 onBlur={(event) => updateParam('max_price', event.target.value || null)}
                 placeholder="Máx"
-                className="w-full rounded border border-gray-400 px-2 py-1.5 text-sm"
+                className="w-full rounded border border-gray-400 px-2 py-1.5 text-base sm:text-sm"
               />
             </div>
           </div>
@@ -126,7 +139,7 @@ export default function Shop() {
             <select
               value={type}
               onChange={(event) => updateParam('type', event.target.value || null)}
-              className="w-full rounded border border-gray-400 px-2 py-1.5 text-sm"
+              className="w-full rounded border border-gray-400 px-2 py-1.5 text-base sm:text-sm"
             >
               <option value="">Todos</option>
               <option value="SIMPLE">Simple</option>
@@ -169,7 +182,7 @@ export default function Shop() {
                 next.delete('page')
                 setSearchParams(next)
               }}
-              className="rounded border border-gray-400 px-2 py-1.5 text-sm"
+              className="rounded border border-gray-400 px-2 py-1.5 text-base sm:text-sm"
             >
               {SORT_OPTIONS.map((option) => (
                 <option key={option.label} value={`${option.sortBy}:${option.sortOrder}`}>
@@ -192,7 +205,7 @@ export default function Shop() {
           )}
 
           {totalPages > 1 && (
-            <div className="mt-6 flex justify-center gap-2">
+            <div className="mt-6 flex flex-wrap justify-center gap-2">
               {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
                 <button
                   key={p}

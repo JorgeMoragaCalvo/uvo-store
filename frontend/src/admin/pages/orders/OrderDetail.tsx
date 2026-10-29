@@ -71,7 +71,7 @@ function OrderDetailContent({ order, onBack }: { order: AdminOrderDetail; onBack
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <Button variant="ghost" size="icon" onClick={onBack}>
           <ArrowLeft className="size-4" />
         </Button>

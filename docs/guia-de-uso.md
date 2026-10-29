@@ -41,16 +41,16 @@ panel dice «No tienes permiso para ver esta sección».
 
 ## 3. Orden recomendado para dejar la tienda lista
 
-| Paso | Dónde | Para qué |
-|---|---|---|
-| 1 | Config. general → General, Moneda, Checkout | Datos de contacto, impuesto y reglas de compra |
-| 2 | Config. de tienda | Logo, colores, secciones del inicio y SEO |
-| 3 | Categorías | Para poder clasificar los productos |
-| 4 | Productos | El catálogo |
-| 5 | Zonas, métodos y tarifas de envío | **Sin esto no se puede comprar con despacho** |
-| 6 | Pasarelas de pago y Config. general → Stripe | Cobrar en línea |
-| 7 | Banners y cupones | Opcional |
-| 8 | Compra de prueba | Revisar el flujo completo antes de anunciar la tienda |
+| Paso | Dónde                                        | Para qué                                              |
+|------|----------------------------------------------|-------------------------------------------------------|
+| 1    | Config. general → General, Moneda, Checkout  | Datos de contacto, impuesto y reglas de compra        |
+| 2    | Config. de tienda                            | Logo, colores, secciones del inicio y SEO             |
+| 3    | Categorías                                   | Para poder clasificar los productos                   |
+| 4    | Productos                                    | El catálogo                                           |
+| 5    | Zonas, métodos y tarifas de envío            | **Sin esto no se puede comprar con despacho**         |
+| 6    | Pasarelas de pago y Config. general → Stripe | Cobrar en línea                                       |
+| 7    | Banners y cupones                            | Opcional                                              |
+| 8    | Compra de prueba                             | Revisar el flujo completo antes de anunciar la tienda |
 
 ## 4. Configuración general (`Config. general`)
 
@@ -208,12 +208,12 @@ Si a una dirección le sirven varias tarifas, el comprador ve la **más barata**
 
 ## 8. Pagos
 
-| Medio | Dónde se activa | Qué necesita |
-|---|---|---|
-| **Pago contra entrega** | Siempre aparece en el checkout | Nada. El pedido queda **pendiente de pago** hasta que lo marques como pagado. |
-| **Stripe (tarjeta)** | Config. general → Stripe | La clave pública y la secreta de tu cuenta de Stripe |
-| **Webpay Plus** | Pasarelas de pago | El **código de comercio hijo** que Transbank te asignó bajo el Mall de la plataforma. El Mall lo configura el operador. |
-| **MercadoPago** | Pasarelas de pago | El Access Token, la Public Key y el **secreto de webhook** de tu cuenta. Sin el secreto no se deja activar. |
+| Medio                   | Dónde se activa                | Qué necesita                                                                                                            |
+|-------------------------|--------------------------------|-------------------------------------------------------------------------------------------------------------------------|
+| **Pago contra entrega** | Siempre aparece en el checkout | Nada. El pedido queda **pendiente de pago** hasta que lo marques como pagado.                                           |
+| **Stripe (tarjeta)**    | Config. general → Stripe       | La clave pública y la secreta de tu cuenta de Stripe                                                                    |
+| **Webpay Plus**         | Pasarelas de pago              | El **código de comercio hijo** que Transbank te asignó bajo el Mall de la plataforma. El Mall lo configura el operador. |
+| **MercadoPago**         | Pasarelas de pago              | El Access Token, la Public Key y el **secreto de webhook** de tu cuenta. Sin el secreto no se deja activar.             |
 
 Cada medio en línea aparece en el checkout solo cuando está **Habilitado** y guardado.
 

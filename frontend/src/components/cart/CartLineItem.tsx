@@ -33,7 +33,7 @@ export default function CartLineItem({ line }: { line: CartLine }) {
             <button
               type="button"
               onClick={() => updateQuantity(line.id, line.type, Math.max(1, line.quantity - 1))}
-              className="h-6 w-6 rounded border border-gray-300 text-sm leading-none"
+              className="size-9 rounded border border-gray-300 text-sm leading-none sm:size-7"
             >
               −
             </button>
@@ -41,18 +41,18 @@ export default function CartLineItem({ line }: { line: CartLine }) {
             <button
               type="button"
               onClick={() => updateQuantity(line.id, line.type, line.quantity + 1)}
-              className="h-6 w-6 rounded border border-gray-300 text-sm leading-none"
+              className="size-9 rounded border border-gray-300 text-sm leading-none sm:size-7"
             >
               +
             </button>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1">
             <span className="text-sm font-semibold text-dark">{formatCurrency(unitPrice * line.quantity)}</span>
             <button
               type="button"
               onClick={() => removeItem(line.id, line.type)}
-              className="text-xs text-secondary hover:text-red-600"
+              className="-mr-2 flex size-9 items-center justify-center text-xs text-secondary hover:text-red-600"
               title="Eliminar"
             >
               ✕
