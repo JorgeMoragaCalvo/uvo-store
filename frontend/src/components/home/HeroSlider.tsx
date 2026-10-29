@@ -21,19 +21,20 @@ export default function HeroSlider({ banners, autoplaySpeed }: { banners: HomeBa
   const banner = banners[index]
 
   return (
-    <div className="relative aspect-[16/7] w-full overflow-hidden bg-gray-100">
+    // En el celular, 16/7 daba unos 157 px de alto y cortaba el título, la descripción y el botón.
+    <div className="relative aspect-[4/3] w-full overflow-hidden bg-gray-100 sm:aspect-[16/7]">
       <img src={banner.image} alt={banner.title ?? ''} loading="eager" className="absolute inset-0 h-full w-full object-cover" />
       <div
         className="absolute inset-0"
         style={{ backgroundColor: banner.overlayColor ?? '#000000', opacity: (banner.overlayOpacity ?? 0) / 100 }}
       />
 
-      <div className={`relative flex h-full flex-col justify-center gap-3 p-8 ${TEXT_POSITION_CLASS[banner.textPosition]} ${banner.textColor === 'light' ? 'text-white' : 'text-dark'}`}>
+      <div className={`relative flex h-full flex-col justify-center gap-3 px-12 py-6 sm:p-8 ${TEXT_POSITION_CLASS[banner.textPosition]} ${banner.textColor === 'light' ? 'text-white' : 'text-dark'}`}>
         {banner.subtitle && <span className="text-sm font-medium uppercase tracking-wide">{banner.subtitle}</span>}
-        {banner.title && <h1 className="text-3xl font-bold sm:text-4xl">{banner.title}</h1>}
+        {banner.title && <h1 className="text-2xl font-bold sm:text-3xl md:text-4xl">{banner.title}</h1>}
         {banner.description && <p className="max-w-md text-sm">{banner.description}</p>}
 
-        <div className="mt-2 flex gap-3">
+        <div className="mt-2 flex flex-wrap gap-3">
           {banner.ctaText && banner.ctaLink && (
             <a
               href={banner.ctaLink}

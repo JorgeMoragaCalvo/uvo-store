@@ -12,7 +12,7 @@ export default function DataTablePagination({ page, totalPages, totalElements, o
   if (totalElements === 0) return null
 
   return (
-    <div className="flex items-center justify-between px-1 py-3">
+    <div className="flex flex-wrap items-center justify-between gap-2 px-1 py-3">
       <p className="text-sm text-muted-foreground">
         Página {page} de {Math.max(totalPages, 1)} · {totalElements} resultados
       </p>

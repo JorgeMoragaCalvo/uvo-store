@@ -231,7 +231,7 @@ export default function ZoneForm() {
                 const visible = region.communes.filter((c) => c.name.toLowerCase().includes(filter))
                 return (
                   <div key={region.code} className="flex flex-col gap-3 rounded-md border p-3">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="text-sm font-medium">{region.name}</p>
                       <div className="flex items-center gap-2">
                         <Label htmlFor={`whole-${region.code}`} className="font-normal">

@@ -130,13 +130,13 @@ export default function ProductDetail() {
             {activeImage && <img src={activeImage} alt={product.name} loading="eager" className="h-full w-full object-cover" />}
           </div>
           {gallery.length > 1 && (
-            <div className="mt-3 flex gap-2">
+            <div className="mt-3 flex flex-wrap gap-2">
               {gallery.map((url) => (
                 <button
                   key={url}
                   type="button"
                   onClick={() => setActiveImage(url)}
-                  className={`h-16 w-16 overflow-hidden rounded border ${activeImage === url ? 'border-primary' : 'border-gray-400'}`}
+                  className={`h-16 w-16 shrink-0 overflow-hidden rounded border ${activeImage === url ? 'border-primary' : 'border-gray-400'}`}
                 >
                   <img src={url} alt="" loading="lazy" className="h-full w-full object-cover" />
                 </button>

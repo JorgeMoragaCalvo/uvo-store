@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import Header from './Header'
 import { useCartStore } from '@/stores/useCartStore'
@@ -43,5 +44,29 @@ describe('Header', () => {
     expect(screen.getByRole('button', { name: /abrir carrito/i })).toBeInTheDocument()
     expect(screen.getByPlaceholderText(/buscar productos/i)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /tienda/i })).toBeInTheDocument()
+  })
+
+  // Bajo lg la navegación de escritorio se oculta; el menú es la única forma de llegar a la tienda,
+  // las categorías y el buscador desde el celular.
+  it('offers the navigation and the search box in the mobile menu', async () => {
+    const user = userEvent.setup()
+    renderHeader()
+
+    await user.click(screen.getByRole('button', { name: /abrir menú/i }))
+
+    const menu = screen.getByRole('dialog')
+    expect(within(menu).getByRole('link', { name: 'Tienda' })).toHaveAttribute('href', '/shop')
+    expect(within(menu).getByRole('link', { name: 'Ofertas' })).toBeInTheDocument()
+    expect(within(menu).getByRole('searchbox', { name: /buscar productos/i })).toBeInTheDocument()
+  })
+
+  it('closes the mobile menu when a link is followed', async () => {
+    const user = userEvent.setup()
+    renderHeader()
+
+    await user.click(screen.getByRole('button', { name: /abrir menú/i }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('link', { name: 'Tienda' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 })

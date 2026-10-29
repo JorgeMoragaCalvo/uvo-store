@@ -220,7 +220,9 @@ function GeneralSettingsForm({ initial }: { initial: GeneralSettingsDto }) {
 
       <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
         <Tabs defaultValue="general">
-          <TabsList className="flex-wrap">
+          {/* La base fija h-8 con una variante de grupo: un h-auto suelto no la pisa, y la segunda fila
+              de pestañas quedaba fuera de la barra, encima de la tarjeta. */}
+          <TabsList className="flex-wrap group-data-horizontal/tabs:h-auto">
             <TabsTrigger value="general">General</TabsTrigger>
             <TabsTrigger value="currency">Moneda</TabsTrigger>
             <TabsTrigger value="shipping">Envío</TabsTrigger>

@@ -15,12 +15,13 @@ export default function Toast() {
   if (notifications.length === 0) return null
 
   return (
-    <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2">
+    // left-4 en el celular: sin él, un mensaje largo llegaba hasta el borde izquierdo de la pantalla.
+    <div className="pointer-events-none fixed bottom-4 left-4 right-4 z-[100] flex flex-col items-end gap-2 sm:left-auto sm:max-w-sm">
       {notifications.map((notification) => (
         <div
           key={notification.id}
           onClick={() => dismiss(notification.id)}
-          className={`cursor-pointer rounded px-4 py-2.5 text-sm text-white shadow-lg ${STYLES[notification.type]}`}
+          className={`pointer-events-auto cursor-pointer rounded px-4 py-2.5 text-sm text-white shadow-lg ${STYLES[notification.type]}`}
         >
           {notification.message}
         </div>

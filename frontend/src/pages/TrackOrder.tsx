@@ -54,7 +54,7 @@ export default function TrackOrder() {
           value={orderNumber}
           onChange={(event) => setOrderNumber(event.target.value)}
           placeholder="ej: ORD-AAXFD5GP"
-          className="flex-1 rounded border border-gray-400 px-3 py-2 text-sm"
+          className="min-w-0 flex-1 rounded border border-gray-400 px-3 py-2 text-base sm:text-sm"
         />
         <button
           type="submit"

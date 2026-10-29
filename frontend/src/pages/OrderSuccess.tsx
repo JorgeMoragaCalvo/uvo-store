@@ -42,7 +42,7 @@ export default function OrderSuccess() {
 
   if (status === 'error') {
     return (
-      <div className="mx-auto max-w-lg p-8 text-center">
+      <div className="mx-auto max-w-lg p-4 py-8 text-center sm:p-8">
         <h1 className="mb-2 text-xl font-semibold text-dark">No pudimos confirmar tu pago</h1>
         <p className="mb-6 text-secondary">Si el cargo se realizó, contáctanos con tu número de sesión de pago.</p>
         <Link to="/" className="text-primary underline">Volver al inicio</Link>
@@ -51,7 +51,7 @@ export default function OrderSuccess() {
   }
 
   return (
-    <div className="mx-auto max-w-lg p-8 text-center">
+    <div className="mx-auto max-w-lg p-4 py-8 text-center sm:p-8">
       <div className="mb-4 text-5xl">✓</div>
       <h1 className="mb-2 text-2xl font-semibold text-dark">¡Gracias por tu compra!</h1>
       {orderNumber && <p className="mb-4 text-secondary">Número de pedido: <strong>{orderNumber}</strong></p>}

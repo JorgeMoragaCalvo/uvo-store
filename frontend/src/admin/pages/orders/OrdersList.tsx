@@ -54,13 +54,17 @@ export default function OrdersList() {
           setTab(value)
         }}
       >
-        <TabsList>
-          {TABS.map((item) => (
-            <TabsTrigger key={item.value} value={item.value}>
-              {item.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+        {/* Las seis pestañas no caben en un celular y hacían desplazar toda la página de lado: se
+            desplazan solas dentro de esta franja. */}
+        <div className="max-w-full overflow-x-auto">
+          <TabsList>
+            {TABS.map((item) => (
+              <TabsTrigger key={item.value} value={item.value}>
+                {item.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
       </Tabs>
 
       <div className="relative w-full max-w-sm">

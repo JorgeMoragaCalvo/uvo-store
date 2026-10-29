@@ -12,7 +12,8 @@ import type { AddressValues, ContactValues } from './checkoutSchemas'
 
 const STEPS = ['Contacto', 'Dirección', 'Pago'] as const
 
-const inputClass = 'w-full rounded border border-gray-400 px-3 py-2 text-sm'
+// 16 px en el celular: con menos, iOS acerca la pantalla al enfocar el campo.
+const inputClass = 'w-full rounded border border-gray-400 px-3 py-2 text-base sm:text-sm'
 
 function FieldError({ message }: { message?: string }) {
   if (!message) return null
@@ -283,7 +284,7 @@ export default function Checkout() {
 
             <div>
               <h3 className="mb-2 text-sm font-medium text-dark">Método de pago</h3>
-              <div className="flex gap-3">
+              <div className="flex flex-wrap gap-x-4 gap-y-2">
                 {config?.stripeEnabled && (
                   <label className="flex items-center gap-2 text-sm">
                     <input type="radio" checked={paymentMethod === 'stripe'} onChange={() => setPaymentMethod('stripe')} />
@@ -348,7 +349,7 @@ export default function Checkout() {
             placeholder="Código de descuento"
             value={couponInput}
             onChange={(e) => setCouponInput(e.target.value)}
-            className="min-w-0 flex-1 rounded border border-gray-400 px-3 py-2 text-sm"
+            className="min-w-0 flex-1 rounded border border-gray-400 px-3 py-2 text-base sm:text-sm"
           />
           <button
             type="button"
