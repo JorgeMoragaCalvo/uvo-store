@@ -178,9 +178,9 @@ export default function CouponForm() {
           <CardContent className="flex flex-col gap-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-2">
-                <Label>Tipo</Label>
+                <Label htmlFor="coupon-type">Tipo</Label>
                 <Select value={form.type} onValueChange={(value) => setForm({ ...form, type: value as CouponType })}>
-                  <SelectTrigger>
+                  <SelectTrigger id="coupon-type">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

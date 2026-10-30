@@ -67,6 +67,22 @@ function lineKey(product: Product, variation: ProductVariation | null) {
     : { id: product.id, type: 'product' as const }
 }
 
+export function cartLineKey(line: { id: number; type: string }) {
+  return `${line.type}:${line.id}`
+}
+
+// El backend responde los problemas por posición ("items.0", "items.1", …) —así en /cart/validate como en
+// el 409 de stock del checkout (OutOfStockException)—; aquí se pasan a la clave de cada línea, que no se
+// corre si después se quita otra.
+function errorsByLine(items: CartLine[], errors: Record<string, string> | null | undefined) {
+  const byLine: Record<string, string> = {}
+  for (const [key, message] of Object.entries(errors ?? {})) {
+    const item = items[Number(key.split('.')[1])]
+    if (item) byLine[cartLineKey(item)] = message
+  }
+  return byLine
+}
+
 function saveToLocalStorage(items: CartLine[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(items))
 }
@@ -91,6 +107,12 @@ interface CartState {
   commune: string
   couponCode: string
   loading: boolean
+  // PROD-24b. Lo que el carrito guardado en localStorage no sabe: si el producto sigue a la venta y
+  // cuánto hay. Lo llena validateCart() (o el 409 de stock del checkout) y lo pinta cada línea.
+  lineErrors: Record<string, string>
+  maxQuantities: Record<string, number>
+  // El último /cart/calculate falló: los totales en pantalla pueden ya no ser verdad.
+  totalsError: boolean
   isSidebarOpen: boolean
   openSidebar: () => void
   closeSidebar: () => void
@@ -104,6 +126,7 @@ interface CartState {
   setCouponCode: (couponCode: string) => Promise<void>
   calculateTotals: () => Promise<void>
   validateCart: () => Promise<{ valid: boolean }>
+  applyStockErrors: (errors: Record<string, string> | null | undefined) => void
 }
 
 export const useCartStore = create<CartState>((set, get) => ({
@@ -113,6 +136,9 @@ export const useCartStore = create<CartState>((set, get) => ({
   commune: '',
   couponCode: '',
   loading: false,
+  lineErrors: {},
+  maxQuantities: {},
+  totalsError: false,
   isSidebarOpen: false,
 
   openSidebar: () => set({ isSidebarOpen: true }),
@@ -166,6 +192,8 @@ export const useCartStore = create<CartState>((set, get) => ({
     saveToLocalStorage(items)
     set({ items })
     get().calculateTotals()
+    // Si la línea tenía un aviso de stock, se vuelve a preguntar: la cantidad nueva puede resolverlo.
+    if (Object.keys(get().lineErrors).length > 0) get().validateCart()
   },
 
   removeItem(id, type) {
@@ -173,11 +201,21 @@ export const useCartStore = create<CartState>((set, get) => ({
     saveToLocalStorage(items)
     set({ items })
     get().calculateTotals()
+    if (Object.keys(get().lineErrors).length > 0) get().validateCart()
   },
 
   clearCart() {
     saveToLocalStorage([])
-    set({ items: [], totals: EMPTY_TOTALS, region: '', commune: '', couponCode: '' })
+    set({
+      items: [],
+      totals: EMPTY_TOTALS,
+      region: '',
+      commune: '',
+      couponCode: '',
+      lineErrors: {},
+      maxQuantities: {},
+      totalsError: false,
+    })
   },
 
   // Both re-price immediately: destination decides the shipping cost and the coupon decides the
@@ -205,39 +243,48 @@ export const useCartStore = create<CartState>((set, get) => ({
       // no shipping zone could ever match and shipping came out free on every single order.
       const { region, commune, couponCode } = get()
       const result = await api.cart.calculate(payload, region || undefined, commune || undefined, couponCode || undefined)
-      set({ totals: mapTotals(result) })
+      set({ totals: mapTotals(result), totalsError: false })
     } catch (error) {
+      // PROD-24b. Antes solo quedaba en la consola, y en pantalla seguían los totales anteriores como si
+      // fueran los de este carrito. Pasa, por ejemplo, con un producto que se eliminó de la tienda.
       console.error('Error calculating cart totals', error)
+      set({ totalsError: true })
     }
   },
 
+  // PROD-24b. Pregunta al backend por cada línea: si sigue a la venta y cuánto stock hay. No cambia el
+  // carrito por su cuenta —el comprador ve el aviso en la línea y decide—, pero sí guarda el máximo de
+  // cada una para que el «+» no deje pedir más de lo que hay. Antes este método existía y nadie lo usaba,
+  // y además nunca ajustaba nada: las líneas sin stock suficiente no vienen en `items`, sino en `errors`.
   async validateCart() {
     const items = get().items
-    if (items.length === 0) return { valid: true }
+    if (items.length === 0) {
+      set({ lineErrors: {}, maxQuantities: {} })
+      return { valid: true }
+    }
 
     set({ loading: true })
     try {
       const payload: CartItemInput[] = items.map((item) => ({ id: item.id, type: item.type, quantity: item.quantity }))
       const result = await api.cart.validate(payload)
 
-      if (!result.valid) {
-        const updated = get().items.map((item) => {
-          const validated = result.items.find((v) => v.id === item.id && v.type === item.type)
-          return validated && item.quantity > validated.maxQuantity
-            ? { ...item, quantity: validated.maxQuantity }
-            : item
-        })
-        saveToLocalStorage(updated)
-        set({ items: updated })
-      }
+      const maxQuantities: Record<string, number> = {}
+      for (const validated of result.items) maxQuantities[cartLineKey(validated)] = validated.maxQuantity
+      set({ lineErrors: errorsByLine(items, result.errors), maxQuantities })
 
       return { valid: result.valid }
     } catch (error) {
+      // Sin respuesta no se sabe nada nuevo: se deja el carrito como estaba. El checkout vuelve a
+      // comprobar el stock en el servidor antes de crear la orden.
       console.error('Error validating cart', error)
-      return { valid: false }
+      return { valid: true }
     } finally {
       set({ loading: false })
     }
+  },
+
+  applyStockErrors(errors) {
+    set({ lineErrors: errorsByLine(get().items, errors) })
   },
 }))
 

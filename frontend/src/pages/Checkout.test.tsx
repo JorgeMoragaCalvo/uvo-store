@@ -31,8 +31,12 @@ vi.mock('@/services/api', () => ({
     webpay: {
       create: vi.fn(),
     },
+    payment: {
+      createCheckoutSession: vi.fn(),
+    },
     cart: {
       calculate: vi.fn(),
+      validate: vi.fn(),
     },
     shipping: {
       coverage: vi.fn(),
@@ -105,9 +109,9 @@ function calculation(overrides: Partial<CartCalculationResult> = {}): CartCalcul
   }
 }
 
-function renderCheckout() {
+function renderCheckout(url = '/checkout') {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[url]}>
       <Checkout />
     </MemoryRouter>,
   )
@@ -140,8 +144,103 @@ describe('Checkout page', () => {
     vi.mocked(api.checkout.getConfig).mockResolvedValue(baseConfig)
     vi.mocked(api.shipping.coverage).mockResolvedValue(coverage)
     vi.mocked(api.cart.calculate).mockResolvedValue(calculation())
+    vi.mocked(api.cart.validate).mockResolvedValue({ valid: true, items: [], errors: {} })
     useCartStore.setState({ ...useCartStore.getInitialState(), items: [line] })
     useCheckoutStore.setState(useCheckoutStore.getInitialState())
+    sessionStorage.clear()
+  })
+
+  it('names every contact field with a visible label', () => {
+    renderCheckout()
+
+    expect(screen.getByLabelText('Email')).toBeInTheDocument()
+    expect(screen.getByLabelText('Nombre')).toBeInTheDocument()
+    expect(screen.getByLabelText('Apellido')).toBeInTheDocument()
+    expect(screen.getByLabelText('Teléfono')).toBeInTheDocument()
+    expect(screen.getByLabelText('Código de descuento')).toBeInTheDocument()
+  })
+
+  it('ties a validation error to its field', async () => {
+    const user = userEvent.setup()
+    renderCheckout()
+
+    await user.type(screen.getByLabelText('Email'), 'malo')
+    await user.click(screen.getByRole('button', { name: /continuar/i }))
+
+    const email = screen.getByLabelText('Email')
+    await vi.waitFor(() => expect(email).toHaveAttribute('aria-invalid', 'true'))
+    expect(email).toHaveAccessibleDescription('Ingresa un email válido')
+  })
+
+  it('shows which cart line ran out of stock before the customer reaches «Confirmar»', async () => {
+    const api = (await import('@/services/api')).default
+    vi.mocked(api.cart.validate).mockResolvedValue({
+      valid: false,
+      items: [],
+      errors: { 'items.0': 'Stock insuficiente. Solo hay 0 disponibles' },
+    })
+
+    renderCheckout()
+
+    const alert = await screen.findByText(/necesitan atención/i)
+    expect(alert.parentElement).toHaveTextContent('Producto de prueba: Stock insuficiente. Solo hay 0 disponibles')
+    expect(screen.getByRole('link', { name: /revisar el carrito/i })).toHaveAttribute('href', '/cart')
+  })
+
+  // PROD-24b. Antes la vuelta de la pasarela caía en el paso 1, vacío y sin aviso.
+  it('resumes at the payment step with the saved details after a cancelled payment', async () => {
+    sessionStorage.setItem(
+      'uvostore_pending_payment',
+      JSON.stringify({
+        orderId: 7,
+        orderNumber: 'ORD-7',
+        paymentMethod: 'stripe',
+        cartSignature: JSON.stringify({
+          items: [['product', 1, 1]],
+          region: 'Metropolitana de Santiago',
+          commune: 'Santiago',
+          couponCode: '',
+        }),
+        region: 'Metropolitana de Santiago',
+        commune: 'Santiago',
+        couponCode: '',
+        customer: { email: 'cliente@test.local', firstName: 'Juan', lastName: 'Pérez', phone: '+56911111111' },
+        shippingAddress: {
+          addressLine1: 'Calle Falsa 123',
+          addressLine2: '',
+          city: 'Santiago',
+          state: 'Metropolitana de Santiago',
+          postalCode: '8320000',
+          country: 'CL',
+        },
+        customerNotes: '',
+      }),
+    )
+    const api = (await import('@/services/api')).default
+    vi.mocked(api.checkout.getConfig).mockResolvedValue({ ...baseConfig, stripeEnabled: true })
+    vi.mocked(api.payment.createCheckoutSession).mockResolvedValue({ sessionId: 's', url: 'https://stripe.test/pay' })
+    const assign = vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, href: '' } as Location)
+
+    const user = userEvent.setup()
+    renderCheckout('/checkout?canceled=1')
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/no se completó el pago/i)
+    await user.click(await screen.findByRole('button', { name: /confirmar pedido/i }))
+
+    await vi.waitFor(() => expect(api.payment.createCheckoutSession).toHaveBeenCalledWith(7))
+    expect(api.checkout.createOrder).not.toHaveBeenCalled()
+    assign.mockRestore()
+  })
+
+  it('does not offer to pay again while the payment is still being processed', async () => {
+    sessionStorage.setItem('uvostore_pending_payment', JSON.stringify({ orderId: 7, orderNumber: 'ORD-7' }))
+
+    renderCheckout('/checkout?pending=1')
+
+    expect(screen.getByRole('heading', { name: /tu pago está en proceso/i })).toBeInTheDocument()
+    expect(screen.getByText('ORD-7')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /seguir mi pedido/i })).toHaveAttribute('href', '/track-order?order=ORD-7')
+    expect(screen.queryByRole('button', { name: /confirmar pedido/i })).not.toBeInTheDocument()
   })
 
   it('shows an empty-cart message and skips the wizard when the cart is empty', () => {

@@ -84,6 +84,7 @@ async function setup() {
 describe('useCheckoutStore.processCheckout', () => {
   beforeEach(async () => {
     localStorage.clear()
+    sessionStorage.clear()
   })
 
   it('does nothing when the cart is empty', async () => {
@@ -151,14 +152,132 @@ describe('useCheckoutStore.processCheckout', () => {
 
   it('sets an error and does not clear the cart when order creation fails', async () => {
     const { api, useCheckoutStore } = await setup()
-    vi.mocked(api.checkout.createOrder).mockRejectedValue({ message: 'Stock insuficiente' })
+    vi.mocked(api.checkout.createOrder).mockRejectedValue({ status: 400, message: 'Cupón vencido' })
 
     const result = await useCheckoutStore.getState().processCheckout()
 
     expect(result).toEqual({ success: false })
-    expect(useCheckoutStore.getState().error).toBe('Stock insuficiente')
+    expect(useCheckoutStore.getState().error).toBe('Cupón vencido')
     expect(useCheckoutStore.getState().loading).toBe(false)
     expect(clearCart).not.toHaveBeenCalled()
+  })
+
+  // PROD-24b. Sin respuesta, el mensaje era el de axios, en inglés.
+  it('explains a network failure in Spanish instead of showing the axios message', async () => {
+    const { api, useCheckoutStore } = await setup()
+    vi.mocked(api.checkout.createOrder).mockRejectedValue({ message: 'Network Error' })
+
+    await useCheckoutStore.getState().processCheckout()
+
+    expect(useCheckoutStore.getState().error).toMatch(/no pudimos conectar/i)
+  })
+
+  it('hands the per-line stock problems of a 409 to the cart', async () => {
+    const { api, useCheckoutStore } = await setup()
+    const applyStockErrors = vi.fn()
+    const { useCartStore } = await import('@/stores/useCartStore')
+    vi.mocked(useCartStore.getState).mockReturnValue({ items: [cartLine], clearCart, applyStockErrors } as never)
+    vi.mocked(api.checkout.createOrder).mockRejectedValue({
+      status: 409,
+      message: 'Uno o más productos no tienen stock suficiente',
+      fieldErrors: { 'items.0': 'Stock insuficiente. Solo hay 1 disponibles' },
+    })
+
+    await useCheckoutStore.getState().processCheckout()
+
+    expect(applyStockErrors).toHaveBeenCalledWith({ 'items.0': 'Stock insuficiente. Solo hay 1 disponibles' })
+    expect(useCheckoutStore.getState().error).toBe('Uno o más productos no tienen stock suficiente')
+  })
+
+  // El botón no puede volver a activarse mientras el navegador sale hacia la pasarela.
+  it('keeps loading while the browser leaves for the gateway', async () => {
+    const { api, useCheckoutStore } = await setup()
+    useCheckoutStore.setState({ paymentMethod: 'stripe' })
+    vi.mocked(api.payment.createCheckoutSession).mockResolvedValue({ sessionId: 'sess_1', url: 'https://stripe.test/pay' })
+
+    await useCheckoutStore.getState().processCheckout()
+
+    expect(useCheckoutStore.getState().loading).toBe(true)
+  })
+})
+
+// PROD-24b. Volver de la pasarela sin pagar y reintentar paga la MISMA orden: una nueva retenía otra vez
+// stock y cupón durante 24 h.
+describe('useCheckoutStore — retrying a payment', () => {
+  beforeEach(() => {
+    sessionStorage.clear()
+  })
+
+  it('pays the same order again instead of creating another one', async () => {
+    const { api, useCheckoutStore } = await setup()
+    useCheckoutStore.setState({ paymentMethod: 'stripe' })
+    vi.mocked(api.payment.createCheckoutSession).mockResolvedValue({ sessionId: 'sess_1', url: 'https://stripe.test/pay' })
+
+    await useCheckoutStore.getState().processCheckout()
+    await useCheckoutStore.getState().processCheckout()
+
+    expect(api.checkout.createOrder).toHaveBeenCalledTimes(1)
+    expect(api.payment.createCheckoutSession).toHaveBeenCalledTimes(2)
+    expect(api.payment.createCheckoutSession).toHaveBeenLastCalledWith(confirmation.orderId)
+  })
+
+  it('creates a new order when the payment method changed', async () => {
+    const { api, useCheckoutStore } = await setup()
+    useCheckoutStore.setState({ paymentMethod: 'stripe' })
+    vi.mocked(api.payment.createCheckoutSession).mockResolvedValue({ sessionId: 'sess_1', url: 'https://stripe.test/pay' })
+    vi.mocked(api.webpay.create).mockResolvedValue({ token: 'tok', url: 'https://webpay.test/init' })
+
+    await useCheckoutStore.getState().processCheckout()
+    useCheckoutStore.setState({ paymentMethod: 'webpay' })
+    await useCheckoutStore.getState().processCheckout()
+
+    expect(api.checkout.createOrder).toHaveBeenCalledTimes(2)
+  })
+
+  it('creates a new order when the cart changed', async () => {
+    const { api, useCheckoutStore } = await setup()
+    useCheckoutStore.setState({ paymentMethod: 'stripe' })
+    vi.mocked(api.payment.createCheckoutSession).mockResolvedValue({ sessionId: 'sess_1', url: 'https://stripe.test/pay' })
+
+    await useCheckoutStore.getState().processCheckout()
+    const { useCartStore } = await import('@/stores/useCartStore')
+    vi.mocked(useCartStore.getState).mockReturnValue({ items: [{ ...cartLine, quantity: 3 }], clearCart } as never)
+    await useCheckoutStore.getState().processCheckout()
+
+    expect(api.checkout.createOrder).toHaveBeenCalledTimes(2)
+  })
+
+  // Webpay marca la orden fallida al rechazar el pago, y el backend responde 400 a un pago nuevo sobre ella.
+  it('falls back to a new order when the saved one is no longer payable', async () => {
+    const { api, useCheckoutStore } = await setup()
+    useCheckoutStore.setState({ paymentMethod: 'webpay' })
+    vi.mocked(api.webpay.create)
+      .mockResolvedValueOnce({ token: 'tok_1', url: 'https://webpay.test/init' })
+      .mockRejectedValueOnce({ status: 400, message: 'Esta orden ya fue procesada' })
+      .mockResolvedValueOnce({ token: 'tok_2', url: 'https://webpay.test/init' })
+    vi.mocked(api.checkout.createOrder)
+      .mockResolvedValueOnce(confirmation)
+      .mockResolvedValueOnce({ orderId: 43, orderNumber: 'ORD-43', total: 2000 })
+
+    await useCheckoutStore.getState().processCheckout()
+    const result = await useCheckoutStore.getState().processCheckout()
+
+    expect(api.checkout.createOrder).toHaveBeenCalledTimes(2)
+    expect(api.webpay.create).toHaveBeenLastCalledWith(43)
+    expect(result).toEqual({ success: true, webpayForm: { url: 'https://webpay.test/init', token: 'tok_2' } })
+  })
+
+  it('never reuses an order for a cash-on-delivery purchase', async () => {
+    const { api, useCheckoutStore } = await setup()
+    useCheckoutStore.setState({ paymentMethod: 'stripe' })
+    vi.mocked(api.payment.createCheckoutSession).mockResolvedValue({ sessionId: 'sess_1', url: 'https://stripe.test/pay' })
+
+    await useCheckoutStore.getState().processCheckout()
+    useCheckoutStore.setState({ paymentMethod: 'manual' })
+    await useCheckoutStore.getState().processCheckout()
+
+    expect(api.checkout.createOrder).toHaveBeenCalledTimes(2)
+    expect(sessionStorage.getItem('uvostore_pending_payment')).toBeNull()
   })
 })
 

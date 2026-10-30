@@ -2,6 +2,8 @@ import { Link } from 'react-router-dom'
 import { useStoreSettingsStore } from '../stores/useStoreSettingsStore'
 import HeroSlider from '../components/home/HeroSlider'
 import ProductSection from '../components/home/ProductSection'
+import Loading from '../components/Loading'
+import { useStoreTitle } from '../hooks/useDocumentTitle'
 
 const BENEFIT_ICONS: Record<string, string> = {
   truck: '🚚',
@@ -11,9 +13,23 @@ const BENEFIT_ICONS: Record<string, string> = {
 }
 
 export default function Home() {
-  const { settings, banners, categories } = useStoreSettingsStore()
+  const { settings, banners, categories, error } = useStoreSettingsStore()
+  const fetchAll = useStoreSettingsStore((state) => state.fetchAll)
+  useStoreTitle()
 
-  if (!settings) return null
+  // PROD-24b. Si los ajustes no llegaban, el inicio quedaba en blanco para siempre, sin aviso ni salida.
+  if (error) {
+    return (
+      <div className="mx-auto max-w-lg p-8 text-center">
+        <p role="alert" className="mb-4 text-secondary">{error}</p>
+        <button type="button" onClick={() => fetchAll()} className="rounded bg-primary px-4 py-2 text-sm font-medium text-white">
+          Reintentar
+        </button>
+      </div>
+    )
+  }
+
+  if (!settings) return <Loading size="lg" />
 
   const benefits = [
     { icon: settings.benefit1Icon, title: settings.benefit1Title, description: settings.benefit1Description },
@@ -37,7 +53,8 @@ export default function Home() {
                 className="flex flex-col items-center gap-2 rounded-lg border border-gray-100 p-4 text-center hover:border-primary"
               >
                 <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full bg-gray-100">
-                  {category.image && <img src={category.image} alt={category.name} loading="lazy" className="h-full w-full object-cover" />}
+                  {/* El nombre va debajo, dentro del mismo enlace: como alt se leía dos veces. */}
+                  {category.image && <img src={category.image} alt="" loading="lazy" className="h-full w-full object-cover" />}
                 </div>
                 <span className="text-sm font-medium text-dark">{category.name}</span>
               </Link>
@@ -76,7 +93,7 @@ export default function Home() {
           <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
             {benefits.map((benefit) => (
               <div key={benefit.title} className="flex flex-col items-center gap-2 text-center">
-                <span className="text-3xl">{BENEFIT_ICONS[benefit.icon ?? ''] ?? '✔️'}</span>
+                <span aria-hidden="true" className="text-3xl">{BENEFIT_ICONS[benefit.icon ?? ''] ?? '✔️'}</span>
                 <span className="text-sm font-semibold text-dark">{benefit.title}</span>
                 {benefit.description && <span className="text-xs text-secondary">{benefit.description}</span>}
               </div>

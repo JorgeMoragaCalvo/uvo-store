@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -53,6 +53,14 @@ export default function ZoneForm() {
   const [filters, setFilters] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  // PROD-24b. Lo que falta elegir, junto a la cobertura y no en un toast que se va solo: quien usa lector de
+  // pantalla o teclado necesita llegar al mensaje y al campo que lo resuelve. `region` dice cuál bloque.
+  const [coverageError, setCoverageError] = useState<{ message: string; region: string | null } | null>(null)
+  const coverageErrorRef = useRef<HTMLParagraphElement>(null)
+
+  useEffect(() => {
+    if (coverageError) coverageErrorRef.current?.focus()
+  }, [coverageError])
 
   useEffect(() => {
     const zone = id ? adminApi.shippingZones.getById(Number(id)) : Promise.resolve(null)
@@ -75,6 +83,7 @@ export default function ZoneForm() {
   }, [id])
 
   function toggleRegion(region: string, checked: boolean) {
+    setCoverageError(null)
     setSelection((prev) => {
       const next = new Map(prev)
       if (checked) next.set(region, { whole: true, communes: new Set() })
@@ -84,6 +93,7 @@ export default function ZoneForm() {
   }
 
   function setWhole(region: string, whole: boolean) {
+    setCoverageError(null)
     setSelection((prev) => {
       const current = prev.get(region)
       if (!current) return prev
@@ -92,6 +102,7 @@ export default function ZoneForm() {
   }
 
   function toggleCommune(region: string, commune: string, checked: boolean) {
+    setCoverageError(null)
     setSelection((prev) => {
       const current = prev.get(region)
       if (!current) return prev
@@ -107,7 +118,7 @@ export default function ZoneForm() {
     // En el orden del catálogo, de norte a sur, y no en el que se fueron marcando.
     const chosen = catalog.filter((region) => selection.has(region.name))
     if (chosen.length === 0) {
-      toast.error('Elige al menos una región')
+      setCoverageError({ message: 'Elige al menos una región', region: null })
       return
     }
     const empty = chosen.find((region) => {
@@ -115,7 +126,7 @@ export default function ZoneForm() {
       return current && !current.whole && current.communes.size === 0
     })
     if (empty) {
-      toast.error(`Elige al menos una comuna de ${empty.name}, o marca «Toda la región»`)
+      setCoverageError({ message: `Elige al menos una comuna de ${empty.name}, o marca «Toda la región»`, region: empty.name })
       return
     }
 
@@ -198,6 +209,17 @@ export default function ZoneForm() {
             <CardTitle>Cobertura</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
+            {coverageError && (
+              <p
+                id="coverage-error"
+                ref={coverageErrorRef}
+                role="alert"
+                tabIndex={-1}
+                className="rounded-md bg-red-50 p-3 text-sm text-red-800 outline-none"
+              >
+                {coverageError.message}
+              </p>
+            )}
             {unrecognized.length > 0 && (
               <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">
                 Esta zona tiene regiones o comunas escritas a mano que no están en el catálogo, y no se usan
@@ -250,6 +272,8 @@ export default function ZoneForm() {
                         <Input
                           placeholder="Buscar comuna…"
                           aria-label={`Buscar comuna en ${region.name}`}
+                          aria-invalid={coverageError?.region === region.name || undefined}
+                          aria-describedby={coverageError?.region === region.name ? 'coverage-error' : undefined}
                           value={filters[region.code] ?? ''}
                           onChange={(event) => setFilters({ ...filters, [region.code]: event.target.value })}
                         />

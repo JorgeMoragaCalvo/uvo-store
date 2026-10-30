@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
@@ -19,6 +19,7 @@ import { useAdminRolesStore } from '@/admin/stores/useAdminRolesStore'
 import type { RoleDto } from '@/admin/types/admin'
 
 export default function RolesList() {
+  const headingRef = useRef<HTMLHeadingElement>(null)
   const roles = useAdminRolesStore((state) => state.roles)
   const loading = useAdminRolesStore((state) => state.loading)
   const fetch = useAdminRolesStore((state) => state.fetch)
@@ -32,6 +33,9 @@ export default function RolesList() {
     try {
       await remove(role.id)
       toast.success('Rol eliminado')
+      // PROD-24b. La fila (y con ella el botón que abrió el diálogo) ya no existe: sin esto el foco cae al
+      // principio de la página. Se lleva al título de la lista.
+      headingRef.current?.focus()
     } catch (err) {
       const message = (err as { message?: string })?.message
       toast.error(message ?? 'No se pudo eliminar el rol')
@@ -41,7 +45,7 @@ export default function RolesList() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-semibold">Roles</h1>
+        <h1 ref={headingRef} tabIndex={-1} className="text-2xl font-semibold outline-none">Roles</h1>
         <Button asChild>
           <Link to="/admin/roles/new">
             <Plus className="size-4" />
@@ -84,13 +88,13 @@ export default function RolesList() {
                   <TableCell>
                     <div className="flex justify-end gap-2">
                       <Button variant="ghost" size="icon" asChild>
-                        <Link to={`/admin/roles/${role.id}/edit`}>
+                        <Link to={`/admin/roles/${role.id}/edit`} aria-label={`Editar ${role.name}`}>
                           <Pencil className="size-4" />
                         </Link>
                       </Button>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <Button variant="ghost" size="icon">
+                          <Button variant="ghost" size="icon" aria-label={`Eliminar ${role.name}`}>
                             <Trash2 className="size-4 text-destructive" />
                           </Button>
                         </AlertDialogTrigger>

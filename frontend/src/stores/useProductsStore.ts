@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import api from '../services/api'
+import { friendlyError } from '../services/errors'
 import type { Product, ProductSearchParams } from '../types/api'
 
 interface ProductsState {
@@ -32,7 +33,8 @@ export const useProductsStore = create<ProductsState>((set) => ({
         loading: false,
       })
     } catch (error) {
-      set({ loading: false, error: (error as { message?: string }).message ?? 'Error loading products' })
+      // PROD-24b. Un texto para el comprador, no el de axios.
+      set({ loading: false, error: friendlyError(error, 'No pudimos cargar los productos. Inténtalo de nuevo en unos minutos.') })
     }
   },
 }))

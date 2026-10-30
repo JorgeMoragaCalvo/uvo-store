@@ -144,9 +144,9 @@ export default function RateForm() {
           <CardContent className="flex flex-col gap-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-2">
-                <Label>Método</Label>
+                <Label htmlFor="rate-method">Método</Label>
                 <Select value={form.methodId || undefined} onValueChange={(value) => setForm({ ...form, methodId: value })}>
-                  <SelectTrigger>
+                  <SelectTrigger id="rate-method">
                     <SelectValue placeholder="Selecciona un método" />
                   </SelectTrigger>
                   <SelectContent>
@@ -159,9 +159,9 @@ export default function RateForm() {
                 </Select>
               </div>
               <div className="flex flex-col gap-2">
-                <Label>Zona</Label>
+                <Label htmlFor="rate-zone">Zona</Label>
                 <Select value={form.zoneId || undefined} onValueChange={(value) => setForm({ ...form, zoneId: value })}>
-                  <SelectTrigger>
+                  <SelectTrigger id="rate-zone">
                     <SelectValue placeholder="Selecciona una zona" />
                   </SelectTrigger>
                   <SelectContent>
@@ -179,9 +179,9 @@ export default function RateForm() {
               <Input id="name" required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
             </div>
             <div className="flex flex-col gap-2">
-              <Label>Tipo de tarifa</Label>
+              <Label htmlFor="rate-type">Tipo de tarifa</Label>
               <Select value={form.rateType} onValueChange={(value) => setForm({ ...form, rateType: value as ShippingRateType })}>
-                <SelectTrigger>
+                <SelectTrigger id="rate-type">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

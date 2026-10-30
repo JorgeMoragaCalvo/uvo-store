@@ -107,12 +107,25 @@ describe('ProductDetail page', () => {
 
   it('shows a not-found message when the product fails to load', async () => {
     const api = (await import('@/services/api')).default
-    vi.mocked(api.products.getBySlug).mockRejectedValue(new Error('404'))
+    vi.mocked(api.products.getBySlug).mockRejectedValue({ status: 404, message: 'Product not found' })
     vi.mocked(api.products.getRelated).mockResolvedValue([])
 
     renderAt('no-existe')
 
-    expect(await screen.findByText('Producto no encontrado.')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Producto no encontrado.' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /ver otros productos/i })).toHaveAttribute('href', '/shop')
+  })
+
+  // PROD-24b. Una red caída decía «Producto no encontrado», como si se hubiera borrado.
+  it('does not call a network failure «not found»', async () => {
+    const api = (await import('@/services/api')).default
+    vi.mocked(api.products.getBySlug).mockRejectedValue({ message: 'Network Error' })
+    vi.mocked(api.products.getRelated).mockResolvedValue([])
+
+    renderAt('producto-simple')
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/no pudimos conectar/i)
+    expect(screen.queryByText('Producto no encontrado.')).not.toBeInTheDocument()
   })
 
   it('adds a simple product to the cart with the selected quantity', async () => {
@@ -124,7 +137,7 @@ describe('ProductDetail page', () => {
     renderAt(simpleProduct.slug)
 
     await screen.findByText(simpleProduct.name)
-    await user.click(screen.getByRole('button', { name: '+' }))
+    await user.click(screen.getByRole('button', { name: 'Aumentar cantidad' }))
     await user.click(screen.getByRole('button', { name: /agregar al carrito/i }))
 
     expect(useCartStore.getState().items).toHaveLength(1)
@@ -196,7 +209,7 @@ describe('ProductDetail page', () => {
     renderAt(simpleProduct.slug)
 
     await screen.findByText(simpleProduct.name)
-    await user.click(screen.getByRole('button', { name: '+' }))
+    await user.click(screen.getByRole('button', { name: 'Aumentar cantidad' }))
     await user.click(screen.getByRole('button', { name: /agregar al carrito/i }))
     await user.click(screen.getByRole('button', { name: /comprar ahora/i }))
 

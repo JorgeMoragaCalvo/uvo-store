@@ -46,9 +46,29 @@ export default function Footer() {
         <div>
           <h4 className="mb-3 font-semibold text-white">Contacto</h4>
           <ul className="space-y-2 text-sm">
-            {settings?.contactEmail && <li>{settings.contactEmail}</li>}
-            {settings?.contactPhone && <li>{settings.contactPhone}</li>}
-            {settings?.whatsappNumber && <li>WhatsApp: {settings.whatsappNumber}</li>}
+            {/* PROD-24b. Enlaces y no texto: en el celular, tocar el número llama y tocar el correo lo abre. */}
+            {settings?.contactEmail && (
+              <li>
+                <a href={`mailto:${settings.contactEmail}`} className="hover:text-white">{settings.contactEmail}</a>
+              </li>
+            )}
+            {settings?.contactPhone && (
+              <li>
+                <a href={`tel:${settings.contactPhone.replace(/[^\d+]/g, '')}`} className="hover:text-white">{settings.contactPhone}</a>
+              </li>
+            )}
+            {settings?.whatsappNumber && (
+              <li>
+                <a
+                  href={`https://wa.me/${settings.whatsappNumber.replace(/\D/g, '')}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="hover:text-white"
+                >
+                  WhatsApp: {settings.whatsappNumber}
+                </a>
+              </li>
+            )}
           </ul>
           {socials.length > 0 && (
             <ul className="mt-4 flex gap-3 text-sm">

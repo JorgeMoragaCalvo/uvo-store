@@ -7,6 +7,8 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import adminApi from '@/admin/services/adminApi'
 
+const MISMATCH = 'Las contraseñas no coinciden'
+
 export default function ResetPassword() {
   const [searchParams] = useSearchParams()
   const token = searchParams.get('token') ?? ''
@@ -23,7 +25,7 @@ export default function ResetPassword() {
     setError(null)
 
     if (password !== confirmPassword) {
-      setError('Las contraseñas no coinciden')
+      setError(MISMATCH)
       return
     }
 
@@ -92,9 +94,16 @@ export default function ResetPassword() {
                   minLength={8}
                   value={confirmPassword}
                   onChange={(event) => setConfirmPassword(event.target.value)}
+                  // PROD-24b. El error de «no coinciden» es de este campo: se marca y se le une el mensaje.
+                  aria-invalid={error === MISMATCH || undefined}
+                  aria-describedby={error === MISMATCH ? 'form-error' : undefined}
                 />
               </div>
-              {error && <p className="text-sm text-destructive">{error}</p>}
+              {error && (
+                <p id="form-error" role="alert" className="text-sm text-destructive">
+                  {error}
+                </p>
+              )}
               <Button type="submit" disabled={loading} className="mt-2">
                 {loading ? 'Guardando…' : 'Guardar contraseña'}
               </Button>

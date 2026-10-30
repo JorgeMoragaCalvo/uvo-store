@@ -28,6 +28,7 @@ vi.mock('@/services/api', () => ({
   default: {
     cart: {
       calculate: vi.fn().mockResolvedValue(calculationResult),
+      validate: vi.fn().mockResolvedValue({ valid: true, items: [], errors: {} }),
     },
   },
 }))
@@ -71,6 +72,7 @@ function renderCart() {
 describe('Cart page', () => {
   beforeEach(() => {
     localStorage.clear()
+    useCartStore.setState({ lineErrors: {}, maxQuantities: {}, totalsError: false })
   })
 
   it('shows an empty-cart message with a link back to the shop', () => {
@@ -97,8 +99,40 @@ describe('Cart page', () => {
     const user = userEvent.setup()
 
     renderCart()
-    await user.click(screen.getByTitle('Eliminar'))
+    await user.click(screen.getByRole('button', { name: 'Eliminar Producto de prueba del carrito' }))
 
     expect(screen.getByText('Tu carrito está vacío')).toBeInTheDocument()
+  })
+
+  // PROD-24b. El carrito de localStorage puede tener días: al abrirlo se pregunta por cada línea.
+  it('flags the line that ran out of stock', async () => {
+    const api = (await import('@/services/api')).default
+    vi.mocked(api.cart.validate).mockResolvedValueOnce({
+      valid: false,
+      items: [],
+      errors: { 'items.0': 'Stock insuficiente. Solo hay 1 disponibles' },
+    })
+    useCartStore.setState({ items: [line], totals: { ...useCartStore.getInitialState().totals, total: 10000 } })
+
+    renderCart()
+
+    expect(await screen.findByText('Stock insuficiente. Solo hay 1 disponibles')).toBeInTheDocument()
+    expect(screen.getByText(/un producto necesita atención/i)).toBeInTheDocument()
+  })
+
+  it('disables «+» once the line reaches the stock the store reported', async () => {
+    const api = (await import('@/services/api')).default
+    vi.mocked(api.cart.validate).mockResolvedValueOnce({
+      valid: true,
+      items: [{ id: 1, type: 'product', name: product.name, variation: null, price: 5000, stock: 2, image: null, maxQuantity: 2 }],
+      errors: {},
+    })
+    useCartStore.setState({ items: [line], totals: { ...useCartStore.getInitialState().totals, total: 10000 } })
+
+    renderCart()
+
+    await vi.waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Agregar uno de Producto de prueba' })).toBeDisabled(),
+    )
   })
 })

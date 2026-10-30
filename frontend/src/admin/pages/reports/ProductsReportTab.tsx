@@ -71,6 +71,7 @@ export default function ProductsReportTab({ dateRange }: { dateRange: ReportDate
           <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
           <Input
             placeholder="Buscar producto…"
+            aria-label="Buscar producto"
             className="pl-8"
             value={search}
             onChange={(event) => {

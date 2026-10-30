@@ -52,6 +52,7 @@ export default function BannerForm() {
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [image, setImage] = useState<File | null>(null)
+  const [imageError, setImageError] = useState<string | null>(null)
   const [mobileImage, setMobileImage] = useState<File | null>(null)
   const [currentImage, setCurrentImage] = useState<string | null>(null)
   const [currentMobileImage, setCurrentMobileImage] = useState<string | null>(null)
@@ -89,7 +90,9 @@ export default function BannerForm() {
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
     if (!isEdit && !image) {
-      toast.error('La imagen es obligatoria')
+      // PROD-24b. Junto al campo y no en un toast: el foco va al campo que falta y el mensaje queda unido a él.
+      setImageError('La imagen es obligatoria')
+      document.getElementById('newImage')?.focus()
       return
     }
     setSaving(true)
@@ -208,9 +211,9 @@ export default function BannerForm() {
           </CardHeader>
           <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-2">
-              <Label>Posición del texto</Label>
+              <Label htmlFor="text-position">Posición del texto</Label>
               <Select value={form.textPosition} onValueChange={(v) => setForm({ ...form, textPosition: v as FormState['textPosition'] })}>
-                <SelectTrigger>
+                <SelectTrigger id="text-position">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -221,9 +224,9 @@ export default function BannerForm() {
               </Select>
             </div>
             <div className="flex flex-col gap-2">
-              <Label>Color del texto</Label>
+              <Label htmlFor="text-color">Color del texto</Label>
               <Select value={form.textColor} onValueChange={(v) => setForm({ ...form, textColor: v as FormState['textColor'] })}>
-                <SelectTrigger>
+                <SelectTrigger id="text-color">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -276,7 +279,22 @@ export default function BannerForm() {
             )}
             <div className="flex flex-col gap-2">
               <Label htmlFor="newImage">{currentImage ? 'Reemplazar imagen (desktop)' : 'Imagen (desktop)'}</Label>
-              <Input id="newImage" type="file" accept="image/*" onChange={(e) => setImage(e.target.files?.[0] ?? null)} />
+              <Input
+                id="newImage"
+                type="file"
+                accept="image/*"
+                aria-invalid={imageError ? true : undefined}
+                aria-describedby={imageError ? 'newImage-error' : undefined}
+                onChange={(e) => {
+                  setImage(e.target.files?.[0] ?? null)
+                  setImageError(null)
+                }}
+              />
+              {imageError && (
+                <p id="newImage-error" role="alert" className="text-sm text-destructive">
+                  {imageError}
+                </p>
+              )}
             </div>
             {currentMobileImage && (
               <div className="flex items-center gap-3">

@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import api from '../services/api'
 import { useCartStore } from '../stores/useCartStore'
+import { clearPendingPayment } from '../stores/useCheckoutStore'
+import { useStoreTitle } from '../hooks/useDocumentTitle'
 
 export default function OrderSuccess() {
   const [searchParams] = useSearchParams()
@@ -12,6 +14,7 @@ export default function OrderSuccess() {
 
   const [status, setStatus] = useState<'loading' | 'ok' | 'error'>(sessionId ? 'loading' : 'ok')
   const [orderNumber, setOrderNumber] = useState<string | null>(orderParam)
+  useStoreTitle(status === 'error' ? 'No pudimos confirmar tu pago' : status === 'ok' ? 'Pedido confirmado' : 'Verificando tu pago')
 
   useEffect(() => {
     if (!sessionId) return
@@ -22,6 +25,7 @@ export default function OrderSuccess() {
         setOrderNumber(result.orderNumber)
         setStatus('ok')
         clearCart()
+        clearPendingPayment()
       })
       .catch(() => setStatus('error'))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -33,26 +37,44 @@ export default function OrderSuccess() {
   useEffect(() => {
     if (!orderParam) return
     clearCart()
+    // La orden guardada para reintentar el pago ya está pagada: no hay nada que retomar.
+    clearPendingPayment()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderParam])
 
   if (status === 'loading') {
-    return <p className="p-8 text-center text-secondary">Verificando tu pago...</p>
+    return (
+      <p role="status" className="p-8 text-center text-secondary">
+        Verificando tu pago...
+      </p>
+    )
   }
 
   if (status === 'error') {
     return (
       <div className="mx-auto max-w-lg p-4 py-8 text-center sm:p-8">
         <h1 className="mb-2 text-xl font-semibold text-dark">No pudimos confirmar tu pago</h1>
-        <p className="mb-6 text-secondary">Si el cargo se realizó, contáctanos con tu número de sesión de pago.</p>
-        <Link to="/" className="text-primary underline">Volver al inicio</Link>
+        {/* PROD-24b. El texto pedía «tu número de sesión de pago», pero no lo mostraba en ninguna parte. */}
+        <p role="alert" className="mb-2 text-secondary">
+          Puede que el pago se esté procesando todavía. Si el cargo se realizó, contáctanos con este número de
+          sesión de pago:
+        </p>
+        <p className="mb-6 break-all font-mono text-sm text-dark">{sessionId}</p>
+        <div className="flex flex-wrap justify-center gap-3">
+          <Link to="/track-order" className="rounded border border-gray-400 px-4 py-2 text-sm font-medium text-dark">
+            Seguir mi pedido
+          </Link>
+          <Link to="/" className="rounded bg-primary px-4 py-2 text-sm font-medium text-white">
+            Volver al inicio
+          </Link>
+        </div>
       </div>
     )
   }
 
   return (
     <div className="mx-auto max-w-lg p-4 py-8 text-center sm:p-8">
-      <div className="mb-4 text-5xl">✓</div>
+      <div aria-hidden="true" className="mb-4 text-5xl">✓</div>
       <h1 className="mb-2 text-2xl font-semibold text-dark">¡Gracias por tu compra!</h1>
       {orderNumber && <p className="mb-4 text-secondary">Número de pedido: <strong>{orderNumber}</strong></p>}
 
@@ -64,7 +86,15 @@ export default function OrderSuccess() {
         </ul>
       </div>
 
-      <div className="flex justify-center gap-3">
+      <div className="flex flex-wrap justify-center gap-3">
+        {orderNumber && (
+          <Link
+            to={`/track-order?order=${encodeURIComponent(orderNumber)}`}
+            className="rounded border border-gray-400 px-4 py-2 text-sm font-medium text-dark"
+          >
+            Seguir mi pedido
+          </Link>
+        )}
         <Link to="/" className="rounded border border-gray-400 px-4 py-2 text-sm font-medium text-dark">Volver al inicio</Link>
         <Link to="/shop" className="rounded bg-primary px-4 py-2 text-sm font-medium text-white">Seguir comprando</Link>
       </div>

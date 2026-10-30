@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { ArrowLeft, Star, Trash2 } from 'lucide-react'
@@ -56,6 +56,7 @@ function CustomerDetailContent({ customer, onBack }: { customer: AdminCustomerDe
   const ordersLoading = useAdminCustomersStore((state) => state.ordersLoading)
   const fetchOrders = useAdminCustomersStore((state) => state.fetchOrders)
   const refreshDetail = useAdminCustomersStore((state) => state.refreshDetail)
+  const headingRef = useRef<HTMLHeadingElement>(null)
 
   const [ordersPage, setOrdersPage] = useState(1)
   const [busyAddressId, setBusyAddressId] = useState<number | null>(null)
@@ -83,6 +84,8 @@ function CustomerDetailContent({ customer, onBack }: { customer: AdminCustomerDe
       await adminApi.customers.deleteAddress(customer.id, address.id)
       await refreshDetail()
       toast.success('Dirección eliminada')
+      // PROD-24b. El botón que abrió el diálogo se fue con la dirección: el foco vuelve al título.
+      headingRef.current?.focus()
     } catch {
       toast.error('No se pudo eliminar la dirección')
     } finally {
@@ -100,10 +103,10 @@ function CustomerDetailContent({ customer, onBack }: { customer: AdminCustomerDe
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={onBack}>
+        <Button variant="ghost" size="icon" onClick={onBack} aria-label="Volver a los clientes">
           <ArrowLeft className="size-4" />
         </Button>
-        <h1 className="text-2xl font-semibold">
+        <h1 ref={headingRef} tabIndex={-1} className="text-2xl font-semibold outline-none">
           {customer.firstName} {customer.lastName}
         </h1>
         <Badge variant={customer.accountStatus === 'ACTIVE' ? 'default' : 'secondary'}>
@@ -172,13 +175,19 @@ function CustomerDetailContent({ customer, onBack }: { customer: AdminCustomerDe
                     disabled={busyAddressId === address.id}
                     onClick={() => handleSetDefault(address)}
                     title="Marcar como predeterminada"
+                    aria-label={`Marcar como predeterminada: ${address.addressLine1}`}
                   >
                     <Star className="size-4" />
                   </Button>
                 )}
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
-                    <Button variant="ghost" size="icon" disabled={busyAddressId === address.id}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      disabled={busyAddressId === address.id}
+                      aria-label={`Eliminar dirección: ${address.addressLine1}`}
+                    >
                       <Trash2 className="size-4 text-destructive" />
                     </Button>
                   </AlertDialogTrigger>

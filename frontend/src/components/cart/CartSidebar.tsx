@@ -1,31 +1,45 @@
+import { useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { useCartStore } from '../../stores/useCartStore'
 import CartLineItem from './CartLineItem'
 import { formatCurrency } from '../../utils/currency'
+import { Sheet, SheetClose, SheetContent, SheetTitle } from '../ui/sheet'
 
+// PROD-24b. Era un <aside> encima de un <div> clickeable: sin rol de diálogo, sin Escape, sin llevar el
+// foco adentro ni devolverlo, y la página de atrás seguía recibiendo el Tab y el scroll. El Sheet de Radix
+// (el mismo del menú del celular) trae todo eso.
 export default function CartSidebar() {
   const isOpen = useCartStore((state) => state.isSidebarOpen)
   const close = useCartStore((state) => state.closeSidebar)
   const items = useCartStore((state) => state.items)
   const totals = useCartStore((state) => state.totals)
-
-  if (!isOpen) return null
+  // Radix devuelve el foco a su propio Trigger, y este diálogo no tiene: lo abre el botón del header (o
+  // «Agregar al carrito»), que viven en otro componente. Sin esto, al cerrar el foco caía al <body>.
+  const returnFocusRef = useRef<HTMLElement | null>(null)
 
   return (
-    <>
-      <div className="fixed inset-0 z-50 bg-black/40" onClick={close} />
-
-      <aside className="fixed right-0 top-0 z-50 flex h-full w-full max-w-sm flex-col bg-white shadow-xl">
+    <Sheet open={isOpen} onOpenChange={(open) => !open && close()}>
+      <SheetContent
+        side="right"
+        showCloseButton={false}
+        aria-describedby={undefined}
+        onOpenAutoFocus={() => {
+          returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+        }}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault()
+          returnFocusRef.current?.focus()
+        }}
+        className="w-full gap-0 bg-white p-0 sm:max-w-sm"
+      >
         <div className="flex items-center justify-between border-b border-gray-100 p-4">
-          <h2 className="text-lg font-semibold text-dark">Tu carrito</h2>
-          <button
-            type="button"
-            onClick={close}
+          <SheetTitle className="text-lg font-semibold text-dark">Tu carrito</SheetTitle>
+          <SheetClose
             aria-label="Cerrar carrito"
             className="-mr-2 flex size-10 items-center justify-center text-secondary hover:text-dark"
           >
-            ✕
-          </button>
+            <span aria-hidden="true">✕</span>
+          </SheetClose>
         </div>
 
         <div className="flex-1 overflow-y-auto px-4">
@@ -60,7 +74,7 @@ export default function CartSidebar() {
             </div>
           </div>
         )}
-      </aside>
-    </>
+      </SheetContent>
+    </Sheet>
   )
 }

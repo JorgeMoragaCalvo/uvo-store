@@ -181,12 +181,14 @@ function StoreSettingsForm({ initial }: { initial: StoreSettingsDto }) {
               <Toggle id="showCategories" label="Mostrar categorías" checked={form.showCategories} onChange={(v) => set('showCategories', v)} />
               <Input
                 placeholder="Título"
+                aria-label="Título de la sección de categorías"
                 value={form.categoriesTitle ?? ''}
                 onChange={(e) => set('categoriesTitle', e.target.value)}
               />
               <Input
                 type="number"
                 placeholder="Límite"
+                aria-label="Cantidad de categorías a mostrar"
                 value={form.categoriesLimit}
                 onChange={(e) => set('categoriesLimit', Number(e.target.value))}
               />
@@ -199,16 +201,18 @@ function StoreSettingsForm({ initial }: { initial: StoreSettingsDto }) {
                 checked={form.showNewProducts}
                 onChange={(v) => set('showNewProducts', v)}
               />
-              <Input placeholder="Título" value={form.newProductsTitle ?? ''} onChange={(e) => set('newProductsTitle', e.target.value)} />
+              <Input placeholder="Título" aria-label="Título de la sección de productos nuevos" value={form.newProductsTitle ?? ''} onChange={(e) => set('newProductsTitle', e.target.value)} />
               <Input
                 type="number"
                 placeholder="Límite"
+                aria-label="Cantidad de productos nuevos a mostrar"
                 value={form.newProductsLimit}
                 onChange={(e) => set('newProductsLimit', Number(e.target.value))}
               />
               <Input
                 type="number"
                 placeholder="Días"
+                aria-label="Días que un producto cuenta como nuevo"
                 value={form.newProductsDays}
                 onChange={(e) => set('newProductsDays', Number(e.target.value))}
               />
@@ -223,12 +227,14 @@ function StoreSettingsForm({ initial }: { initial: StoreSettingsDto }) {
               />
               <Input
                 placeholder="Título"
+                aria-label="Título de la sección de destacados"
                 value={form.featuredProductsTitle ?? ''}
                 onChange={(e) => set('featuredProductsTitle', e.target.value)}
               />
               <Input
                 type="number"
                 placeholder="Límite"
+                aria-label="Cantidad de destacados a mostrar"
                 value={form.featuredProductsLimit}
                 onChange={(e) => set('featuredProductsLimit', Number(e.target.value))}
               />
@@ -236,8 +242,8 @@ function StoreSettingsForm({ initial }: { initial: StoreSettingsDto }) {
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <Toggle id="showDeals" label="Mostrar ofertas" checked={form.showDeals} onChange={(v) => set('showDeals', v)} />
-              <Input placeholder="Título" value={form.dealsTitle ?? ''} onChange={(e) => set('dealsTitle', e.target.value)} />
-              <Input type="number" placeholder="Límite" value={form.dealsLimit} onChange={(e) => set('dealsLimit', Number(e.target.value))} />
+              <Input placeholder="Título" aria-label="Título de la sección de ofertas" value={form.dealsTitle ?? ''} onChange={(e) => set('dealsTitle', e.target.value)} />
+              <Input type="number" placeholder="Límite" aria-label="Cantidad de ofertas a mostrar" value={form.dealsLimit} onChange={(e) => set('dealsLimit', Number(e.target.value))} />
             </div>
 
             <Toggle id="showBenefits" label="Mostrar banda de beneficios" checked={form.showBenefits} onChange={(v) => set('showBenefits', v)} />
@@ -250,20 +256,23 @@ function StoreSettingsForm({ initial }: { initial: StoreSettingsDto }) {
           </CardHeader>
           <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {([1, 2, 3, 4] as const).map((n) => (
-              <div key={n} className="flex flex-col gap-2 rounded-md border p-3">
-                <Label>Beneficio {n}</Label>
+              <div key={n} role="group" aria-labelledby={`benefit-${n}-label`} className="flex flex-col gap-2 rounded-md border p-3">
+                <Label id={`benefit-${n}-label`}>Beneficio {n}</Label>
                 <Input
                   placeholder="Ícono (truck, shield-check, refresh, headset)"
+                  aria-label={`Beneficio ${n}: ícono`}
                   value={form[`benefit${n}Icon`] ?? ''}
                   onChange={(e) => set(`benefit${n}Icon`, e.target.value)}
                 />
                 <Input
                   placeholder="Título"
+                  aria-label={`Beneficio ${n}: título`}
                   value={form[`benefit${n}Title`] ?? ''}
                   onChange={(e) => set(`benefit${n}Title`, e.target.value)}
                 />
                 <Input
                   placeholder="Descripción"
+                  aria-label={`Beneficio ${n}: descripción`}
                   value={form[`benefit${n}Description`] ?? ''}
                   onChange={(e) => set(`benefit${n}Description`, e.target.value)}
                 />
@@ -277,13 +286,13 @@ function StoreSettingsForm({ initial }: { initial: StoreSettingsDto }) {
             <CardTitle>Contacto y redes</CardTitle>
           </CardHeader>
           <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Input placeholder="Email de contacto" value={form.contactEmail ?? ''} onChange={(e) => set('contactEmail', e.target.value)} />
-            <Input placeholder="Teléfono de contacto" value={form.contactPhone ?? ''} onChange={(e) => set('contactPhone', e.target.value)} />
-            <Input placeholder="WhatsApp" value={form.whatsappNumber ?? ''} onChange={(e) => set('whatsappNumber', e.target.value)} />
-            <Input placeholder="Facebook" value={form.facebookUrl ?? ''} onChange={(e) => set('facebookUrl', e.target.value)} />
-            <Input placeholder="Instagram" value={form.instagramUrl ?? ''} onChange={(e) => set('instagramUrl', e.target.value)} />
-            <Input placeholder="Twitter / X" value={form.twitterUrl ?? ''} onChange={(e) => set('twitterUrl', e.target.value)} />
-            <Input placeholder="TikTok" value={form.tiktokUrl ?? ''} onChange={(e) => set('tiktokUrl', e.target.value)} />
+            <Input placeholder="Email de contacto" aria-label="Email de contacto" value={form.contactEmail ?? ''} onChange={(e) => set('contactEmail', e.target.value)} />
+            <Input placeholder="Teléfono de contacto" aria-label="Teléfono de contacto" value={form.contactPhone ?? ''} onChange={(e) => set('contactPhone', e.target.value)} />
+            <Input placeholder="WhatsApp" aria-label="WhatsApp" value={form.whatsappNumber ?? ''} onChange={(e) => set('whatsappNumber', e.target.value)} />
+            <Input placeholder="Facebook" aria-label="Facebook" value={form.facebookUrl ?? ''} onChange={(e) => set('facebookUrl', e.target.value)} />
+            <Input placeholder="Instagram" aria-label="Instagram" value={form.instagramUrl ?? ''} onChange={(e) => set('instagramUrl', e.target.value)} />
+            <Input placeholder="Twitter / X" aria-label="Twitter / X" value={form.twitterUrl ?? ''} onChange={(e) => set('twitterUrl', e.target.value)} />
+            <Input placeholder="TikTok" aria-label="TikTok" value={form.tiktokUrl ?? ''} onChange={(e) => set('tiktokUrl', e.target.value)} />
           </CardContent>
         </Card>
 
@@ -292,9 +301,9 @@ function StoreSettingsForm({ initial }: { initial: StoreSettingsDto }) {
             <CardTitle>SEO</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
-            <Input placeholder="Meta título" value={form.metaTitle ?? ''} onChange={(e) => set('metaTitle', e.target.value)} />
-            <Input placeholder="Meta descripción" value={form.metaDescription ?? ''} onChange={(e) => set('metaDescription', e.target.value)} />
-            <Input placeholder="Meta keywords" value={form.metaKeywords ?? ''} onChange={(e) => set('metaKeywords', e.target.value)} />
+            <Input placeholder="Meta título" aria-label="Meta título" value={form.metaTitle ?? ''} onChange={(e) => set('metaTitle', e.target.value)} />
+            <Input placeholder="Meta descripción" aria-label="Meta descripción" value={form.metaDescription ?? ''} onChange={(e) => set('metaDescription', e.target.value)} />
+            <Input placeholder="Meta keywords" aria-label="Meta keywords" value={form.metaKeywords ?? ''} onChange={(e) => set('metaKeywords', e.target.value)} />
           </CardContent>
         </Card>
 

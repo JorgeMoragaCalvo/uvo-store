@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import api from '../services/api'
 import { useCartStore } from '../stores/useCartStore'
 import { useNotificationStore } from '../stores/useNotificationStore'
 import ProductCard from '../components/ProductCard'
 import Loading from '../components/Loading'
+import { useStoreTitle } from '../hooks/useDocumentTitle'
 import { formatCurrency } from '../utils/currency'
+import { friendlyError } from '../services/errors'
+import type { ApiFailure } from '../services/errors'
 import type { Product, ProductVariation } from '../types/api'
 
 function buildAttributeGroups(variations: ProductVariation[]): Record<string, string[]> {
@@ -38,9 +41,11 @@ export default function ProductDetail() {
   const [related, setRelated] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [activeImage, setActiveImage] = useState<string | null>(null)
   const [selectedAttributes, setSelectedAttributes] = useState<Record<string, string>>({})
   const [quantity, setQuantity] = useState(1)
+  useStoreTitle(notFound ? 'Producto no encontrado' : product?.name)
 
   useEffect(() => {
     if (!slug) return
@@ -49,6 +54,7 @@ export default function ProductDetail() {
     async function loadProduct() {
       setLoading(true)
       setNotFound(false)
+      setLoadError(null)
       setSelectedAttributes({})
       setQuantity(1)
 
@@ -57,8 +63,12 @@ export default function ProductDetail() {
         if (cancelled) return
         setProduct(data)
         setActiveImage(data.featuredImage ?? data.images[0]?.url ?? null)
-      } catch {
-        if (!cancelled) setNotFound(true)
+      } catch (error) {
+        if (cancelled) return
+        // PROD-24b. Solo un 404 es «no existe»: una red caída o un 500 decían lo mismo, y el comprador
+        // creía que el producto se había borrado.
+        if ((error as ApiFailure).status === 404) setNotFound(true)
+        else setLoadError(friendlyError(error, 'No pudimos cargar este producto. Inténtalo de nuevo en unos minutos.'))
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -116,8 +126,24 @@ export default function ProductDetail() {
     return <Loading size="lg" />
   }
 
+  if (loadError) {
+    return (
+      <div className="mx-auto max-w-lg p-8 text-center">
+        <h1 className="mb-2 text-xl font-semibold text-dark">No pudimos cargar el producto</h1>
+        <p role="alert" className="mb-6 text-secondary">{loadError}</p>
+        <Link to="/shop" className="text-primary underline">Volver a la tienda</Link>
+      </div>
+    )
+  }
+
   if (notFound || !product) {
-    return <p className="p-8 text-center text-secondary">Producto no encontrado.</p>
+    return (
+      <div className="mx-auto max-w-lg p-8 text-center">
+        <h1 className="mb-2 text-xl font-semibold text-dark">Producto no encontrado.</h1>
+        <p className="mb-6 text-secondary">Puede que ya no esté a la venta.</p>
+        <Link to="/shop" className="text-primary underline">Ver otros productos</Link>
+      </div>
+    )
   }
 
   const gallery = product.images.length > 0 ? product.images.map((image) => image.url) : product.featuredImage ? [product.featuredImage] : []
@@ -131,11 +157,13 @@ export default function ProductDetail() {
           </div>
           {gallery.length > 1 && (
             <div className="mt-3 flex flex-wrap gap-2">
-              {gallery.map((url) => (
+              {gallery.map((url, index) => (
                 <button
                   key={url}
                   type="button"
                   onClick={() => setActiveImage(url)}
+                  aria-label={`Ver imagen ${index + 1} de ${gallery.length}`}
+                  aria-pressed={activeImage === url}
                   className={`h-16 w-16 shrink-0 overflow-hidden rounded border ${activeImage === url ? 'border-primary' : 'border-gray-400'}`}
                 >
                   <img src={url} alt="" loading="lazy" className="h-full w-full object-cover" />
@@ -160,13 +188,14 @@ export default function ProductDetail() {
 
           {Object.entries(attributeGroups).map(([name, values]) => (
             <div key={name} className="mb-4">
-              <h3 className="mb-1.5 text-sm font-medium text-dark">{name}</h3>
-              <div className="flex flex-wrap gap-2">
+              <h3 id={`attribute-${name}`} className="mb-1.5 text-sm font-medium text-dark">{name}</h3>
+              <div className="flex flex-wrap gap-2" role="group" aria-labelledby={`attribute-${name}`}>
                 {values.map((value) => (
                   <button
                     key={value}
                     type="button"
                     onClick={() => handleSelectAttribute(name, value)}
+                    aria-pressed={selectedAttributes[name] === value}
                     className={`rounded border px-3 py-1.5 text-sm ${
                       selectedAttributes[name] === value ? 'border-primary bg-primary text-white' : 'border-gray-300 text-dark'
                     }`}
@@ -178,25 +207,31 @@ export default function ProductDetail() {
             </div>
           ))}
 
-          {isVariable && allAttributesSelected && !selectedVariation && (
-            <p className="mb-4 text-sm text-red-600">Esa combinación no está disponible.</p>
-          )}
+          <div role="status">
+            {isVariable && allAttributesSelected && !selectedVariation && (
+              <p className="mb-4 text-sm text-red-700">Esa combinación no está disponible.</p>
+            )}
+          </div>
 
           <div className="mb-4 flex items-center gap-3">
-            <span className="text-sm text-dark">Cantidad</span>
-            <div className="flex items-center gap-2">
+            <span id="quantity-label" className="text-sm text-dark">Cantidad</span>
+            <div className="flex items-center gap-2" role="group" aria-labelledby="quantity-label">
               <button
                 type="button"
                 onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                className="h-8 w-8 rounded border border-gray-300"
+                disabled={quantity <= 1}
+                aria-label="Disminuir cantidad"
+                className="size-9 rounded border border-gray-400 disabled:opacity-40 sm:size-8"
               >
                 −
               </button>
-              <span className="w-8 text-center">{quantity}</span>
+              <span className="w-8 text-center" aria-live="polite">{quantity}</span>
               <button
                 type="button"
                 onClick={() => setQuantity((q) => Math.min(stock || q + 1, q + 1))}
-                className="h-8 w-8 rounded border border-gray-300"
+                disabled={stock > 0 && quantity >= stock}
+                aria-label="Aumentar cantidad"
+                className="size-9 rounded border border-gray-400 disabled:opacity-40 sm:size-8"
               >
                 +
               </button>

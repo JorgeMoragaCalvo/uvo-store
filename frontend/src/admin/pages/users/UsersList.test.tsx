@@ -99,6 +99,32 @@ describe('UsersList: invitación pendiente', () => {
     expect(screen.getByRole('button', { name: /Reenviar invitación/ })).toBeEnabled()
   })
 
+  // PROD-24b. Los botones de ícono no tenían nombre: un lector de pantalla decía solo «botón».
+  it('nombra las acciones de cada fila con el usuario al que se aplican', async () => {
+    vi.mocked(adminApi.users.list).mockResolvedValue(page([user()]))
+    renderList()
+
+    await screen.findByText('Admin Demo')
+    expect(screen.getByRole('link', { name: 'Editar Admin Demo' })).toHaveAttribute('href', '/admin/users/1/edit')
+    expect(screen.getByRole('button', { name: 'Eliminar Admin Demo' })).toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: 'Activar Admin Demo' })).toBeChecked()
+    expect(screen.getByRole('textbox', { name: 'Buscar usuarios' })).toBeInTheDocument()
+  })
+
+  // La fila borrada se lleva el botón que abrió el diálogo: sin esto el foco caía al principio de la página.
+  it('tras eliminar, el foco vuelve al título de la lista', async () => {
+    vi.mocked(adminApi.users.list).mockResolvedValueOnce(page([user()])).mockResolvedValue(page([]))
+    vi.mocked(adminApi.users.delete).mockResolvedValue(undefined as never)
+    const actor = userEvent.setup()
+    renderList()
+
+    await screen.findByText('Admin Demo')
+    await actor.click(screen.getByRole('button', { name: 'Eliminar Admin Demo' }))
+    await actor.click(await screen.findByRole('button', { name: 'Eliminar' }))
+
+    await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: 'Usuarios' })).toHaveFocus())
+  })
+
   it('un reenvío rechazado muestra el mensaje del servidor', async () => {
     const { toast } = await import('sonner')
     vi.mocked(adminApi.users.list).mockResolvedValue(

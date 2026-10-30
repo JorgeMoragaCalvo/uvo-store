@@ -39,9 +39,12 @@ client.interceptors.response.use(
   (response) => response.data,
   (error) => {
     const data = error.response?.data
+    // `status` aparte del cuerpo: una respuesta que no es del backend (un 502 del proxy, en HTML) no lo
+    // trae, y sin él friendlyError la confundiría con una falla de red.
     return Promise.reject({
       message: data?.message ?? error.message,
-      ...data,
+      status: error.response?.status,
+      ...(typeof data === 'object' ? data : {}),
     })
   },
 )

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
@@ -27,6 +27,7 @@ const TYPE_LABEL: Record<string, string> = {
 }
 
 export default function MethodsList() {
+  const headingRef = useRef<HTMLHeadingElement>(null)
   const methods = useAdminShippingMethodsStore((state) => state.methods)
   const loading = useAdminShippingMethodsStore((state) => state.loading)
   const fetch = useAdminShippingMethodsStore((state) => state.fetch)
@@ -41,6 +42,9 @@ export default function MethodsList() {
     try {
       await remove(method.id)
       toast.success('Método eliminado')
+      // PROD-24b. La fila (y con ella el botón que abrió el diálogo) ya no existe: sin esto el foco cae al
+      // principio de la página. Se lleva al título de la lista.
+      headingRef.current?.focus()
     } catch (err) {
       const message = (err as { message?: string })?.message
       toast.error(message ?? 'No se pudo eliminar el método')
@@ -58,7 +62,7 @@ export default function MethodsList() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-semibold">Métodos de envío</h1>
+        <h1 ref={headingRef} tabIndex={-1} className="text-2xl font-semibold outline-none">Métodos de envío</h1>
         <Button asChild>
           <Link to="/admin/shipping/methods/new">
             <Plus className="size-4" />
@@ -108,20 +112,20 @@ export default function MethodsList() {
                   <TableCell>{method.ratesCount}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <Switch checked={method.active} onCheckedChange={() => handleToggle(method)} />
+                      <Switch checked={method.active} onCheckedChange={() => handleToggle(method)} aria-label={`Activar ${method.name}`} />
                       <Badge variant={method.active ? 'default' : 'secondary'}>{method.active ? 'Activo' : 'Inactivo'}</Badge>
                     </div>
                   </TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-2">
                       <Button variant="ghost" size="icon" asChild>
-                        <Link to={`/admin/shipping/methods/${method.id}/edit`}>
+                        <Link to={`/admin/shipping/methods/${method.id}/edit`} aria-label={`Editar ${method.name}`}>
                           <Pencil className="size-4" />
                         </Link>
                       </Button>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <Button variant="ghost" size="icon">
+                          <Button variant="ghost" size="icon" aria-label={`Eliminar ${method.name}`}>
                             <Trash2 className="size-4 text-destructive" />
                           </Button>
                         </AlertDialogTrigger>

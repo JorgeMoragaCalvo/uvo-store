@@ -134,7 +134,11 @@ export default function AcceptInvitation() {
                 onChange={(event) => setConfirmPassword(event.target.value)}
               />
             </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
+            {error && (
+              <p id="form-error" role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            )}
             {rejected && (
               <p className="text-sm text-muted-foreground">
                 Pídele a quien te dio de alta que te reenvíe la invitación desde el panel, en Usuarios.

@@ -54,14 +54,15 @@ describe('useStoreSettingsStore', () => {
 
   it('sets an error message when loading fails', async () => {
     const api = (await import('@/services/api')).default
-    vi.mocked(api.storeSettings.get).mockRejectedValue({ message: 'No se pudo cargar la tienda' })
+    // Sin respuesta del servidor: el mensaje de axios ("Network Error") no llega al comprador.
+    vi.mocked(api.storeSettings.get).mockRejectedValue({ message: 'Network Error' })
     vi.mocked(api.homeBanners.getAll).mockResolvedValue([])
     vi.mocked(api.categories.getAll).mockResolvedValue([])
     const { useStoreSettingsStore } = await import('./useStoreSettingsStore')
 
     await useStoreSettingsStore.getState().fetchAll()
 
-    expect(useStoreSettingsStore.getState().error).toBe('No se pudo cargar la tienda')
+    expect(useStoreSettingsStore.getState().error).toMatch(/no pudimos conectar/i)
     expect(useStoreSettingsStore.getState().loaded).toBe(false)
   })
 })

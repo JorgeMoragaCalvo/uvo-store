@@ -72,7 +72,7 @@ function OrderDetailContent({ order, onBack }: { order: AdminOrderDetail; onBack
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={onBack}>
+        <Button variant="ghost" size="icon" onClick={onBack} aria-label="Volver a las órdenes">
           <ArrowLeft className="size-4" />
         </Button>
         <h1 className="text-2xl font-semibold">{order.orderNumber}</h1>
@@ -209,7 +209,7 @@ function OrderDetailContent({ order, onBack }: { order: AdminOrderDetail; onBack
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
               <div className="flex flex-col gap-2">
-                <Label>Estado de la orden</Label>
+                <Label htmlFor="order-status">Estado de la orden</Label>
                 <Select
                   value={order.status}
                   // Una orden devuelta no vuelve de ahí por este selector: REFUNDED ya no es una
@@ -219,7 +219,7 @@ function OrderDetailContent({ order, onBack }: { order: AdminOrderDetail; onBack
                     runAction(() => adminApi.orders.updateStatus(order.id, value), 'Estado actualizado')
                   }
                 >
-                  <SelectTrigger>
+                  <SelectTrigger id="order-status">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -232,7 +232,7 @@ function OrderDetailContent({ order, onBack }: { order: AdminOrderDetail; onBack
                 </Select>
               </div>
               <div className="flex flex-col gap-2">
-                <Label>Estado de pago</Label>
+                <Label htmlFor="payment-status">Estado de pago</Label>
                 <Select
                   value={order.paymentStatus}
                   disabled={busy || order.paymentStatus === 'REFUNDED'}
@@ -240,7 +240,7 @@ function OrderDetailContent({ order, onBack }: { order: AdminOrderDetail; onBack
                     runAction(() => adminApi.orders.updatePaymentStatus(order.id, value), 'Estado de pago actualizado')
                   }
                 >
-                  <SelectTrigger>
+                  <SelectTrigger id="payment-status">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -352,6 +352,9 @@ function RefundCard({
               placeholder={String(remaining)}
               value={amount}
               onChange={(event) => setAmount(event.target.value)}
+              // PROD-24b. El mensaje de abajo es de este campo: se marca y se le une.
+              aria-invalid={amountInvalid || undefined}
+              aria-describedby={amountInvalid ? 'refund-amount-error' : undefined}
             />
             <Label htmlFor="refund-reason">Motivo</Label>
             <Input
@@ -359,7 +362,12 @@ function RefundCard({
               value={reason}
               onChange={(event) => setReason(event.target.value)}
               placeholder="Producto defectuoso, arrepentimiento…"
+              aria-describedby="refund-reason-hint"
             />
+            {/* El botón de reembolso externo se deshabilita sin motivo: antes no se decía por qué. */}
+            <p id="refund-reason-hint" className="text-xs text-muted-foreground">
+              Obligatorio para registrar un reembolso hecho en la pasarela.
+            </p>
             <Button
               variant="destructive"
               disabled={busy || amountInvalid}
@@ -384,7 +392,9 @@ function RefundCard({
               Registrar reembolso hecho en la pasarela
             </Button>
             {amountInvalid && (
-              <p className="text-sm text-destructive">El monto debe ser mayor que cero y no pasar del saldo.</p>
+              <p id="refund-amount-error" role="alert" className="text-sm text-destructive">
+                El monto debe ser mayor que cero y no pasar del saldo.
+              </p>
             )}
           </div>
         ) : (

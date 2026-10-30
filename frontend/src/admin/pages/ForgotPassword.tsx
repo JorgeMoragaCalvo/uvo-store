@@ -54,7 +54,11 @@ export default function ForgotPassword() {
                   onChange={(event) => setEmail(event.target.value)}
                 />
               </div>
-              {error && <p className="text-sm text-destructive">{error}</p>}
+              {error && (
+                <p id="form-error" role="alert" className="text-sm text-destructive">
+                  {error}
+                </p>
+              )}
               <Button type="submit" disabled={loading} className="mt-2">
                 {loading ? 'Enviando…' : 'Enviar enlace'}
               </Button>

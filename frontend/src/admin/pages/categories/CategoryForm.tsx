@@ -140,12 +140,12 @@ export default function CategoryForm() {
               />
             </div>
             <div className="flex flex-col gap-2">
-              <Label>Categoría padre</Label>
+              <Label htmlFor="parent-category">Categoría padre</Label>
               <Select
                 value={form.parentId || undefined}
                 onValueChange={(value) => setForm({ ...form, parentId: value })}
               >
-                <SelectTrigger>
+                <SelectTrigger id="parent-category">
                   <SelectValue placeholder="Sin categoría padre" />
                 </SelectTrigger>
                 <SelectContent>
@@ -180,7 +180,7 @@ export default function CategoryForm() {
           <CardContent className="flex flex-col gap-4">
             {currentImage && (
               <div className="flex items-center gap-3">
-                <img src={currentImage} alt="" loading="lazy" className="size-20 rounded object-cover" />
+                <img src={currentImage} alt="Imagen actual de la categoría" loading="lazy" className="size-20 rounded object-cover" />
                 <Button type="button" variant="outline" size="sm" onClick={handleRemoveImage}>
                   Quitar imagen
                 </Button>

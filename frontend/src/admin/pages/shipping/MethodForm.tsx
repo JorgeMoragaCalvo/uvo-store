@@ -190,9 +190,9 @@ export default function MethodForm() {
             </div>
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="flex flex-col gap-2">
-                <Label>Tipo</Label>
+                <Label htmlFor="method-type">Tipo</Label>
                 <Select value={form.type} onValueChange={(value) => setForm({ ...form, type: value as ShippingMethodKind })}>
-                  <SelectTrigger>
+                  <SelectTrigger id="method-type">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -262,12 +262,12 @@ export default function MethodForm() {
             ) : (
               form.hasApiIntegration && (
                 <div className="flex flex-col gap-2">
-                  <Label>Transportista</Label>
+                  <Label htmlFor="carrier">Transportista</Label>
                   <Select
                     value={form.carrier || undefined}
                     onValueChange={(value) => setForm({ ...form, carrier: value as ShippingCarrier })}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger id="carrier">
                       <SelectValue placeholder="Selecciona un transportista" />
                     </SelectTrigger>
                     <SelectContent>
