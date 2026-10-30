@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { useStoreSettingsStore } from '../../stores/useStoreSettingsStore'
+import { useStoreTitle } from '../../hooks/useDocumentTitle'
 
 export interface LegalSection {
   title: string
@@ -17,6 +18,7 @@ export default function LegalLayout({
 }) {
   const settings = useStoreSettingsStore((state) => state.settings)
   const storeName = settings?.storeName ?? 'UvoStore'
+  useStoreTitle(title)
 
   return (
     <div className="bg-gray-50 py-10">

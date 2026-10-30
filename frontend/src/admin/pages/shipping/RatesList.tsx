@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
@@ -42,6 +42,7 @@ function formatValue(rate: ShippingRateDto) {
 }
 
 export default function RatesList() {
+  const headingRef = useRef<HTMLHeadingElement>(null)
   const rates = useAdminShippingRatesStore((state) => state.rates)
   const loading = useAdminShippingRatesStore((state) => state.loading)
   const fetch = useAdminShippingRatesStore((state) => state.fetch)
@@ -68,6 +69,9 @@ export default function RatesList() {
     try {
       await remove(rate.id)
       toast.success('Tarifa eliminada')
+      // PROD-24b. La fila (y con ella el botón que abrió el diálogo) ya no existe: sin esto el foco cae al
+      // principio de la página. Se lleva al título de la lista.
+      headingRef.current?.focus()
     } catch (err) {
       const message = (err as { message?: string })?.message
       toast.error(message ?? 'No se pudo eliminar la tarifa')
@@ -85,7 +89,7 @@ export default function RatesList() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-semibold">Tarifas de envío</h1>
+        <h1 ref={headingRef} tabIndex={-1} className="text-2xl font-semibold outline-none">Tarifas de envío</h1>
         <Button asChild>
           <Link to="/admin/shipping/rates/new">
             <Plus className="size-4" />
@@ -96,7 +100,7 @@ export default function RatesList() {
 
       <div className="flex flex-wrap gap-3">
         <Select value={methodId || 'all'} onValueChange={(value) => setMethodId(value === 'all' ? '' : value)}>
-          <SelectTrigger className="w-56">
+          <SelectTrigger className="w-56" aria-label="Filtrar por método">
             <SelectValue placeholder="Todos los métodos" />
           </SelectTrigger>
           <SelectContent>
@@ -109,7 +113,7 @@ export default function RatesList() {
           </SelectContent>
         </Select>
         <Select value={zoneId || 'all'} onValueChange={(value) => setZoneId(value === 'all' ? '' : value)}>
-          <SelectTrigger className="w-56">
+          <SelectTrigger className="w-56" aria-label="Filtrar por zona">
             <SelectValue placeholder="Todas las zonas" />
           </SelectTrigger>
           <SelectContent>
@@ -161,20 +165,20 @@ export default function RatesList() {
                   <TableCell>{formatValue(rate)}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <Switch checked={rate.active} onCheckedChange={() => handleToggle(rate)} />
+                      <Switch checked={rate.active} onCheckedChange={() => handleToggle(rate)} aria-label={`Activar ${rate.name}`} />
                       <Badge variant={rate.active ? 'default' : 'secondary'}>{rate.active ? 'Activa' : 'Inactiva'}</Badge>
                     </div>
                   </TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-2">
                       <Button variant="ghost" size="icon" asChild>
-                        <Link to={`/admin/shipping/rates/${rate.id}/edit`}>
+                        <Link to={`/admin/shipping/rates/${rate.id}/edit`} aria-label={`Editar ${rate.name}`}>
                           <Pencil className="size-4" />
                         </Link>
                       </Button>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <Button variant="ghost" size="icon">
+                          <Button variant="ghost" size="icon" aria-label={`Eliminar ${rate.name}`}>
                             <Trash2 className="size-4 text-destructive" />
                           </Button>
                         </AlertDialogTrigger>

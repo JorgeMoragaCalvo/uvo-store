@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { MailPlus, Pencil, Plus, Search, Trash2 } from 'lucide-react'
@@ -30,6 +30,7 @@ function isExpired(user: AdminUserDto): boolean {
 }
 
 export default function UsersList() {
+  const headingRef = useRef<HTMLHeadingElement>(null)
   const data = useAdminUsersStore((state) => state.data)
   const loading = useAdminUsersStore((state) => state.loading)
   const fetchList = useAdminUsersStore((state) => state.fetchList)
@@ -50,6 +51,9 @@ export default function UsersList() {
     try {
       await remove(user.id)
       toast.success('Usuario eliminado')
+      // PROD-24b. La fila (y con ella el botón que abrió el diálogo) ya no existe: sin esto el foco cae al
+      // principio de la página. Se lleva al título de la lista.
+      headingRef.current?.focus()
     } catch (err) {
       const message = (err as { message?: string })?.message
       toast.error(message ?? 'No se pudo eliminar el usuario')
@@ -84,7 +88,7 @@ export default function UsersList() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-semibold">Usuarios</h1>
+        <h1 ref={headingRef} tabIndex={-1} className="text-2xl font-semibold outline-none">Usuarios</h1>
         <Button asChild>
           <Link to="/admin/users/new">
             <Plus className="size-4" />
@@ -97,6 +101,7 @@ export default function UsersList() {
         <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
         <Input
           placeholder="Buscar por nombre o email…"
+          aria-label="Buscar usuarios"
           className="pl-8"
           value={search}
           onChange={(event) => {
@@ -162,7 +167,7 @@ export default function UsersList() {
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-wrap items-center gap-2">
-                      <Switch checked={user.active} onCheckedChange={() => handleToggle(user)} />
+                      <Switch checked={user.active} onCheckedChange={() => handleToggle(user)} aria-label={`Activar ${user.name}`} />
                       <Badge variant={user.active ? 'default' : 'secondary'}>{user.active ? 'Activo' : 'Inactivo'}</Badge>
                       {/* PROD-06: sin esto no hay forma de distinguir a quien nunca ha entrado de quien
                           simplemente no entra hace tiempo, y el botón de reenviar no tendría a quién
@@ -189,13 +194,13 @@ export default function UsersList() {
                         </Button>
                       )}
                       <Button variant="ghost" size="icon" asChild>
-                        <Link to={`/admin/users/${user.id}/edit`}>
+                        <Link to={`/admin/users/${user.id}/edit`} aria-label={`Editar ${user.name}`}>
                           <Pencil className="size-4" />
                         </Link>
                       </Button>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <Button variant="ghost" size="icon">
+                          <Button variant="ghost" size="icon" aria-label={`Eliminar ${user.name}`}>
                             <Trash2 className="size-4 text-destructive" />
                           </Button>
                         </AlertDialogTrigger>

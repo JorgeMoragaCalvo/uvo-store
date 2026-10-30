@@ -154,6 +154,8 @@ export default function UserForm() {
                   <Input
                     id="password"
                     type="password"
+                    // Es la contraseña de OTRA persona: sin esto el navegador ofrecía rellenar la del admin.
+                    autoComplete="new-password"
                     required={!isEdit}
                     value={form.password}
                     onChange={(event) => setForm({ ...form, password: event.target.value })}
@@ -162,9 +164,9 @@ export default function UserForm() {
               )}
             </div>
             <div className="flex flex-col gap-2">
-              <Label>Rol</Label>
+              <Label htmlFor="role">Rol</Label>
               <Select value={form.roleId || undefined} onValueChange={(value) => setForm({ ...form, roleId: value })}>
-                <SelectTrigger>
+                <SelectTrigger id="role">
                   <SelectValue placeholder="Sin rol asignado" />
                 </SelectTrigger>
                 <SelectContent>
@@ -207,7 +209,7 @@ export default function UserForm() {
             <CardTitle>Avatar</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
-            {currentAvatar && <img src={currentAvatar} alt="" loading="lazy" className="size-20 rounded-full object-cover" />}
+            {currentAvatar && <img src={currentAvatar} alt="Avatar actual" loading="lazy" className="size-20 rounded-full object-cover" />}
             <div className="flex flex-col gap-2">
               <Label htmlFor="avatar">{currentAvatar ? 'Reemplazar avatar' : 'Avatar'}</Label>
               <Input id="avatar" type="file" accept="image/*" onChange={(event) => setAvatar(event.target.files?.[0] ?? null)} />

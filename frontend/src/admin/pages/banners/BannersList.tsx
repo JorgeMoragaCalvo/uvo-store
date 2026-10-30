@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { ArrowDown, ArrowUp, Pencil, Plus, Trash2 } from 'lucide-react'
@@ -20,6 +20,7 @@ import { useAdminBannersStore } from '@/admin/stores/useAdminBannersStore'
 import type { HomeBannerDto } from '@/admin/types/admin'
 
 export default function BannersList() {
+  const headingRef = useRef<HTMLHeadingElement>(null)
   const banners = useAdminBannersStore((state) => state.banners)
   const loading = useAdminBannersStore((state) => state.loading)
   const fetch = useAdminBannersStore((state) => state.fetch)
@@ -35,6 +36,9 @@ export default function BannersList() {
     try {
       await remove(banner.id)
       toast.success('Banner eliminado')
+      // PROD-24b. La fila (y con ella el botón que abrió el diálogo) ya no existe: sin esto el foco cae al
+      // principio de la página. Se lleva al título de la lista.
+      headingRef.current?.focus()
     } catch {
       toast.error('No se pudo eliminar el banner')
     }
@@ -64,7 +68,7 @@ export default function BannersList() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-semibold">Banners del home</h1>
+        <h1 ref={headingRef} tabIndex={-1} className="text-2xl font-semibold outline-none">Banners del home</h1>
         <Button asChild>
           <Link to="/admin/banners/new">
             <Plus className="size-4" />
@@ -104,7 +108,13 @@ export default function BannersList() {
                 <TableRow key={banner.id}>
                   <TableCell>
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="icon" disabled={index === 0} onClick={() => move(index, -1)}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        disabled={index === 0}
+                        onClick={() => move(index, -1)}
+                        aria-label={`Subir ${banner.title || 'banner sin título'}`}
+                      >
                         <ArrowUp className="size-4" />
                       </Button>
                       <Button
@@ -112,6 +122,7 @@ export default function BannersList() {
                         size="icon"
                         disabled={index === banners.length - 1}
                         onClick={() => move(index, 1)}
+                        aria-label={`Bajar ${banner.title || 'banner sin título'}`}
                       >
                         <ArrowDown className="size-4" />
                       </Button>
@@ -119,27 +130,35 @@ export default function BannersList() {
                   </TableCell>
                   <TableCell>
                     {banner.image ? (
-                      <img src={banner.image} alt={banner.title ?? ''} loading="lazy" className="h-10 w-16 rounded object-cover" />
+                      <img src={banner.image} alt="" loading="lazy" className="h-10 w-16 rounded object-cover" />
                     ) : (
                       <div className="h-10 w-16 rounded bg-muted" />
                     )}
                   </TableCell>
                   <TableCell className="font-medium">{banner.title || '(sin título)'}</TableCell>
                   <TableCell>
-                    <Badge variant={banner.active ? 'default' : 'secondary'} className="cursor-pointer" onClick={() => handleToggle(banner)}>
-                      {banner.active ? 'Activo' : 'Inactivo'}
+                    {/* PROD-24b. Un <button> y no un <span> con onClick: el badge no se alcanzaba con el teclado. */}
+                    <Badge asChild variant={banner.active ? 'default' : 'secondary'} className="cursor-pointer">
+                      <button
+                        type="button"
+                        onClick={() => handleToggle(banner)}
+                        aria-pressed={banner.active}
+                        aria-label={`Activo: ${banner.title || 'banner sin título'}`}
+                      >
+                        {banner.active ? 'Activo' : 'Inactivo'}
+                      </button>
                     </Badge>
                   </TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-2">
                       <Button variant="ghost" size="icon" asChild>
-                        <Link to={`/admin/banners/${banner.id}/edit`}>
+                        <Link to={`/admin/banners/${banner.id}/edit`} aria-label={`Editar ${banner.title || 'banner sin título'}`}>
                           <Pencil className="size-4" />
                         </Link>
                       </Button>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <Button variant="ghost" size="icon">
+                          <Button variant="ghost" size="icon" aria-label={`Eliminar ${banner.title || 'banner sin título'}`}>
                             <Trash2 className="size-4 text-destructive" />
                           </Button>
                         </AlertDialogTrigger>

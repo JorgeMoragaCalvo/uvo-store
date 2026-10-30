@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import api from '../services/api'
+import { friendlyError } from '../services/errors'
 import type { Category, HomeBanner, PublicStoreSettings } from '../types/api'
 
 interface StoreSettingsState {
@@ -41,7 +42,7 @@ export const useStoreSettingsStore = create<StoreSettingsState>((set, get) => ({
       applyTheme(settings)
       set({ settings, banners, categories, loading: false, loaded: true })
     } catch (error) {
-      set({ loading: false, error: (error as { message?: string }).message ?? 'Error loading store settings' })
+      set({ loading: false, error: friendlyError(error, 'No pudimos cargar la tienda. Inténtalo de nuevo en unos minutos.') })
     }
   },
 }))

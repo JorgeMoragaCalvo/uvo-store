@@ -19,9 +19,19 @@ export default function PaymentMethodsReportTab({ dateRange }: { dateRange: Repo
   const [details, setDetails] = useState<PaymentMethodDetailDto[]>([])
   const [distribution, setDistribution] = useState<PaymentStatusDistributionDto[]>([])
   const [exporting, setExporting] = useState(false)
+  const [summaryFailed, setSummaryFailed] = useState(false)
 
   useEffect(() => {
-    adminApi.reports.paymentMethods.summary(dateRange).then(setSummary).catch(() => setSummary(null))
+    adminApi.reports.paymentMethods
+      .summary(dateRange)
+      .then((result) => {
+        setSummary(result)
+        setSummaryFailed(false)
+      })
+      .catch(() => {
+        setSummary(null)
+        setSummaryFailed(true)
+      })
     adminApi.reports.paymentMethods.list(dateRange).then(setDetails).catch(() => toast.error('No se pudo cargar el detalle por método'))
     adminApi.reports.paymentMethods
       .statusDistribution(dateRange)
@@ -58,6 +68,13 @@ export default function PaymentMethodsReportTab({ dateRange }: { dateRange: Repo
         </Button>
       </div>
 
+      {/* PROD-24b. Si el resumen fallaba, las tarjetas quedaban cargando para siempre y nadie lo decía. */}
+      {summaryFailed && (
+        <p role="alert" className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          No se pudo cargar el resumen del período. Vuelve a intentarlo cambiando las fechas o recargando la página.
+        </p>
+      )}
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {cards.map((card) => (
           <Card key={card.label}>
@@ -65,7 +82,16 @@ export default function PaymentMethodsReportTab({ dateRange }: { dateRange: Repo
               <CardTitle className="text-sm font-medium text-muted-foreground">{card.label}</CardTitle>
             </CardHeader>
             <CardContent>
-              {card.value === undefined ? <Skeleton className="h-8 w-16" /> : <div className="text-2xl font-bold">{card.value}</div>}
+              {card.value !== undefined ? (
+                <div className="text-2xl font-bold">{card.value}</div>
+              ) : summaryFailed ? (
+                <div className="text-2xl font-bold text-muted-foreground">
+                  <span aria-hidden="true">—</span>
+                  <span className="sr-only">Sin datos</span>
+                </div>
+              ) : (
+                <Skeleton className="h-8 w-16" />
+              )}
             </CardContent>
           </Card>
         ))}
@@ -76,7 +102,16 @@ export default function PaymentMethodsReportTab({ dateRange }: { dateRange: Repo
           <CardTitle>Distribución por estado de pago</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="h-64 w-full">
+          {/* PROD-24b. Estos conteos no aparecen en ninguna otra parte como texto: van en el aria-label. */}
+          <div
+            className="h-64 w-full"
+            role="img"
+            aria-label={
+              distribution.length === 0
+                ? 'Distribución por estado de pago: sin datos en el período'
+                : `Distribución por estado de pago: ${distribution.map((item) => `${item.paymentStatus}, ${item.count}`).join('; ')}`
+            }
+          >
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={distribution}>
                 <CartesianGrid strokeDasharray="3 3" />

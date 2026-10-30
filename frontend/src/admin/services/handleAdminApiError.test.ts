@@ -40,22 +40,36 @@ describe('handleAdminApiError', () => {
     expect(useAdminAuthStore.getState().sessionExpired).toBe(false)
   })
 
-  it('ante 500 tampoco toca la sesión', async () => {
+  // PROD-24b. Sin mensaje: así cada pantalla muestra su respaldo en contexto («No se pudo guardar el
+  // producto»), que dice más que el genérico del 500.
+  it('ante 500 tampoco toca la sesión, y deja que la pantalla explique qué falló', async () => {
     await expect(
       handleAdminApiError({ response: { status: 500, data: { message: 'Ocurrió un error inesperado' } } }),
-    ).rejects.toMatchObject({ message: 'Ocurrió un error inesperado' })
+    ).rejects.toMatchObject({ message: undefined, status: 500 })
 
     expect(useAdminAuthStore.getState().token).toBe('jwt')
   })
 
-  it('sin respuesta (fallo de red) propaga el mensaje de axios y conserva la sesión', async () => {
+  it('sin respuesta (fallo de red) explica en español y conserva la sesión', async () => {
     await expect(handleAdminApiError({ message: 'Network Error' })).rejects.toMatchObject({
-      message: 'Network Error',
+      message: expect.stringMatching(/no pudimos conectar/i),
     })
 
     // Un corte de red no es una sesión vencida: cerrar sesión aquí haría perder el trabajo por un
     // problema de conectividad.
     expect(useAdminAuthStore.getState().token).toBe('jwt')
     expect(useAdminAuthStore.getState().sessionExpired).toBe(false)
+  })
+
+  it('no pasa el texto de la excepción de Java de un 404', async () => {
+    await expect(
+      handleAdminApiError({ response: { status: 404, data: { message: 'Order 42 not found' } } }),
+    ).rejects.toMatchObject({ message: undefined, status: 404 })
+  })
+
+  it('no confunde una respuesta en HTML con un mensaje', async () => {
+    await expect(
+      handleAdminApiError({ response: { status: 400, data: '<html>Bad gateway</html>' as never } }),
+    ).rejects.toEqual({ status: 400, message: undefined })
   })
 })

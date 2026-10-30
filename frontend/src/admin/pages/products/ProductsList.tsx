@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Pencil, Plus, Search, Trash2 } from 'lucide-react'
@@ -35,6 +35,7 @@ const ACTIVE_OPTIONS = [
 ]
 
 export default function ProductsList() {
+  const headingRef = useRef<HTMLHeadingElement>(null)
   const data = useAdminProductsStore((state) => state.data)
   const loading = useAdminProductsStore((state) => state.loading)
   const fetch = useAdminProductsStore((state) => state.fetch)
@@ -66,6 +67,9 @@ export default function ProductsList() {
     try {
       await remove(product.id)
       toast.success('Producto eliminado')
+      // PROD-24b. La fila (y con ella el botón que abrió el diálogo) ya no existe: sin esto el foco cae al
+      // principio de la página. Se lleva al título de la lista.
+      headingRef.current?.focus()
     } catch {
       toast.error('No se pudo eliminar el producto')
     }
@@ -74,7 +78,7 @@ export default function ProductsList() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-semibold">Productos</h1>
+        <h1 ref={headingRef} tabIndex={-1} className="text-2xl font-semibold outline-none">Productos</h1>
         <Button asChild>
           <Link to="/admin/products/new">
             <Plus className="size-4" />
@@ -88,6 +92,7 @@ export default function ProductsList() {
           <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
           <Input
             placeholder="Buscar por nombre, SKU…"
+            aria-label="Buscar productos"
             className="pl-8"
             value={search}
             onChange={(event) => {
@@ -103,7 +108,7 @@ export default function ProductsList() {
             setActiveFilter(value)
           }}
         >
-          <SelectTrigger className="w-40">
+          <SelectTrigger className="w-40" aria-label="Filtrar por estado">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -149,7 +154,7 @@ export default function ProductsList() {
                   <TableCell>
                     <div className="flex items-center gap-3">
                       {product.featuredImage ? (
-                        <img src={product.featuredImage} alt={product.name} loading="lazy" className="size-10 rounded object-cover" />
+                        <img src={product.featuredImage} alt="" loading="lazy" className="size-10 rounded object-cover" />
                       ) : (
                         <div className="size-10 rounded bg-muted" />
                       )}
@@ -160,24 +165,28 @@ export default function ProductsList() {
                   <TableCell>{product.formattedPrice}</TableCell>
                   <TableCell>{product.productType === 'simple' ? product.stock : '—'}</TableCell>
                   <TableCell>
-                    <Badge
-                      variant={product.active ? 'default' : 'secondary'}
-                      className="cursor-pointer"
-                      onClick={() => handleToggleActive(product)}
-                    >
-                      {product.active ? 'Activo' : 'Inactivo'}
+                    {/* PROD-24b. Un <button> y no un <span> con onClick: el badge no se alcanzaba con el teclado. */}
+                    <Badge asChild variant={product.active ? 'default' : 'secondary'} className="cursor-pointer">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleActive(product)}
+                        aria-pressed={product.active}
+                        aria-label={`Activo: ${product.name}`}
+                      >
+                        {product.active ? 'Activo' : 'Inactivo'}
+                      </button>
                     </Badge>
                   </TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-2">
                       <Button variant="ghost" size="icon" asChild>
-                        <Link to={`/admin/products/${product.id}/edit`}>
+                        <Link to={`/admin/products/${product.id}/edit`} aria-label={`Editar ${product.name}`}>
                           <Pencil className="size-4" />
                         </Link>
                       </Button>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <Button variant="ghost" size="icon">
+                          <Button variant="ghost" size="icon" aria-label={`Eliminar ${product.name}`}>
                             <Trash2 className="size-4 text-destructive" />
                           </Button>
                         </AlertDialogTrigger>

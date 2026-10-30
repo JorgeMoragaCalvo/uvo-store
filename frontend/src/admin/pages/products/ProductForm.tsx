@@ -225,12 +225,12 @@ export default function ProductForm() {
               {posLocked.has('description') && <PosHint field="description" />}
             </div>
             <div className="flex flex-col gap-2">
-              <Label>Categoría</Label>
+              <Label htmlFor="category">Categoría</Label>
               <Select
                 value={form.categoryId || undefined}
                 onValueChange={(value) => setForm({ ...form, categoryId: value })}
               >
-                <SelectTrigger>
+                <SelectTrigger id="category">
                   <SelectValue placeholder="Sin categoría" />
                 </SelectTrigger>
                 <SelectContent>
@@ -332,9 +332,9 @@ export default function ProductForm() {
           <CardContent className="flex flex-col gap-4">
             {existingImages.length > 0 && (
               <div className="flex flex-wrap gap-3">
-                {existingImages.map((image) => (
+                {existingImages.map((image, index) => (
                   <div key={image.id} className="flex flex-col items-center gap-1">
-                    <img src={image.url} alt={image.alt ?? ''} loading="lazy" className="size-20 rounded object-cover" />
+                    <img src={image.url} alt={image.alt || `Imagen ${index + 1} del producto`} loading="lazy" className="size-20 rounded object-cover" />
                     {image.isFeatured && (
                       <span className="text-xs text-muted-foreground">Destacada</span>
                     )}

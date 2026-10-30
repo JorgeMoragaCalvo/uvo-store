@@ -66,9 +66,9 @@ export default function Header() {
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Buscar productos..."
                 aria-label="Buscar productos"
-                className="w-full rounded-full border border-gray-400 px-4 py-2 text-base outline-none focus:border-primary"
+                className="w-full rounded-full border border-gray-400 px-4 py-2 text-base outline-none focus:border-primary focus-visible:ring-2 focus-visible:ring-primary/40"
               />
-              <nav className="flex flex-col text-base font-medium text-secondary">
+              <nav aria-label="Principal" className="flex flex-col text-base font-medium text-secondary">
                 {navLinks.map((link) => (
                   <SheetClose asChild key={link.to}>
                     <Link to={link.to} className="rounded py-2.5 hover:text-primary">
@@ -89,7 +89,7 @@ export default function Header() {
           )}
         </Link>
 
-        <nav className="hidden items-center gap-5 text-sm font-medium text-secondary lg:flex">
+        <nav aria-label="Principal" className="hidden items-center gap-5 text-sm font-medium text-secondary lg:flex">
           {navLinks.map((link) => (
             <Link key={link.to} to={link.to} className="hover:text-primary">
               {link.label}
@@ -98,13 +98,18 @@ export default function Header() {
         </nav>
 
         <div className="ml-auto flex items-center gap-2 sm:gap-4">
-          <input
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Buscar productos..."
-            className="hidden w-56 rounded-full border border-gray-400 px-4 py-1.5 text-sm outline-none focus:border-primary sm:block"
-          />
+          {/* PROD-24b. Sin etiqueta: el lector de pantalla solo decía «cuadro de búsqueda». El del menú del
+              celular ya la tenía. */}
+          <div role="search" className="hidden sm:block">
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Buscar productos..."
+              aria-label="Buscar productos"
+              className="w-56 rounded-full border border-gray-400 px-4 py-1.5 text-sm outline-none focus:border-primary focus-visible:ring-2 focus-visible:ring-primary/40"
+            />
+          </div>
 
           {/*
             PROD-07: aquí había un 👤 «Cuenta (próximamente)». Se quitó, no se comentó por costumbre:
@@ -116,11 +121,10 @@ export default function Header() {
             type="button"
             onClick={toggleCart}
             className="relative -mr-2 flex size-10 items-center justify-center text-xl text-dark"
-            title="Carrito"
-            aria-label="Abrir carrito"
+            aria-label={`Abrir carrito, ${itemCount} ${itemCount === 1 ? 'producto' : 'productos'}`}
           >
-            🛒
-            <span className="absolute right-0 top-0 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] text-white">
+            <span aria-hidden="true">🛒</span>
+            <span aria-hidden="true" className="absolute right-0 top-0 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] text-white">
               {itemCount}
             </span>
           </button>

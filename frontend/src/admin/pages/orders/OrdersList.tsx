@@ -71,6 +71,7 @@ export default function OrdersList() {
         <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
         <Input
           placeholder="Buscar por N° de orden, cliente…"
+          aria-label="Buscar órdenes"
           className="pl-8"
           value={search}
           onChange={(event) => {
@@ -109,7 +110,7 @@ export default function OrdersList() {
             )}
             {!loading &&
               data?.content.map((order) => (
-                <TableRow key={order.id} className="cursor-pointer">
+                <TableRow key={order.id}>
                   <TableCell>
                     <Link to={`/admin/orders/${order.id}`} className="font-medium hover:underline">
                       {order.orderNumber}

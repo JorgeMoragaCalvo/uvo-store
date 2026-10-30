@@ -64,12 +64,12 @@ describe('useProductsStore', () => {
 
   it('sets an error message and stops loading when the search fails', async () => {
     const api = (await import('@/services/api')).default
-    vi.mocked(api.products.getAll).mockRejectedValue({ message: 'No se pudo buscar' })
+    vi.mocked(api.products.getAll).mockRejectedValue({ status: 500, message: 'Ocurrió un error inesperado' })
     const { useProductsStore } = await import('./useProductsStore')
 
     await useProductsStore.getState().search({})
 
-    expect(useProductsStore.getState().error).toBe('No se pudo buscar')
+    expect(useProductsStore.getState().error).toBe('No pudimos cargar los productos. Inténtalo de nuevo en unos minutos.')
     expect(useProductsStore.getState().loading).toBe(false)
   })
 })

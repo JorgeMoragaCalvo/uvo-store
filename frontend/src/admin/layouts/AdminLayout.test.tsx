@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import AdminLayout from './AdminLayout'
 import { useAdminAuthStore } from '@/admin/stores/useAdminAuthStore'
@@ -71,5 +72,33 @@ describe('AdminLayout permissions', () => {
     expect(screen.getByRole('link', { name: /productos/i })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /^usuarios$/i })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /roles/i })).toBeInTheDocument()
+  })
+})
+
+// PROD-24b.
+describe('AdminLayout accessibility', () => {
+  it('titles the tab after the current section', () => {
+    renderAt('/admin/products', ['products.view'])
+
+    expect(document.title).toBe('Productos · Panel de administración')
+  })
+
+  it('offers a skip link to the content and names the mobile menu button', () => {
+    renderAt('/admin', [])
+
+    expect(screen.getByRole('link', { name: 'Saltar al contenido' })).toHaveAttribute('href', '#admin-main')
+    expect(screen.getByRole('button', { name: 'Abrir menú' })).toBeInTheDocument()
+  })
+
+  it('closes the mobile menu when a section is picked', async () => {
+    const user = userEvent.setup()
+    renderAt('/admin', ['products.view'])
+
+    await user.click(screen.getByRole('button', { name: 'Abrir menú' }))
+    const menu = await screen.findByRole('dialog', { name: 'UvoStore Admin' })
+    await user.click(within(menu).getByRole('link', { name: /productos/i }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(screen.getByText('Listado de productos')).toBeInTheDocument()
   })
 })

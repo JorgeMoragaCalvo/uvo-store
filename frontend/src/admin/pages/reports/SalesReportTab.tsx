@@ -20,9 +20,19 @@ export default function SalesReportTab({ dateRange }: { dateRange: ReportDateRan
   const [topProducts, setTopProducts] = useState<TopProductDto[]>([])
   const [byPaymentMethod, setByPaymentMethod] = useState<PaymentMethodRevenueDto[]>([])
   const [exporting, setExporting] = useState(false)
+  const [summaryFailed, setSummaryFailed] = useState(false)
 
   useEffect(() => {
-    adminApi.reports.sales.summary(dateRange).then(setSummary).catch(() => setSummary(null))
+    adminApi.reports.sales
+      .summary(dateRange)
+      .then((result) => {
+        setSummary(result)
+        setSummaryFailed(false)
+      })
+      .catch(() => {
+        setSummary(null)
+        setSummaryFailed(true)
+      })
     adminApi.reports.sales.byDay(dateRange).then(setByDay).catch(() => toast.error('No se pudo cargar la serie de ventas'))
     adminApi.reports.sales
       .topProducts(dateRange)
@@ -67,6 +77,13 @@ export default function SalesReportTab({ dateRange }: { dateRange: ReportDateRan
         </Button>
       </div>
 
+      {/* PROD-24b. Si el resumen fallaba, las tarjetas quedaban cargando para siempre y nadie lo decía. */}
+      {summaryFailed && (
+        <p role="alert" className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          No se pudo cargar el resumen del período. Vuelve a intentarlo cambiando las fechas o recargando la página.
+        </p>
+      )}
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {cards.map((card) => (
           <Card key={card.label}>
@@ -74,7 +91,16 @@ export default function SalesReportTab({ dateRange }: { dateRange: ReportDateRan
               <CardTitle className="text-sm font-medium text-muted-foreground">{card.label}</CardTitle>
             </CardHeader>
             <CardContent>
-              {card.value === undefined ? <Skeleton className="h-8 w-16" /> : <div className="text-2xl font-bold">{card.value}</div>}
+              {card.value !== undefined ? (
+                <div className="text-2xl font-bold">{card.value}</div>
+              ) : summaryFailed ? (
+                <div className="text-2xl font-bold text-muted-foreground">
+                  <span aria-hidden="true">—</span>
+                  <span className="sr-only">Sin datos</span>
+                </div>
+              ) : (
+                <Skeleton className="h-8 w-16" />
+              )}
             </CardContent>
           </Card>
         ))}
@@ -85,7 +111,17 @@ export default function SalesReportTab({ dateRange }: { dateRange: ReportDateRan
           <CardTitle>Ventas por día</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="h-72 w-full">
+          {/* PROD-24b. El gráfico es solo una imagen para un lector de pantalla: el resumen va en el
+              aria-label y los valores, en una tabla oculta. */}
+          <div
+            className="h-72 w-full"
+            role="img"
+            aria-label={
+              byDay.length === 0
+                ? 'Ventas por día: sin datos en el período'
+                : `Ventas por día, ${byDay.length} días: total ${formatCurrency(byDay.reduce((sum, day) => sum + day.revenue, 0))}`
+            }
+          >
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={byDay}>
                 <CartesianGrid strokeDasharray="3 3" />
@@ -96,6 +132,25 @@ export default function SalesReportTab({ dateRange }: { dateRange: ReportDateRan
               </AreaChart>
             </ResponsiveContainer>
           </div>
+          <table className="sr-only">
+            <caption>Ventas por día</caption>
+            <thead>
+              <tr>
+                <th scope="col">Fecha</th>
+                <th scope="col">Ingresos</th>
+                <th scope="col">Órdenes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {byDay.map((day) => (
+                <tr key={day.date}>
+                  <td>{day.date}</td>
+                  <td>{formatCurrency(day.revenue)}</td>
+                  <td>{day.ordersCount}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </CardContent>
       </Card>
 

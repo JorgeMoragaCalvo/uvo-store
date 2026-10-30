@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Pencil, Plus, Search, Trash2 } from 'lucide-react'
@@ -22,6 +22,7 @@ import { useAdminShippingZonesStore } from '@/admin/stores/useAdminShippingZones
 import type { ShippingZoneDto } from '@/admin/types/admin'
 
 export default function ZonesList() {
+  const headingRef = useRef<HTMLHeadingElement>(null)
   const zones = useAdminShippingZonesStore((state) => state.zones)
   const loading = useAdminShippingZonesStore((state) => state.loading)
   const fetch = useAdminShippingZonesStore((state) => state.fetch)
@@ -38,6 +39,9 @@ export default function ZonesList() {
     try {
       await remove(zone.id)
       toast.success('Zona eliminada')
+      // PROD-24b. La fila (y con ella el botón que abrió el diálogo) ya no existe: sin esto el foco cae al
+      // principio de la página. Se lleva al título de la lista.
+      headingRef.current?.focus()
     } catch (err) {
       const message = (err as { message?: string })?.message
       toast.error(message ?? 'No se pudo eliminar la zona')
@@ -55,7 +59,7 @@ export default function ZonesList() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-semibold">Zonas de envío</h1>
+        <h1 ref={headingRef} tabIndex={-1} className="text-2xl font-semibold outline-none">Zonas de envío</h1>
         <Button asChild>
           <Link to="/admin/shipping/zones/new">
             <Plus className="size-4" />
@@ -66,7 +70,7 @@ export default function ZonesList() {
 
       <div className="relative w-full max-w-sm">
         <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
-        <Input placeholder="Buscar por nombre…" className="pl-8" value={search} onChange={(event) => setSearch(event.target.value)} />
+        <Input placeholder="Buscar por nombre…" aria-label="Buscar zonas" className="pl-8" value={search} onChange={(event) => setSearch(event.target.value)} />
       </div>
 
       <div className="rounded-lg border bg-background">
@@ -117,20 +121,20 @@ export default function ZonesList() {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <Switch checked={zone.active} onCheckedChange={() => handleToggle(zone)} />
+                      <Switch checked={zone.active} onCheckedChange={() => handleToggle(zone)} aria-label={`Activar ${zone.name}`} />
                       <Badge variant={zone.active ? 'default' : 'secondary'}>{zone.active ? 'Activa' : 'Inactiva'}</Badge>
                     </div>
                   </TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-2">
                       <Button variant="ghost" size="icon" asChild>
-                        <Link to={`/admin/shipping/zones/${zone.id}/edit`}>
+                        <Link to={`/admin/shipping/zones/${zone.id}/edit`} aria-label={`Editar ${zone.name}`}>
                           <Pencil className="size-4" />
                         </Link>
                       </Button>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <Button variant="ghost" size="icon">
+                          <Button variant="ghost" size="icon" aria-label={`Eliminar ${zone.name}`}>
                             <Trash2 className="size-4 text-destructive" />
                           </Button>
                         </AlertDialogTrigger>

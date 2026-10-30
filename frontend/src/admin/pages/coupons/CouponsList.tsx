@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Pencil, Plus, Search, Trash2 } from 'lucide-react'
@@ -39,6 +39,7 @@ function formatDate(value: string | null) {
 }
 
 export default function CouponsList() {
+  const headingRef = useRef<HTMLHeadingElement>(null)
   const data = useAdminCouponsStore((state) => state.data)
   const loading = useAdminCouponsStore((state) => state.loading)
   const fetchList = useAdminCouponsStore((state) => state.fetchList)
@@ -57,6 +58,9 @@ export default function CouponsList() {
     try {
       await remove(coupon.id)
       toast.success('Cupón eliminado')
+      // PROD-24b. La fila (y con ella el botón que abrió el diálogo) ya no existe: sin esto el foco cae al
+      // principio de la página. Se lleva al título de la lista.
+      headingRef.current?.focus()
     } catch (err) {
       const message = (err as { message?: string })?.message
       toast.error(message ?? 'No se pudo eliminar el cupón')
@@ -75,7 +79,7 @@ export default function CouponsList() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-semibold">Cupones</h1>
+        <h1 ref={headingRef} tabIndex={-1} className="text-2xl font-semibold outline-none">Cupones</h1>
         <Button asChild>
           <Link to="/admin/coupons/new">
             <Plus className="size-4" />
@@ -89,6 +93,7 @@ export default function CouponsList() {
           <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
           <Input
             placeholder="Buscar por código o nombre…"
+            aria-label="Buscar cupones"
             className="pl-8"
             value={search}
             onChange={(event) => {
@@ -104,7 +109,7 @@ export default function CouponsList() {
             setStatus(value)
           }}
         >
-          <SelectTrigger className="w-40">
+          <SelectTrigger className="w-40" aria-label="Filtrar por estado">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -160,7 +165,7 @@ export default function CouponsList() {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <Switch checked={coupon.active} onCheckedChange={() => handleToggle(coupon)} />
+                      <Switch checked={coupon.active} onCheckedChange={() => handleToggle(coupon)} aria-label={`Activar ${coupon.code}`} />
                       <Badge variant={coupon.active ? 'default' : 'secondary'}>
                         {coupon.active ? 'Activo' : 'Inactivo'}
                       </Badge>
@@ -169,13 +174,13 @@ export default function CouponsList() {
                   <TableCell>
                     <div className="flex justify-end gap-2">
                       <Button variant="ghost" size="icon" asChild>
-                        <Link to={`/admin/coupons/${coupon.id}/edit`}>
+                        <Link to={`/admin/coupons/${coupon.id}/edit`} aria-label={`Editar ${coupon.code}`}>
                           <Pencil className="size-4" />
                         </Link>
                       </Button>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <Button variant="ghost" size="icon">
+                          <Button variant="ghost" size="icon" aria-label={`Eliminar ${coupon.code}`}>
                             <Trash2 className="size-4 text-destructive" />
                           </Button>
                         </AlertDialogTrigger>

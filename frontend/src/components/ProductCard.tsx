@@ -54,12 +54,14 @@ export default function ProductCard({ product }: { product: Product }) {
               to={`/product/${product.slug}`}
               className="rounded bg-primary px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
             >
-              Ver opciones
+              Ver opciones<span className="sr-only"> de {product.name}</span>
             </Link>
           ) : (
             <button
               type="button"
               onClick={handleAddToCart}
+              // Con una grilla de doce «Agregar» iguales, el lector de pantalla no decía a qué producto.
+              aria-label={`Agregar ${product.name} al carrito`}
               className="rounded bg-primary px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
             >
               Agregar

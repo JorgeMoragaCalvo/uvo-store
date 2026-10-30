@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
@@ -20,6 +20,7 @@ import { useAdminCategoriesStore } from '@/admin/stores/useAdminCategoriesStore'
 import type { CategoryDto } from '@/admin/types/admin'
 
 export default function CategoriesList() {
+  const headingRef = useRef<HTMLHeadingElement>(null)
   const categories = useAdminCategoriesStore((state) => state.categories)
   const loading = useAdminCategoriesStore((state) => state.loading)
   const fetch = useAdminCategoriesStore((state) => state.fetch)
@@ -33,6 +34,9 @@ export default function CategoriesList() {
     try {
       await remove(category.id)
       toast.success('Categoría eliminada')
+      // PROD-24b. La fila (y con ella el botón que abrió el diálogo) ya no existe: sin esto el foco cae al
+      // principio de la página. Se lleva al título de la lista.
+      headingRef.current?.focus()
     } catch (err) {
       const message = (err as { message?: string })?.message
       toast.error(message ?? 'No se pudo eliminar la categoría')
@@ -42,7 +46,7 @@ export default function CategoriesList() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-semibold">Categorías</h1>
+        <h1 ref={headingRef} tabIndex={-1} className="text-2xl font-semibold outline-none">Categorías</h1>
         <Button asChild>
           <Link to="/admin/categories/new">
             <Plus className="size-4" />
@@ -83,7 +87,7 @@ export default function CategoriesList() {
                   <TableCell>
                     <div className="flex items-center gap-3">
                       {category.image ? (
-                        <img src={category.image} alt={category.name} loading="lazy" className="size-10 rounded object-cover" />
+                        <img src={category.image} alt="" loading="lazy" className="size-10 rounded object-cover" />
                       ) : (
                         <div className="size-10 rounded bg-muted" />
                       )}
@@ -100,13 +104,13 @@ export default function CategoriesList() {
                   <TableCell>
                     <div className="flex justify-end gap-2">
                       <Button variant="ghost" size="icon" asChild>
-                        <Link to={`/admin/categories/${category.id}/edit`}>
+                        <Link to={`/admin/categories/${category.id}/edit`} aria-label={`Editar ${category.name}`}>
                           <Pencil className="size-4" />
                         </Link>
                       </Button>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <Button variant="ghost" size="icon">
+                          <Button variant="ghost" size="icon" aria-label={`Eliminar ${category.name}`}>
                             <Trash2 className="size-4 text-destructive" />
                           </Button>
                         </AlertDialogTrigger>

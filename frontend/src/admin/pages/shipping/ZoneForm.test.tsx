@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { toast } from 'sonner'
 import ZoneForm from './ZoneForm'
 import adminApi from '@/admin/services/adminApi'
 import api from '@/services/api'
@@ -108,7 +107,11 @@ describe('ZoneForm: regiones y comunas del catálogo', () => {
     await user.click(screen.getByRole('button', { name: 'Guardar' }))
 
     expect(adminApi.shippingZones.create).not.toHaveBeenCalled()
-    expect(toast.error).toHaveBeenCalledWith('Elige al menos una comuna de Valparaíso, o marca «Toda la región»')
+    // PROD-24b. Junto a la cobertura, y no en un toast que desaparece.
+    expect(screen.getByRole('alert')).toHaveTextContent('Elige al menos una comuna de Valparaíso, o marca «Toda la región»')
+    expect(screen.getByLabelText('Buscar comuna en Valparaíso')).toHaveAccessibleDescription(
+      'Elige al menos una comuna de Valparaíso, o marca «Toda la región»',
+    )
   })
 
   it('marks what an old hand-written zone has and warns about what the catalogue does not know', async () => {

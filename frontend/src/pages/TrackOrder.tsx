@@ -1,7 +1,10 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import api from '../services/api'
+import { friendlyError } from '../services/errors'
+import type { ApiFailure } from '../services/errors'
 import { formatCurrency } from '../utils/currency'
+import { useStoreTitle } from '../hooks/useDocumentTitle'
 import type { OrderTracking } from '../types/api'
 
 const STATUS_LABELS: Record<string, string> = {
@@ -25,6 +28,7 @@ export default function TrackOrder() {
   const [result, setResult] = useState<OrderTracking | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  useStoreTitle('Rastrear pedido')
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
@@ -37,8 +41,13 @@ export default function TrackOrder() {
     try {
       const data = await api.orders.track(orderNumber.trim())
       setResult(data)
-    } catch {
-      setError('No encontramos un pedido con ese número. Verifica e intenta nuevamente.')
+    } catch (error) {
+      // PROD-24b. Una red caída no es «no existe ese pedido».
+      setError(
+        (error as ApiFailure).status === 404
+          ? 'No encontramos un pedido con ese número. Verifica e intenta nuevamente.'
+          : friendlyError(error, 'No pudimos buscar tu pedido. Inténtalo de nuevo en unos minutos.'),
+      )
     } finally {
       setLoading(false)
     }
@@ -49,8 +58,13 @@ export default function TrackOrder() {
       <h1 className="mb-2 text-2xl font-semibold text-dark">Rastrear Pedido</h1>
       <p className="mb-6 text-sm text-secondary">Ingresa tu número de pedido para ver su estado.</p>
 
+      <label htmlFor="track-order-number" className="mb-1 block text-sm font-medium text-dark">
+        Número de pedido
+      </label>
       <form onSubmit={handleSubmit} className="mb-6 flex gap-2">
         <input
+          id="track-order-number"
+          aria-describedby={error ? 'track-order-error' : undefined}
           value={orderNumber}
           onChange={(event) => setOrderNumber(event.target.value)}
           placeholder="ej: ORD-AAXFD5GP"
@@ -65,7 +79,11 @@ export default function TrackOrder() {
         </button>
       </form>
 
-      {error && <p className="rounded bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+      {error && (
+        <p id="track-order-error" role="alert" className="rounded bg-red-50 p-3 text-sm text-red-700">
+          {error}
+        </p>
+      )}
 
       {result && (
         <div className="rounded-lg border border-gray-400 p-5">

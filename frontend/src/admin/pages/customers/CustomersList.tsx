@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Search, Trash2, Users } from 'lucide-react'
@@ -31,6 +31,7 @@ const STATUS_LABEL: Record<string, string> = {
 }
 
 export default function CustomersList() {
+  const headingRef = useRef<HTMLHeadingElement>(null)
   const data = useAdminCustomersStore((state) => state.data)
   const loading = useAdminCustomersStore((state) => state.loading)
   const fetchList = useAdminCustomersStore((state) => state.fetchList)
@@ -52,6 +53,9 @@ export default function CustomersList() {
     try {
       await remove(customer.id)
       toast.success('Cliente eliminado')
+      // PROD-24b. La fila (y con ella el botón que abrió el diálogo) ya no existe: sin esto el foco cae al
+      // principio de la página. Se lleva al título de la lista.
+      headingRef.current?.focus()
     } catch (err) {
       const message = (err as { message?: string })?.message
       toast.error(message ?? 'No se pudo eliminar el cliente')
@@ -66,7 +70,7 @@ export default function CustomersList() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-2xl font-semibold">Clientes</h1>
+      <h1 ref={headingRef} tabIndex={-1} className="text-2xl font-semibold outline-none">Clientes</h1>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         {statCards.map((card) => (
@@ -86,6 +90,7 @@ export default function CustomersList() {
         <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
         <Input
           placeholder="Buscar por nombre, email o teléfono…"
+          aria-label="Buscar clientes"
           className="pl-8"
           value={search}
           onChange={(event) => {
@@ -143,7 +148,7 @@ export default function CustomersList() {
                     <div className="flex justify-end gap-2">
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <Button variant="ghost" size="icon">
+                          <Button variant="ghost" size="icon" aria-label={`Eliminar ${customer.firstName} ${customer.lastName}`}>
                             <Trash2 className="size-4 text-destructive" />
                           </Button>
                         </AlertDialogTrigger>

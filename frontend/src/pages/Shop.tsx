@@ -4,6 +4,7 @@ import { useProductsStore } from '../stores/useProductsStore'
 import { useStoreSettingsStore } from '../stores/useStoreSettingsStore'
 import ProductCard from '../components/ProductCard'
 import Loading from '../components/Loading'
+import { useStoreTitle } from '../hooks/useDocumentTitle'
 import type { ProductSearchParams } from '../types/api'
 
 const PER_PAGE = 12
@@ -19,7 +20,7 @@ const SORT_OPTIONS: { label: string; sortBy: ProductSearchParams['sort_by']; sor
 export default function Shop() {
   const { slug } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { products, totalPages, page, loading } = useProductsStore()
+  const { products, totalPages, page, loading, error } = useProductsStore()
   const search = useProductsStore((state) => state.search)
   const categories = useStoreSettingsStore((state) => state.categories)
   const [filtersOpen, setFiltersOpen] = useState(false)
@@ -65,6 +66,7 @@ export default function Shop() {
   }
 
   const title = slug ? categories.find((c) => c.slug === slug)?.name ?? 'Categoría' : 'Todos los Productos'
+  useStoreTitle(searchTerm ? `Resultados para «${searchTerm}»` : title)
 
   return (
     <div className="mx-auto max-w-6xl p-4 py-8">
@@ -85,8 +87,9 @@ export default function Shop() {
       <div className="grid gap-6 lg:grid-cols-4">
         <aside id="shop-filters" className={`${filtersOpen ? 'block' : 'hidden'} space-y-6 lg:col-span-1 lg:block`}>
           <div>
-            <label className="mb-1 block text-sm font-medium text-dark">Buscar</label>
+            <label htmlFor="shop-search" className="mb-1 block text-sm font-medium text-dark">Buscar</label>
             <input
+              id="shop-search"
               type="search"
               defaultValue={searchTerm}
               onBlur={(event) => updateParam('search', event.target.value || null)}
@@ -96,47 +99,50 @@ export default function Shop() {
           </div>
 
           {!slug && (
-            <div>
-              <h3 className="mb-2 text-sm font-medium text-dark">Categoría</h3>
+            <fieldset>
+              <legend className="mb-2 text-sm font-medium text-dark">Categoría</legend>
               <div className="space-y-1 text-sm text-secondary">
                 <label className="flex items-center gap-2">
-                  <input type="radio" checked={category === ''} onChange={() => updateParam('category', null)} />
+                  <input type="radio" name="category" checked={category === ''} onChange={() => updateParam('category', null)} />
                   Todas
                 </label>
                 {categories.map((c) => (
                   <label key={c.id} className="flex items-center gap-2">
-                    <input type="radio" checked={category === c.slug} onChange={() => updateParam('category', c.slug)} />
+                    <input type="radio" name="category" checked={category === c.slug} onChange={() => updateParam('category', c.slug)} />
                     {c.name}
                   </label>
                 ))}
               </div>
-            </div>
+            </fieldset>
           )}
 
-          <div>
-            <h3 className="mb-2 text-sm font-medium text-dark">Precio</h3>
+          <fieldset>
+            <legend className="mb-2 text-sm font-medium text-dark">Precio</legend>
             <div className="flex items-center gap-2">
               <input
                 type="number"
+                aria-label="Precio mínimo"
                 defaultValue={minPrice}
                 onBlur={(event) => updateParam('min_price', event.target.value || null)}
                 placeholder="Mín"
                 className="w-full rounded border border-gray-400 px-2 py-1.5 text-base sm:text-sm"
               />
-              <span className="text-secondary">-</span>
+              <span aria-hidden="true" className="text-secondary">-</span>
               <input
                 type="number"
+                aria-label="Precio máximo"
                 defaultValue={maxPrice}
                 onBlur={(event) => updateParam('max_price', event.target.value || null)}
                 placeholder="Máx"
                 className="w-full rounded border border-gray-400 px-2 py-1.5 text-base sm:text-sm"
               />
             </div>
-          </div>
+          </fieldset>
 
           <div>
-            <h3 className="mb-2 text-sm font-medium text-dark">Tipo</h3>
+            <label htmlFor="shop-type" className="mb-2 block text-sm font-medium text-dark">Tipo</label>
             <select
+              id="shop-type"
               value={type}
               onChange={(event) => updateParam('type', event.target.value || null)}
               className="w-full rounded border border-gray-400 px-2 py-1.5 text-base sm:text-sm"
@@ -171,8 +177,10 @@ export default function Shop() {
         </aside>
 
         <div className="lg:col-span-3">
-          <div className="mb-4 flex items-center justify-end">
+          <div className="mb-4 flex items-center justify-end gap-2">
+            <label htmlFor="shop-sort" className="text-sm text-secondary">Ordenar por</label>
             <select
+              id="shop-sort"
               value={`${sortBy}:${sortOrder}`}
               onChange={(event) => {
                 const [newSortBy, newSortOrder] = event.target.value.split(':')
@@ -193,7 +201,10 @@ export default function Shop() {
           </div>
 
           {loading ? (
-            <Loading size="lg" />
+            <Loading size="lg" label="Cargando productos…" />
+          ) : error ? (
+            // PROD-24b. Una falla de red decía «No se encontraron productos», como si el catálogo estuviera vacío.
+            <p role="alert" className="py-12 text-center text-secondary">{error}</p>
           ) : products.length === 0 ? (
             <p className="py-12 text-center text-secondary">No se encontraron productos.</p>
           ) : (
@@ -205,7 +216,7 @@ export default function Shop() {
           )}
 
           {totalPages > 1 && (
-            <div className="mt-6 flex flex-wrap justify-center gap-2">
+            <nav aria-label="Paginación" className="mt-6 flex flex-wrap justify-center gap-2">
               {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
                 <button
                   key={p}
@@ -215,12 +226,14 @@ export default function Shop() {
                     next.set('page', String(p))
                     setSearchParams(next)
                   }}
-                  className={`h-8 w-8 rounded text-sm ${p === page ? 'bg-primary text-white' : 'border border-gray-400 text-dark'}`}
+                  aria-label={`Página ${p}`}
+                  aria-current={p === page ? 'page' : undefined}
+                  className={`size-9 rounded text-sm sm:size-8 ${p === page ? 'bg-primary text-white' : 'border border-gray-400 text-dark'}`}
                 >
                   {p}
                 </button>
               ))}
-            </div>
+            </nav>
           )}
         </div>
       </div>

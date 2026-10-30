@@ -1,4 +1,5 @@
-import { NavLink, Outlet, useMatches, useNavigate } from 'react-router-dom'
+import { useState } from 'react'
+import { NavLink, Outlet, useLocation, useMatches, useNavigate } from 'react-router-dom'
 import {
   Banknote,
   BarChart3,
@@ -21,9 +22,10 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import { Toaster } from '@/components/ui/sonner'
 import { Button } from '@/components/ui/button'
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { hasPermission, useAdminAuthStore } from '@/admin/stores/useAdminAuthStore'
 import { cn } from '@/lib/utils'
+import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 // A1: `permission` is what reveals each entry. Dashboard has none — it's where every admin lands,
 // whatever their role. Hiding a link is cosmetic; the endpoints behind it are enforced server-side.
@@ -46,12 +48,20 @@ const NAV_ITEMS: { to: string; label: string; icon: LucideIcon; end?: boolean; p
   { to: '/admin/settings/general', permission: 'settings.view', label: 'Config. general', icon: Settings },
 ]
 
+// PROD-24b. El título de la pestaña dice en qué sección se está: la entrada del menú cuyo destino es el
+// prefijo más largo de la URL («/admin/products/3/edit» → Productos).
+function sectionTitle(pathname: string) {
+  const match = NAV_ITEMS.filter((item) => (item.end ? pathname === item.to : pathname.startsWith(item.to)))
+    .sort((a, b) => b.to.length - a.to.length)[0]
+  return match?.label ?? null
+}
+
 function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   const user = useAdminAuthStore((state) => state.user)
   const visible = NAV_ITEMS.filter((item) => !item.permission || hasPermission(user, item.permission))
 
   return (
-    <nav className="flex flex-col gap-1 px-3">
+    <nav aria-label="Menú del panel" className="flex flex-col gap-1 px-3">
       {visible.map((item) => (
         <NavLink
           key={item.to}
@@ -65,7 +75,7 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
             )
           }
         >
-          <item.icon className="size-4" />
+          <item.icon aria-hidden="true" className="size-4" />
           {item.label}
         </NavLink>
       ))}
@@ -77,6 +87,9 @@ export default function AdminLayout() {
   const user = useAdminAuthStore((state) => state.user)
   const logout = useAdminAuthStore((state) => state.logout)
   const navigate = useNavigate()
+  const { pathname } = useLocation()
+  const [menuOpen, setMenuOpen] = useState(false)
+  useDocumentTitle(sectionTitle(pathname), 'Panel de administración')
 
   // Hiding the menu entry isn't enough — the URL can be typed. Each admin route declares what it
   // needs via `handle` in router.tsx, so one check here covers all 36 of them without a wrapper
@@ -92,6 +105,13 @@ export default function AdminLayout() {
 
   return (
     <div className="flex min-h-svh bg-muted/30">
+      {/* PROD-24b. Sin esto, cada pantalla empieza recorriendo con Tab las 16 entradas del menú. */}
+      <a
+        href="#admin-main"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[200] focus:rounded-md focus:bg-background focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:shadow-lg"
+      >
+        Saltar al contenido
+      </a>
       <aside className="hidden w-64 shrink-0 border-r bg-background md:flex md:flex-col">
         <div className="flex h-14 items-center border-b px-4 text-lg font-semibold">UvoStore Admin</div>
         <div className="flex-1 py-4">
@@ -101,16 +121,18 @@ export default function AdminLayout() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 items-center gap-3 border-b bg-background px-4">
-          <Sheet>
+          {/* PROD-24b. Controlado para cerrarlo al elegir una sección: antes quedaba abierto encima de la
+              página nueva. El SheetTitle le da nombre al diálogo. */}
+          <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="md:hidden">
+              <Button variant="ghost" size="icon" className="md:hidden" aria-label="Abrir menú">
                 <Menu className="size-5" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="w-64 p-0">
-              <div className="flex h-14 items-center border-b px-4 text-lg font-semibold">UvoStore Admin</div>
+            <SheetContent side="left" className="w-64 p-0" aria-describedby={undefined}>
+              <SheetTitle className="flex h-14 items-center border-b px-4 text-lg font-semibold">UvoStore Admin</SheetTitle>
               <div className="py-4">
-                <NavLinks />
+                <NavLinks onNavigate={() => setMenuOpen(false)} />
               </div>
             </SheetContent>
           </Sheet>
@@ -124,7 +146,7 @@ export default function AdminLayout() {
           </div>
         </header>
 
-        <main className="flex-1 p-4 md:p-6">
+        <main id="admin-main" tabIndex={-1} className="flex-1 p-4 outline-none md:p-6">
           {allowed ? (
             <Outlet />
           ) : (

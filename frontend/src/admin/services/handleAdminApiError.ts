@@ -1,4 +1,5 @@
 import { useAdminAuthStore } from '@/admin/stores/useAdminAuthStore'
+import { NETWORK_ERROR_MESSAGE } from '@/services/errors'
 
 interface AxiosLikeError {
   response?: { status?: number; data?: { message?: string } }
@@ -31,5 +32,25 @@ export function handleAdminApiError(error: AxiosLikeError): Promise<never> {
     logout()
   }
   const data = error.response?.data
-  return Promise.reject({ message: data?.message ?? error.message, ...data })
+  // Un cuerpo que no es JSON (el HTML de un proxy) no se esparce: serían sus caracteres uno por uno.
+  const body = data && typeof data === 'object' ? data : {}
+  return Promise.reject({ ...body, status: error.response?.status, message: adminMessage(error) })
+}
+
+// PROD-24b. Qué texto llega a los `toast.error(message ?? 'No se pudo…')` de las pantallas.
+//
+// Antes era `data?.message ?? error.message`, y el segundo término siempre existe: sin respuesta, axios
+// pone "Network Error" o "timeout of …", y con una respuesta que no es del backend (un 502 del proxy, en
+// HTML), "Request failed with status code 502". Así el respaldo en español de cada pantalla casi nunca se
+// veía. Ahora:
+// - sin respuesta → un texto de red en español;
+// - 4xx de negocio, permisos y validación → el mensaje del backend, que está pensado para el usuario;
+// - 404 y 5xx → nada, para que cada pantalla diga en contexto qué no se pudo hacer. El 404 trae el texto de
+//   la excepción de Java ("Order 42 not found") y el 500, un genérico que no dice qué falló.
+function adminMessage(error: AxiosLikeError): string | undefined {
+  if (!error.response) return NETWORK_ERROR_MESSAGE
+  const status = error.response.status ?? 0
+  if (status === 404 || status >= 500) return undefined
+  const data = error.response.data
+  return data && typeof data === 'object' ? data.message : undefined
 }
