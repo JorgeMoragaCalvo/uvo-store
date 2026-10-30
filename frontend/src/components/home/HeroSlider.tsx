@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { HomeBanner } from '../../types/api'
@@ -32,14 +32,19 @@ function BannerLink({ to, newTab, className, children }: { to: string; newTab: b
 export default function HeroSlider({ banners, autoplaySpeed }: { banners: HomeBanner[]; autoplaySpeed: number }) {
   const [index, setIndex] = useState(0)
   // PROD-24b (WCAG 2.2.2). Lo que se mueve solo tiene que poder detenerse: un botón de pausa, y además
-  // se detiene mientras el puntero o el foco están encima, para que nadie pierda el texto a mitad de
+  // se detiene mientras el foco de teclado está adentro, para que nadie pierda el texto a mitad de
   // lectura. Quien pidió menos movimiento al sistema no lo ve rotar.
+  // No se pausa con el mouse encima: el banner ocupa todo el ancho y el puntero suele quedar sobre él, así
+  // que se veía estático (y en el celular un toque dispara mouseenter sin mouseleave: quieto para siempre).
   const [paused, setPaused] = useState(prefersReducedMotion)
-  const [hovered, setHovered] = useState(false)
   const [focused, setFocused] = useState(false)
+  // Un clic en una flecha deja el foco en ese botón: sin distinguirlo del Tab, el banner no volvía a rotar.
+  // Se guarda la hora y no un sí/no: un toque sobre la imagen no enfoca nada, y la marca se habría comido
+  // el siguiente Tab. (En el celular el foco llega después de soltar el dedo, por eso no basta pointerup.)
+  const lastPointerDownRef = useRef(0)
 
   const canRotate = banners.length > 1 && Boolean(autoplaySpeed)
-  const rotating = canRotate && !paused && !hovered && !focused
+  const rotating = canRotate && !paused && !focused
 
   useEffect(() => {
     if (!rotating) return
@@ -57,9 +62,12 @@ export default function HeroSlider({ banners, autoplaySpeed }: { banners: HomeBa
       aria-roledescription="carrusel"
       aria-label="Destacados"
       className="relative aspect-[4/3] w-full overflow-hidden bg-gray-100 sm:aspect-[16/7]"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      onFocus={() => setFocused(true)}
+      onPointerDown={() => {
+        lastPointerDownRef.current = Date.now()
+      }}
+      onFocus={() => {
+        if (Date.now() - lastPointerDownRef.current > 1000) setFocused(true)
+      }}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false)
       }}

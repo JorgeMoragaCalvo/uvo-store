@@ -64,10 +64,36 @@ describe('HeroSlider', () => {
     expect(screen.getByRole('button', { name: 'Reanudar el carrusel' })).toBeInTheDocument()
   })
 
-  it('stops rotating while the pointer is over it', () => {
+  // Ocupa todo el ancho: con la pausa por hover, el puntero lo dejaba quieto casi siempre.
+  it('keeps rotating with the pointer over it', () => {
     renderSlider()
 
     fireEvent.mouseEnter(screen.getByRole('region', { name: 'Destacados' }))
+    act(() => vi.advanceTimersByTime(1000))
+
+    expect(screen.getByRole('heading', { name: 'Segunda' })).toBeInTheDocument()
+  })
+
+  // Chrome deja el foco en el botón clickeado: eso no debe contar como foco de teclado.
+  // (Con fireEvent y en el orden del navegador: userEvent se cuelga con los temporizadores falsos.)
+  it('keeps rotating after an arrow is clicked', () => {
+    renderSlider()
+    const next = screen.getByRole('button', { name: 'Diapositiva siguiente' })
+
+    fireEvent.pointerDown(next)
+    act(() => next.focus())
+    fireEvent.click(next)
+    expect(screen.getByRole('heading', { name: 'Segunda' })).toBeInTheDocument()
+
+    act(() => vi.advanceTimersByTime(1000))
+    expect(screen.getByRole('heading', { name: 'Primera' })).toBeInTheDocument()
+  })
+
+  it('stops rotating while keyboard focus is inside', () => {
+    renderSlider()
+
+    // Foco sin pointerdown antes: así llega con Tab.
+    act(() => screen.getByRole('button', { name: 'Diapositiva siguiente' }).focus())
     act(() => vi.advanceTimersByTime(3000))
 
     expect(screen.getByRole('heading', { name: 'Primera' })).toBeInTheDocument()
