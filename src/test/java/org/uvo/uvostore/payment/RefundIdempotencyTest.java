@@ -139,6 +139,28 @@ class RefundIdempotencyTest {
     }
 
     @Test
+    @DisplayName("Si no se sabe qué hizo la pasarela, la intención queda pendiente y el saldo reservado")
+    void anUncertainRefundKeepsTheBalanceReserved() {
+        // GAP-01. Un timeout después de que Transbank devolvió: antes se marcaba FAILED, el saldo volvía a quedar
+        // libre y el siguiente reembolso se autorizaba sobre dinero que ya había salido.
+        Order order = paidOrder();
+        BigDecimal half = new BigDecimal("5000");
+        when(webpayService.refund(any(), any()))
+                .thenThrow(new IllegalStateException("Error al reembolsar en Webpay: Read timed out"));
+
+        assertThatThrownBy(() -> service.refund(new RefundCommand(order.getId(), half, null, null)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("No se pudo confirmar si Webpay hizo el reembolso de 5000")
+                .hasMessageContaining("queda reservado");
+
+        verify(intentStore, org.mockito.Mockito.never()).fail(any());
+        // Los 5.000 inciertos siguen contando: del total ya no se pueden pedir los 10.000.
+        assertThatThrownBy(() -> service.refund(new RefundCommand(order.getId(), TOTAL, null, null)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("quedan 5000");
+    }
+
+    @Test
     @DisplayName("Un rechazo de la pasarela libera el saldo en vez de morderlo para siempre")
     void aRejectedRefundReleasesTheBalance() {
         Order order = paidOrder();

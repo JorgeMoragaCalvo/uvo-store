@@ -10,6 +10,7 @@ import com.mercadopago.client.preference.PreferenceClient;
 import com.mercadopago.client.preference.PreferenceItemRequest;
 import com.mercadopago.client.preference.PreferenceRequest;
 import com.mercadopago.core.MPRequestOptions;
+import com.mercadopago.exceptions.MPApiException;
 import com.mercadopago.net.MPResultsResourcesPage;
 import com.mercadopago.net.MPSearchRequest;
 import com.mercadopago.resources.payment.Payment;
@@ -298,20 +299,38 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
             throw new BusinessException("La orden no tiene un pago de MercadoPago que devolver");
         }
 
+        // GAP-01: fuera del try. Dentro, el BusinessException de una tienda sin accessToken se convertía en un
+        // error incierto, y ese reembolso —que no llegó a salir— quedaba reservando el saldo.
+        MPRequestOptions options = requestOptions(requireAccessToken(storeId), idempotencyKey);
+
         PaymentRefund refund;
         try {
-            refund = new PaymentRefundClient().refund(Long.parseLong(paymentId),
+            refund = refundClient().refund(Long.parseLong(paymentId),
                     amount.setScale(0, RoundingMode.HALF_UP),
                     // F12: la clave de la intención viaja como X-Idempotency-Key, así que un reintento
                     // de la misma devolución no crea un segundo reembolso.
-                    requestOptions(requireAccessToken(storeId), idempotencyKey));
+                    options);
         } catch (NumberFormatException e) {
             throw new BusinessException("El identificador de pago de la orden no es de MercadoPago: " + paymentId);
+        } catch (MPApiException e) {
+            // GAP-01. MercadoPago respondió con un error. Solo un código que asegura que la devolución no se hizo
+            // libera el saldo (ver GatewayRejection); un 5xx o un 409 de idempotencia quedan inciertos.
+            String detail = e.getApiResponse() != null ? e.getApiResponse().getContent() : e.getMessage();
+            if (GatewayRejection.isDefinitive(e.getStatusCode())) {
+                throw new BusinessException("MercadoPago rechazó el reembolso (HTTP " + e.getStatusCode() + "): " + detail);
+            }
+            throw new IllegalStateException("Error al reembolsar en MercadoPago (HTTP " + e.getStatusCode() + "): " + detail, e);
         } catch (Exception e) {
+            // MPException: timeout o conexión cortada. MercadoPago pudo haber devuelto.
             throw new IllegalStateException("Error al reembolsar en MercadoPago: " + e.getMessage(), e);
         }
 
         return String.valueOf(refund.getId());
+    }
+
+    /** El cliente del SDK, aparte para que las pruebas puedan sustituirlo, como {@code transaction()} en Webpay. */
+    protected PaymentRefundClient refundClient() {
+        return new PaymentRefundClient();
     }
 
     // Null when the gateway isn't enabled or has no secret — the caller turns that into the same

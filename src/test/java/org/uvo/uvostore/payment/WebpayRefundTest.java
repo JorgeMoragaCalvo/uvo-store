@@ -1,5 +1,8 @@
 package org.uvo.uvostore.payment;
 
+import cl.transbank.webpay.exception.TransactionRefundException;
+import cl.transbank.webpay.exception.TransbankHttpApiException;
+import cl.transbank.webpay.exception.WebpayException;
 import cl.transbank.webpay.webpayplus.WebpayPlus;
 import cl.transbank.webpay.webpayplus.responses.WebpayPlusMallTransactionRefundResponse;
 import org.junit.jupiter.api.AfterEach;
@@ -118,6 +121,54 @@ class WebpayRefundTest {
         assertThatThrownBy(() -> service.refund(order.getId(), new BigDecimal("10000.00")))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("rechazó");
+    }
+
+    // GAP-01. Lo que sigue decide si RefundService libera el saldo: BusinessException lo libera (la devolución no se
+    // hizo); cualquier otra cosa lo deja reservado, porque Transbank pudo haber devuelto.
+
+    @Test
+    @DisplayName("Un 4xx de Transbank es un rechazo")
+    void aClientErrorFromTransbankIsARejection() throws Exception {
+        when(transbank.refund(TOKEN, "ORD-10", CHILD_COMMERCE_CODE, 10000d)).thenThrow(new TransactionRefundException(
+                new TransbankHttpApiException(422, "Invalid value for parameter: amount")));
+
+        assertThatThrownBy(() -> service.refund(order.getId(), new BigDecimal("10000.00")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("HTTP 422")
+                .hasMessageContaining("Invalid value for parameter: amount");
+    }
+
+    @Test
+    @DisplayName("Un error_message en una respuesta 2xx de Transbank es un rechazo")
+    void anErrorMessageInASuccessfulResponseIsARejection() throws Exception {
+        when(transbank.refund(TOKEN, "ORD-10", CHILD_COMMERCE_CODE, 10000d))
+                .thenThrow(new TransactionRefundException(new WebpayException("Transaction already nullified")));
+
+        assertThatThrownBy(() -> service.refund(order.getId(), new BigDecimal("10000.00")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Transaction already nullified");
+    }
+
+    @Test
+    @DisplayName("Un 5xx de Transbank no dice si la devolución se hizo")
+    void aServerErrorFromTransbankIsUncertain() throws Exception {
+        when(transbank.refund(TOKEN, "ORD-10", CHILD_COMMERCE_CODE, 10000d)).thenThrow(new TransactionRefundException(
+                new TransbankHttpApiException(503, "Service Unavailable")));
+
+        assertThatThrownBy(() -> service.refund(order.getId(), new BigDecimal("10000.00")))
+                .isInstanceOf(IllegalStateException.class)
+                .isNotInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    @DisplayName("Un timeout no dice si la devolución se hizo")
+    void aTimeoutIsUncertain() throws Exception {
+        when(transbank.refund(TOKEN, "ORD-10", CHILD_COMMERCE_CODE, 10000d))
+                .thenThrow(new java.net.SocketTimeoutException("Read timed out"));
+
+        assertThatThrownBy(() -> service.refund(order.getId(), new BigDecimal("10000.00")))
+                .isInstanceOf(IllegalStateException.class)
+                .isNotInstanceOf(BusinessException.class);
     }
 
     @Test

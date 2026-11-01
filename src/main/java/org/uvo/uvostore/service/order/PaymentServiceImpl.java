@@ -191,6 +191,12 @@ public class PaymentServiceImpl implements PaymentService {
                     // PENDING que RefundService ya dejó commiteada antes de llegar aquí.
                     requestOptions().toBuilderFullCopy().setIdempotencyKey(idempotencyKey).build());
         } catch (StripeException e) {
+            // GAP-01. Solo un código que asegura que la devolución no se hizo libera el saldo en RefundService.
+            // ApiConnectionException (timeout, conexión cortada) trae 0 y un 5xx tampoco es definitivo: inciertos.
+            Integer status = e.getStatusCode();
+            if (status != null && org.uvo.uvostore.service.payment.GatewayRejection.isDefinitive(status)) {
+                throw new BusinessException("Stripe rechazó el reembolso (HTTP " + status + "): " + e.getMessage());
+            }
             throw new IllegalStateException("Error al reembolsar en Stripe: " + e.getMessage(), e);
         }
 
