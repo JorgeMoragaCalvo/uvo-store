@@ -1,5 +1,6 @@
 package org.uvo.uvostore.service.payment;
 
+import io.sentry.Sentry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -9,6 +10,7 @@ import org.uvo.uvostore.entity.audit.enums.AuditTargetType;
 import org.uvo.uvostore.entity.order.Order;
 import org.uvo.uvostore.entity.order.OrderRefund;
 import org.uvo.uvostore.entity.order.OrderStatusHistory;
+import org.uvo.uvostore.entity.order.enums.PaymentMethodType;
 import org.uvo.uvostore.entity.order.enums.PaymentStatus;
 import org.uvo.uvostore.entity.order.enums.RefundStatus;
 import org.uvo.uvostore.entity.order.enums.RefundType;
@@ -36,8 +38,9 @@ import java.util.NoSuchElementException;
  *
  * <p>Este servicio es el despachador —el equivalente de {@code PaymentReconciliationService} para el
  * camino contrario—: valida cuánto se puede devolver, le pide a la pasarela de la orden que lo haga,
- * y solo entonces escribe. <b>El orden importa</b>: si la pasarela falla, lanza, la transacción se
- * deshace y no queda registro de un reembolso que no ocurrió.
+ * y solo entonces escribe. <b>El orden importa</b>: si la pasarela rechaza, lanza, la transacción se
+ * deshace y la intención queda FAILED. Si no se sabe qué hizo la pasarela (GAP-01), la intención queda
+ * PENDING y su importe sigue reservado.
  *
  * <p>No hace falta {@code TenantContext.runWithin} como en la conciliación: esto siempre sale de una
  * petición del panel, así que {@code TenantResolutionFilter} ya puso el tenant.
@@ -86,8 +89,8 @@ public class RefundService {
         boolean closesOrder = closesOrder(order, amount);
 
         // F12. La intención se guarda y se confirma ANTES de mover un peso, en su propia transacción.
-        // El fallo que esto cubre no es que la pasarela falle —eso lanza, se deshace todo y no queda
-        // rastro de un reembolso que no ocurrió— sino el contrario: la pasarela devuelve el dinero y
+        // El fallo que esto cubre no es que la pasarela rechace —eso lanza, se deshace todo y la
+        // intención queda FAILED— sino el contrario: la pasarela devuelve el dinero y
         // luego se cae lo local. Antes eso dejaba el dinero fuera y la base diciendo que no se había
         // devuelto nada, así que el reintento del operador lo devolvía por segunda vez. Este commit es
         // el que sobrevive a esa caída.
@@ -104,12 +107,26 @@ public class RefundService {
                 case MANUAL -> throw new BusinessException(
                         "Esta orden se pagó fuera de una pasarela: registra el reembolso con el endpoint de reembolso externo");
             };
-        } catch (RuntimeException e) {
+        } catch (BusinessException e) {
             // La pasarela dijo no: la intención se marca fallida —también en su propia transacción, para
             // que sobreviva al rollback de ésta— y el saldo vuelve a quedar disponible. Sin esto, un
             // rechazo dejaría mordido para siempre un dinero que nunca salió.
             intentStore.fail(intent.getId());
             throw e;
+        } catch (RuntimeException e) {
+            // GAP-01. Todo lo demás —un timeout, una conexión cortada, un 5xx— no dice si el dinero salió, y
+            // tratarlo como un rechazo liberaba el saldo: si la pasarela sí había devuelto, el siguiente
+            // reembolso con otro importe se autorizaba sobre dinero que ya no estaba. La intención se queda
+            // PENDING y el importe reservado hasta que alguien lo compruebe en la pasarela (GatewayRejection
+            // decide qué cuenta como rechazo). Se responde con un BusinessException para que el panel muestre
+            // el aviso: con un 500, handleAdminApiError lo cambiaría por un "no se pudo" genérico.
+            log.error("Reembolso con resultado incierto, queda PENDING order_id={} refund_id={} monto={} pasarela={} error={}",
+                    order.getId(), intent.getId(), amount, order.getPaymentMethod(), e.getMessage());
+            Sentry.captureException(e);
+            String gateway = gatewayName(order.getPaymentMethod());
+            throw new BusinessException("No se pudo confirmar si " + gateway + " hizo el reembolso de " + amount
+                    + ". El monto queda reservado: revísalo en el panel de " + gateway
+                    + " antes de volver a intentarlo o de registrarlo como externo");
         }
 
         return complete(intent, order, amount, reference, closesOrder, command);
@@ -250,6 +267,15 @@ public class RefundService {
             detail += ". Motivo: " + reason;
         }
         return detail;
+    }
+
+    private static String gatewayName(PaymentMethodType method) {
+        return switch (method) {
+            case STRIPE -> "Stripe";
+            case WEBPAY -> "Webpay";
+            case MERCADOPAGO -> "MercadoPago";
+            case MANUAL -> "la pasarela";
+        };
     }
 
     private void appendHistory(Order order, String notes) {

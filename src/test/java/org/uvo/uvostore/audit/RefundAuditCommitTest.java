@@ -142,6 +142,20 @@ class RefundAuditCommitTest {
                 .isEqualTo("FAILED");
     }
 
+    @Test
+    @DisplayName("GAP-01. Si no se sabe qué hizo la pasarela: 400 con el aviso, y la intención queda PENDING y sin rechazo")
+    void anUncertainRefundStaysPending() throws Exception {
+        when(webpayService.refund(eq(order.getId()), any()))
+                .thenThrow(new IllegalStateException("Error al reembolsar en Webpay: Read timed out"));
+
+        refund("{\"amount\":1000}", 400);
+
+        assertThat(jdbc.queryForObject("SELECT status FROM order_refunds WHERE order_id = ?", String.class, order.getId()))
+                .isEqualTo("PENDING");
+        assertThat(AuditRows.forStore(jdbc, store.getId(), "REFUND_REQUEST")).hasSize(1);
+        assertThat(AuditRows.forStore(jdbc, store.getId(), "REFUND_ISSUE")).isEmpty();
+    }
+
     private void refund(String body, int expectedStatus) throws Exception {
         mockMvc.perform(post("/api/admin/orders/" + order.getId() + "/refund")
                         .header("Host", host())

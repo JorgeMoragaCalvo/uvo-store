@@ -2,6 +2,9 @@ package org.uvo.uvostore.service.payment;
 
 import org.uvo.uvostore.service.BusinessException;
 import cl.transbank.model.MallTransactionCreateDetails;
+import cl.transbank.webpay.exception.TransactionRefundException;
+import cl.transbank.webpay.exception.TransbankHttpApiException;
+import cl.transbank.webpay.exception.WebpayException;
 import cl.transbank.webpay.webpayplus.WebpayPlus;
 import cl.transbank.webpay.webpayplus.responses.WebpayPlusMallTransactionCommitResponse;
 import cl.transbank.webpay.webpayplus.responses.WebpayPlusMallTransactionCreateResponse;
@@ -194,7 +197,13 @@ public class WebpayServiceImpl implements WebpayService {
             // de otro, así que invertirlos falla contra Transbank y no aquí. Ver WebpayRefundTest.
             response = transaction().refund(token, order.getOrderNumber(), childCommerceCode,
                     amount.setScale(0, java.math.RoundingMode.HALF_UP).doubleValue());
+        } catch (TransactionRefundException e) {
+            throw refundFailure(e);
+        } catch (IllegalArgumentException e) {
+            // ValidationUtil del SDK, antes de llamar a Transbank: no salió nada.
+            throw new BusinessException("Transbank no acepta los datos del reembolso: " + e.getMessage());
         } catch (Exception e) {
+            // GAP-01. Un IOException es un timeout o una conexión cortada: Transbank pudo haber devuelto.
             throw new IllegalStateException("Error al reembolsar en Webpay: " + e.getMessage(), e);
         }
 
@@ -202,6 +211,25 @@ public class WebpayServiceImpl implements WebpayService {
             throw new BusinessException("Transbank rechazó el reembolso (código " + response.getResponseCode() + ")");
         }
         return response.getType();
+    }
+
+    /**
+     * GAP-01. Qué dijo Transbank, para que {@code RefundService} sepa si el saldo se libera. El SDK envuelve en
+     * {@code TransactionRefundException} dos cosas: una respuesta HTTP de error ({@code TransbankHttpApiException},
+     * con el código HTTP) y una respuesta 2xx con {@code error_message} ({@code WebpayException}). La segunda siempre
+     * es un rechazo; la primera, solo si el código lo asegura.
+     */
+    private static RuntimeException refundFailure(TransactionRefundException e) {
+        Throwable cause = e.getCause();
+        if (cause instanceof TransbankHttpApiException http) {
+            if (GatewayRejection.isDefinitive(http.getCode())) {
+                return new BusinessException("Transbank rechazó el reembolso (HTTP " + http.getCode() + "): " + http.getMessage());
+            }
+        } else if (cause instanceof WebpayException rejection) {
+            return new BusinessException("Transbank rechazó el reembolso: " + rejection.getMessage());
+        }
+        String detail = cause != null ? cause.getMessage() : e.getMessage();
+        return new IllegalStateException("Error al reembolsar en Webpay: " + detail, e);
     }
 
     private String requireChildCommerceCode(Long storeId) {
