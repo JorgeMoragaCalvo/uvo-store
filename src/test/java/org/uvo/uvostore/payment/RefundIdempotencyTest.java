@@ -10,6 +10,7 @@ import org.uvo.uvostore.entity.order.enums.OrderStatus;
 import org.uvo.uvostore.entity.order.enums.PaymentMethodType;
 import org.uvo.uvostore.entity.order.enums.PaymentStatus;
 import org.uvo.uvostore.entity.order.enums.RefundStatus;
+import org.uvo.uvostore.entity.order.enums.RefundType;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.OrderRefundRepository;
 import org.uvo.uvostore.repository.OrderRepository;
@@ -171,6 +172,27 @@ class RefundIdempotencyTest {
 
         // La intención se marca fallida; sin eso, el saldo quedaría mordido por un dinero que no salió.
         verify(intentStore).fail(99L);
+    }
+
+    @Test
+    @DisplayName("Tras un rechazo, el reintento del mismo importe lleva otra clave")
+    void aRetryAfterARejectionGetsANewKey() {
+        // GAP-02. Un FAILED no suma al "ya devuelto", así que sin la cuenta de rechazos el reintento repetía la clave:
+        // la restricción única lo convertía en un 500 y Stripe o MercadoPago habrían repetido el rechazo guardado.
+        // Aquí va el RefundIntentStore real: el de los demás tests es un doble que arma la clave a su manera.
+        Order order = paidOrder();
+        RefundIntentStore realStore = new RefundIntentStore(refundRepository, userRepository, auditTrail);
+        RefundCommand command = new RefundCommand(order.getId(), TOTAL, null, null);
+
+        assertThat(realStore.open(order, new BigDecimal("10000"), RefundType.FULL, command).getIdempotencyKey())
+                .as("el primer intento conserva el formato de siempre")
+                .isEqualTo("refund:1:0:10000");
+
+        // La pasarela lo rechazó: no suma al "ya devuelto" (el doble de save no lo agrega a stored) y cuenta como rechazo.
+        when(refundRepository.countByOrderIdAndStatus(order.getId(), RefundStatus.FAILED)).thenReturn(1L);
+
+        assertThat(realStore.open(order, new BigDecimal("10000"), RefundType.FULL, command).getIdempotencyKey())
+                .isEqualTo("refund:1:0:10000:1");
     }
 
     @Test

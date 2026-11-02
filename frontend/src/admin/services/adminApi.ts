@@ -8,6 +8,7 @@ import type {
   AdminCustomerSummaryDto,
   AdminLoginResponse,
   AdminOrderDetail,
+  RefundResolution,
   AdminOrderStats,
   AdminOrderSummary,
   AdminProductStats,
@@ -286,6 +287,15 @@ export const adminApi = {
     // El dinero ya se devolvió desde el panel de la pasarela; esto solo lo registra.
     recordExternalRefund: (id: number, amount: number | undefined, reason: string): Promise<AdminOrderDetail> =>
       client.post(`/orders/${id}/refund/external`, { amount, reason }),
+    // GAP-02. Cierra un reembolso PENDING con lo que se vio en la pasarela. No mueve dinero.
+    resolveRefund: (
+      id: number,
+      refundId: number,
+      outcome: RefundResolution,
+      reference: string,
+      note: string,
+    ): Promise<AdminOrderDetail> =>
+      client.post(`/orders/${id}/refunds/${refundId}/resolve`, { outcome, reference, note }),
   },
   paymentGateways: {
     list: (): Promise<PaymentGatewayConfigDto[]> => client.get('/payment-gateways'),

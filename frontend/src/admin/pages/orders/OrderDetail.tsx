@@ -12,13 +12,25 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import adminApi from '@/admin/services/adminApi'
 import { hasPermission, useAdminAuthStore } from '@/admin/stores/useAdminAuthStore'
 import { useAdminOrdersStore } from '@/admin/stores/useAdminOrdersStore'
-import type { AdminOrderDetail } from '@/admin/types/admin'
+import type { AdminOrderDetail, AdminOrderRefund } from '@/admin/types/admin'
 
 // G4: REFUNDED no está en ninguna de las dos listas a propósito. Marcarlo a mano dejaba la base
 // diciendo "devuelto" con el dinero cobrado; ahora se llega ahí por la tarjeta de reembolsos, que
 // primero mueve el dinero. El backend rechaza el atajo aunque alguien llame a la API directamente.
 const ORDER_STATUSES = ['PENDING', 'PAID', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED']
 const PAYMENT_STATUSES = ['PENDING', 'PAID', 'FAILED']
+
+// GAP-02: si el dinero salió, si la pasarela lo rechazó, o si no se sabe.
+const REFUND_STATUS_LABELS: Record<AdminOrderRefund['status'], string> = {
+  PENDING: 'Pendiente',
+  COMPLETED: 'Hecho',
+  FAILED: 'Rechazado',
+}
+const REFUND_STATUS_VARIANTS: Record<AdminOrderRefund['status'], 'destructive' | 'secondary' | 'outline'> = {
+  PENDING: 'destructive',
+  COMPLETED: 'secondary',
+  FAILED: 'outline',
+}
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(value)
@@ -308,6 +320,10 @@ function RefundCard({
   const amountInvalid =
     parsedAmount !== undefined && (Number.isNaN(parsedAmount) || parsedAmount <= 0 || parsedAmount > remaining)
   const canRefund = order.paymentStatus === 'PAID' && remaining > 0
+  // GAP-02: lo pendiente ya cuenta en refundedAmount (el backend lo reserva), así que se dice aparte.
+  const pendingAmount = order.refunds
+    .filter((refund) => refund.status === 'PENDING')
+    .reduce((sum, refund) => sum + refund.amount, 0)
 
   return (
     <Card>
@@ -320,6 +336,9 @@ function RefundCard({
             <span className="text-muted-foreground">Devuelto</span>
             <span>{formatCurrency(order.refundedAmount)}</span>
           </div>
+          {pendingAmount > 0 && (
+            <p className="text-xs text-muted-foreground">Incluye {formatCurrency(pendingAmount)} sin confirmar.</p>
+          )}
           <div className="flex justify-between font-medium">
             <span>Por devolver</span>
             <span>{formatCurrency(remaining)}</span>
@@ -330,13 +349,22 @@ function RefundCard({
           <ul className="flex flex-col gap-2 border-t pt-3 text-sm">
             {order.refunds.map((refund) => (
               <li key={refund.id} className="flex flex-col gap-0.5">
-                <div className="flex items-center justify-between">
-                  <span>{formatCurrency(refund.amount)}</span>
-                  <Badge variant={refund.type === 'EXTERNAL' ? 'outline' : 'secondary'}>{refund.type}</Badge>
+                <div className="flex items-center justify-between gap-2">
+                  {/* Un rechazo no movió dinero: se ve, pero tachado, porque no cuenta en lo devuelto. */}
+                  <span className={refund.status === 'FAILED' ? 'text-muted-foreground line-through' : undefined}>
+                    {formatCurrency(refund.amount)}
+                  </span>
+                  <div className="flex gap-1">
+                    <Badge variant={REFUND_STATUS_VARIANTS[refund.status]}>{REFUND_STATUS_LABELS[refund.status]}</Badge>
+                    <Badge variant={refund.type === 'EXTERNAL' ? 'outline' : 'secondary'}>{refund.type}</Badge>
+                  </div>
                 </div>
                 {refund.reason && <span className="text-muted-foreground">{refund.reason}</span>}
                 {refund.gatewayReference && (
                   <span className="text-xs text-muted-foreground">Ref. {refund.gatewayReference}</span>
+                )}
+                {refund.status === 'PENDING' && (
+                  <PendingRefundResolver order={order} refundId={refund.id} busy={busy} runAction={runAction} />
                 )}
               </li>
             ))}
@@ -404,5 +432,77 @@ function RefundCard({
         )}
       </CardContent>
     </Card>
+  )
+}
+
+/**
+ * GAP-02. Un reembolso cuyo resultado no se supo (timeout, 5xx) queda PENDING y su importe reservado.
+ * Aquí se cierra con lo que se vea en el panel de la pasarela; antes solo se podía con SQL. No es un
+ * reembolso externo: ése sumaría otra fila y descontaría el mismo dinero dos veces.
+ */
+function PendingRefundResolver({
+  order,
+  refundId,
+  busy,
+  runAction,
+}: {
+  order: AdminOrderDetail
+  refundId: number
+  busy: boolean
+  runAction: (action: () => Promise<AdminOrderDetail>, successMessage: string) => Promise<void>
+}) {
+  const [reference, setReference] = useState('')
+  const [note, setNote] = useState('')
+  const noteMissing = note.trim() === ''
+
+  return (
+    <div className="mt-1 flex flex-col gap-2 rounded-md border border-dashed p-2">
+      <p className="text-xs text-muted-foreground">
+        No se sabe si la pasarela hizo este reembolso. Revisa primero su panel. Esto no mueve dinero.
+      </p>
+      <Label htmlFor={`refund-${refundId}-reference`}>Referencia de la pasarela</Label>
+      <Input
+        id={`refund-${refundId}-reference`}
+        value={reference}
+        onChange={(event) => setReference(event.target.value)}
+        placeholder="Solo si el reembolso se hizo"
+      />
+      <Label htmlFor={`refund-${refundId}-note`}>Nota</Label>
+      <Input
+        id={`refund-${refundId}-note`}
+        value={note}
+        onChange={(event) => setNote(event.target.value)}
+        placeholder="Qué se vio en la pasarela"
+      />
+      <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          // Sin referencia no hay con qué cuadrar después la base y la pasarela.
+          disabled={busy || noteMissing || reference.trim() === ''}
+          onClick={() =>
+            runAction(
+              () => adminApi.orders.resolveRefund(order.id, refundId, 'COMPLETED', reference, note),
+              'Reembolso confirmado como hecho',
+            )
+          }
+        >
+          Sí se hizo
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy || noteMissing}
+          onClick={() =>
+            runAction(
+              () => adminApi.orders.resolveRefund(order.id, refundId, 'FAILED', reference, note),
+              'Reembolso marcado como no hecho',
+            )
+          }
+        >
+          No se hizo
+        </Button>
+      </div>
+    </div>
   )
 }

@@ -53,16 +53,22 @@ public class RefundIntentStore {
 
     /**
      * Abre la intención y la deja commiteada. La clave se deriva de (orden, ya devuelto, importe), así
-     * que el reintento de la <b>misma</b> devolución la repite —y choca con la restricción única de la
-     * tabla, o la pasarela la deduplica— mientras que un segundo parcial legítimo, que parte de otro "ya
-     * devuelto", genera una distinta.
+     * que un segundo parcial legítimo, que parte de otro "ya devuelto", genera una distinta.
+     *
+     * <p>GAP-02. Lleva además la cuenta de rechazos de la orden, si hay alguno. Un {@code FAILED} no suma al "ya
+     * devuelto", así que sin ese sufijo el reintento de un rechazo repetía la clave: chocaba con la restricción
+     * única (un 500 y el importe bloqueado para esa orden), y en Stripe o MercadoPago habría recibido otra vez la
+     * respuesta guardada del rechazo. Renovarla es seguro porque solo cambia tras un rechazo definitivo, cuando no
+     * se movió dinero; un resultado incierto queda {@code PENDING} y su importe ya cuenta en el "ya devuelto".
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public OrderRefund open(Order order, BigDecimal amount, RefundType type, RefundCommand command) {
         User user = command.userId() == null ? null : userRepository.findById(command.userId()).orElse(null);
+        long failed = refundRepository.countByOrderIdAndStatus(order.getId(), RefundStatus.FAILED);
         String key = "refund:" + order.getId()
                 + ":" + refundRepository.totalRefunded(order.getId()).setScale(0)
-                + ":" + amount.setScale(0);
+                + ":" + amount.setScale(0)
+                + (failed > 0 ? ":" + failed : "");
         OrderRefund intent = refundRepository.save(OrderRefund.builder()
                 .order(order)
                 .amount(amount)
