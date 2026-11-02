@@ -50,8 +50,20 @@ public class AdminOrderQueryServiceImpl implements AdminOrderQueryService {
                 orderRepository.count((root, query, cb) -> cb.and(
                         cb.equal(root.get("store").get("id"), storeId), cb.equal(root.get("status"), OrderStatus.SHIPPED))),
                 orderRepository.count((root, query, cb) -> cb.and(
-                        cb.equal(root.get("store").get("id"), storeId), cb.equal(root.get("status"), OrderStatus.CANCELLED)))
+                        cb.equal(root.get("store").get("id"), storeId), cb.equal(root.get("status"), OrderStatus.CANCELLED))),
+                orderRepository.count(stockShortage().and((root, query, cb) -> cb.equal(root.get("store").get("id"), storeId)))
         );
+    }
+
+    /**
+     * GAP-03. Las que esperan una salida: marcadas y todavía cobradas. Un reembolso total o una cancelación las saca
+     * de aquí aunque la marca siga puesta, porque ya no hay nada que despachar.
+     */
+    private static Specification<Order> stockShortage() {
+        return (root, query, cb) -> cb.and(
+                cb.isTrue(root.get("stockShortage")),
+                cb.equal(root.get("paymentStatus"), PaymentStatus.PAID),
+                cb.notEqual(root.get("status"), OrderStatus.CANCELLED));
     }
 
     @Override
@@ -85,6 +97,7 @@ public class AdminOrderQueryServiceImpl implements AdminOrderQueryService {
                 case "processing" -> specs.add((root, query, cb) -> cb.equal(root.get("status"), OrderStatus.PROCESSING));
                 case "shipped" -> specs.add((root, query, cb) -> cb.equal(root.get("status"), OrderStatus.SHIPPED));
                 case "cancelled" -> specs.add((root, query, cb) -> cb.equal(root.get("status"), OrderStatus.CANCELLED));
+                case "stock" -> specs.add(stockShortage());
                 default -> { /* "all" — no filter */ }
             }
         }
@@ -101,13 +114,14 @@ public class AdminOrderQueryServiceImpl implements AdminOrderQueryService {
         return new AdminOrderSummaryDto(
                 order.getId(), order.getOrderNumber(), order.getCustomerEmail(), order.getCustomerFirstName(),
                 order.getCustomerLastName(), order.getStatus().name(), order.getPaymentStatus().name(),
-                order.getFulfillmentStatus().name(), order.getTotal(), order.getItems().size(), order.getCreatedAt()
+                order.getFulfillmentStatus().name(), order.getTotal(), order.getItems().size(), order.getCreatedAt(),
+                order.isStockShortage()
         );
     }
 
     private AdminOrderDetailDto toDetailDto(Order order) {
         List<AdminOrderItemDto> items = order.getItems().stream()
-                .map(this::toItemDto)
+                .map(item -> toItemDto(item, order.isStockShortage()))
                 .toList();
         List<OrderRefundDto> refunds = refundRepository.findByOrderIdOrderByCreatedAtDesc(order.getId()).stream()
                 .map(this::toRefundDto)
@@ -124,7 +138,7 @@ public class AdminOrderQueryServiceImpl implements AdminOrderQueryService {
                 order.getShippingRegion(), order.getShippingCommune(), order.getShippingPostalCode(),
                 order.getCustomerNotes(), order.getNotes(), items,
                 order.getCreatedAt(), order.getShippedAt(), order.getDeliveredAt(),
-                refundRepository.totalRefunded(order.getId()), refunds
+                refundRepository.totalRefunded(order.getId()), refunds, order.isStockShortage()
         );
     }
 
@@ -139,11 +153,15 @@ public class AdminOrderQueryServiceImpl implements AdminOrderQueryService {
         );
     }
 
-    private AdminOrderItemDto toItemDto(OrderItem item) {
+    private AdminOrderItemDto toItemDto(OrderItem item, boolean orderShortage) {
+        // GAP-03. Una línea sin marca de stock no siempre es una que falta: un producto sin manageStock nunca se
+        // descuenta. Y si la orden ya no está bloqueada (se liberó), ninguna falta para el panel.
+        boolean missing = orderShortage && !item.isStockApplied()
+                && (item.getVariation() != null || item.getProduct().isManageStock());
         return new AdminOrderItemDto(
                 item.getId(), item.getProduct().getId(), item.getProductName(), item.getProductSku(),
                 item.getVariation() != null ? item.getVariation().getId() : null,
-                item.getQuantity(), item.getPrice(), item.getSubtotal()
+                item.getQuantity(), item.getPrice(), item.getSubtotal(), missing
         );
     }
 

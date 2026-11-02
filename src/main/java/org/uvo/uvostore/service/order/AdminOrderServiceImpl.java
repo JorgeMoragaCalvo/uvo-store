@@ -53,6 +53,7 @@ public class AdminOrderServiceImpl implements AdminOrderService {
     public AdminOrderDetailDto markShipped(Long orderId) {
         Order order = findOrThrow(orderId);
         requirePaid(order, "enviar");
+        requireStock(order);
         order.setStatus(OrderStatus.SHIPPED);
         order.setFulfillmentStatus(FulfillmentStatus.FULFILLED);
         order.setShippedAt(Instant.now());
@@ -66,6 +67,7 @@ public class AdminOrderServiceImpl implements AdminOrderService {
     public AdminOrderDetailDto markDelivered(Long orderId) {
         Order order = findOrThrow(orderId);
         requirePaid(order, "marcar como entregada");
+        requireStock(order);
         order.setStatus(OrderStatus.DELIVERED);
         order.setDeliveredAt(Instant.now());
         appendHistory(order, "Marcada como entregada");
@@ -113,6 +115,7 @@ public class AdminOrderServiceImpl implements AdminOrderService {
         }
         if (newStatus == OrderStatus.SHIPPED || newStatus == OrderStatus.DELIVERED) {
             requirePaid(order, "pasar a " + newStatus);
+            requireStock(order);
         }
 
         OrderStatus previous = order.getStatus();
@@ -228,6 +231,7 @@ public class AdminOrderServiceImpl implements AdminOrderService {
         // se saltaba simplemente guardando un número de seguimiento. Lo descubrió un test que ya existía
         // y que despachaba una orden impaga sin que nadie lo hubiera notado.
         requirePaid(order, "guardar el seguimiento y enviar");
+        requireStock(order);
         order.setTrackingNumber(trackingNumber);
         order.setStatus(OrderStatus.SHIPPED);
         order.setFulfillmentStatus(FulfillmentStatus.FULFILLED);
@@ -237,6 +241,76 @@ public class AdminOrderServiceImpl implements AdminOrderService {
         appendHistory(order, "Número de seguimiento guardado");
         orderRepository.save(order);
         return adminOrderQueryService.getById(orderId);
+    }
+
+    /**
+     * GAP-03. «Reintentar descuento»: la orden se cobró sin stock para alguna línea y ya llegó reposición. Si ahora
+     * se descuentan todas, la orden queda desbloqueada; si no, sigue marcada y la nota del historial dice qué falta.
+     */
+    @Override
+    @Transactional
+    public AdminOrderDetailDto retryStock(Long orderId) {
+        Order order = lockedShortageOrder(orderId);
+        if (order.getPaymentStatus() != PaymentStatus.PAID || order.isStockRestored()) {
+            throw new BusinessException("Solo se reintenta el descuento de una orden pagada que no se haya cancelado");
+        }
+        orderInventoryService.retryMissingStock(order);
+        return adminOrderQueryService.getById(orderId);
+    }
+
+    /**
+     * GAP-03. «Liberar bloqueo»: el comerciante resolvió por fuera lo que faltaba (lo consiguió de otra parte, o
+     * reembolsó esa parte) y quiere despachar. No mueve stock: las líneas que no se descontaron siguen sin marca, así
+     * que una cancelación posterior no devuelve unidades que nunca salieron (F04).
+     *
+     * <p>La nota es obligatoria porque el sistema no puede comprobar lo que afirma, y va al historial de la orden, no
+     * a la auditoría: es texto libre, la misma regla que el motivo de un reembolso.
+     */
+    @Override
+    @Transactional
+    public AdminOrderDetailDto releaseStockShortage(Long orderId, String note) {
+        if (note == null || note.isBlank()) {
+            throw new BusinessException("Liberar el bloqueo necesita una nota que explique cómo se resolvió");
+        }
+        Order order = lockedShortageOrder(orderId);
+        long missingLines = order.getItems().stream()
+                .filter(item -> !item.isStockApplied()
+                        && (item.getVariation() != null || item.getProduct().isManageStock()))
+                .count();
+
+        order.setStockShortage(false);
+        appendHistory(order, "Bloqueo por falta de stock liberado. Nota: " + note.trim());
+        orderRepository.save(order);
+        auditTrail.record(AuditEntry.of(AuditAction.ORDER_STOCK_SHORTAGE_RELEASE, AuditTargetType.ORDER, order.getId())
+                .details(AuditDiff.create()
+                        .with("orderNumber", order.getOrderNumber())
+                        .with("missingLines", missingLines)));
+        return adminOrderQueryService.getById(orderId);
+    }
+
+    /**
+     * GAP-03. Con cerrojo: dos reintentos a la vez descontarían dos veces la misma línea, y un reintento a la vez que
+     * una liberación podría dejar la marca puesta después de liberarla.
+     */
+    private Order lockedShortageOrder(Long orderId) {
+        Order order = orderRepository.findByIdForUpdate(orderId)
+                .filter(o -> o.getStore().getId().equals(TenantContext.requireStoreId()))
+                .orElseThrow(() -> new NoSuchElementException("Order " + orderId + " not found"));
+        if (!order.isStockShortage()) {
+            throw new BusinessException("Esta orden no tiene productos sin stock pendientes");
+        }
+        return order;
+    }
+
+    /**
+     * GAP-03. Una orden cobrada a la que le faltó stock al confirmar el pago no se despacha. Preparar sí
+     * ({@code markProcessing}), igual que con una orden impaga.
+     */
+    private void requireStock(Order order) {
+        if (order.isStockShortage()) {
+            throw new BusinessException("Esta orden tiene productos sin stock: reintenta el descuento cuando llegue la "
+                    + "reposición, reembolsa o libera el bloqueo con una nota");
+        }
     }
 
     // C5: an admin cancelling or refunding an order has to give the inventory back, the same way

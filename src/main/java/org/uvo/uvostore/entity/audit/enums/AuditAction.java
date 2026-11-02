@@ -12,9 +12,10 @@ public enum AuditAction {
     REFUND_RECORD_EXTERNAL,
     REFUND_RESOLVE,
 
-    // Órdenes desde el panel.
+    // Órdenes desde el panel. Desde GAP-03 (V32), también liberar a mano el bloqueo de una orden cobrada sin stock.
     ORDER_CANCEL,
     ORDER_PAYMENT_STATUS_UPDATE,
+    ORDER_STOCK_SHORTAGE_RELEASE,
 
     // Dinero y credenciales.
     PAYMENT_GATEWAY_UPDATE,

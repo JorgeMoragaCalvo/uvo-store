@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, Clock, Package, Receipt } from 'lucide-react'
+import { AlertTriangle, Clock, Package, PackageX, Receipt } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import adminApi from '@/admin/services/adminApi'
@@ -22,6 +22,8 @@ export default function Dashboard() {
     { label: 'Bajo stock', value: productStats?.lowStock, failed: productsFailed, icon: AlertTriangle },
     { label: 'Órdenes pendientes', value: orderStats?.pending, failed: ordersFailed, icon: Clock },
     { label: 'Órdenes totales', value: orderStats?.all, failed: ordersFailed, icon: Receipt },
+    // GAP-03: cobradas que no se pueden despachar; están en la pestaña «Sin stock» de Órdenes.
+    { label: 'Órdenes sin stock', value: orderStats?.stockShortage, failed: ordersFailed, icon: PackageX },
   ]
 
   return (
@@ -32,7 +34,7 @@ export default function Dashboard() {
           No se pudieron cargar algunas cifras. Recarga la página para intentarlo de nuevo.
         </p>
       )}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {cards.map((card) => (
           <Card key={card.label}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">

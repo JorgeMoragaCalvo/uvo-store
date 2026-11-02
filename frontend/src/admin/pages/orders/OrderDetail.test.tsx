@@ -2,17 +2,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { toast } from 'sonner'
 import OrderDetail from './OrderDetail'
 import adminApi from '@/admin/services/adminApi'
 import { useAdminAuthStore } from '@/admin/stores/useAdminAuthStore'
 import { useAdminOrdersStore } from '@/admin/stores/useAdminOrdersStore'
-import type { AdminOrderDetail, AdminOrderRefund } from '@/admin/types/admin'
+import type { AdminOrderDetail, AdminOrderItem, AdminOrderRefund } from '@/admin/types/admin'
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 vi.mock('@/admin/services/adminApi', () => ({
   default: {
-    orders: { getById: vi.fn(), resolveRefund: vi.fn() },
+    orders: { getById: vi.fn(), resolveRefund: vi.fn(), retryStock: vi.fn(), releaseStockShortage: vi.fn() },
   },
 }))
 
@@ -30,7 +31,22 @@ function refund(overrides: Partial<AdminOrderRefund> = {}): AdminOrderRefund {
   }
 }
 
-function order(refunds: AdminOrderRefund[]): AdminOrderDetail {
+function item(overrides: Partial<AdminOrderItem> = {}): AdminOrderItem {
+  return {
+    id: 1,
+    productId: 5,
+    productName: 'Polera',
+    productSku: 'POL-1',
+    variationId: null,
+    quantity: 1,
+    price: 10000,
+    subtotal: 10000,
+    stockMissing: false,
+    ...overrides,
+  }
+}
+
+function order(refunds: AdminOrderRefund[], overrides: Partial<AdminOrderDetail> = {}): AdminOrderDetail {
   return {
     id: 10,
     orderNumber: 'ORD-10',
@@ -63,6 +79,8 @@ function order(refunds: AdminOrderRefund[]): AdminOrderDetail {
     deliveredAt: null,
     refundedAmount: refunds.filter((r) => r.status !== 'FAILED').reduce((sum, r) => sum + r.amount, 0),
     refunds,
+    stockShortage: false,
+    ...overrides,
   }
 }
 
@@ -146,5 +164,102 @@ describe('OrderDetail: estado y resolución de reembolsos', () => {
 
     expect(adminApi.orders.resolveRefund).toHaveBeenCalledWith(10, 70, 'FAILED', '', 'No aparece en Transbank')
     expect(await screen.findByText('Rechazado')).toBeInTheDocument()
+  })
+})
+
+/**
+ * GAP-03. Una orden cobrada sin stock para alguna línea quedaba con una nota en un historial que el panel no
+ * muestra, y se podía marcar enviada como cualquier otra.
+ */
+describe('OrderDetail: orden cobrada sin stock', () => {
+  const shortOrder = () =>
+    order([], {
+      stockShortage: true,
+      items: [
+        item({ id: 1, productName: 'Polera', stockMissing: true }),
+        item({ id: 2, productName: 'Gorro', stockMissing: false }),
+      ],
+    })
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    useAdminOrdersStore.setState({ detail: null, detailLoading: false })
+    useAdminAuthStore.setState({
+      token: 'jwt',
+      user: { id: 1, name: 'Admin', email: 'admin@test.local', permissions: ['orders.view', 'orders.manage'] },
+    })
+  })
+
+  async function renderOrder(detail: AdminOrderDetail) {
+    vi.mocked(adminApi.orders.getById).mockResolvedValue(detail)
+    render(
+      <MemoryRouter initialEntries={['/admin/orders/10']}>
+        <Routes>
+          <Route path="/admin/orders/:id" element={<OrderDetail />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    await screen.findByText('Productos')
+  }
+
+  it('avisa qué falta y no deja despachar', async () => {
+    await renderOrder(shortOrder())
+
+    expect(screen.getByText('Cobrada sin stock')).toBeInTheDocument()
+    expect(screen.getByText(/no había stock para Polera \(×1\)\./)).toBeInTheDocument()
+    // Una insignia en la cabecera y otra en la línea que falta; la otra línea no lleva.
+    expect(screen.getAllByText('Sin stock')).toHaveLength(2)
+    expect(screen.getByRole('button', { name: 'Marcar enviada' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Marcar entregada' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Guardar' })).toBeDisabled()
+    // Preparar sí.
+    expect(screen.getByRole('button', { name: 'Marcar en proceso' })).toBeEnabled()
+  })
+
+  it('una orden con stock no muestra nada de esto', async () => {
+    await renderOrder(order([], { items: [item()] }))
+
+    expect(screen.queryByText('Cobrada sin stock')).not.toBeInTheDocument()
+    expect(screen.queryByText('Sin stock')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Marcar enviada' })).toBeEnabled()
+  })
+
+  it('reintentar el descuento con reposición desbloquea el despacho', async () => {
+    const user = userEvent.setup()
+    await renderOrder(shortOrder())
+    vi.mocked(adminApi.orders.retryStock).mockResolvedValue(order([], { items: [item()] }))
+
+    await user.click(screen.getByRole('button', { name: 'Reintentar descuento' }))
+
+    expect(adminApi.orders.retryStock).toHaveBeenCalledWith(10)
+    expect(toast.success).toHaveBeenCalledWith('Stock descontado: la orden ya se puede despachar')
+    expect(screen.queryByText('Cobrada sin stock')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Marcar enviada' })).toBeEnabled()
+  })
+
+  it('si el reintento no alcanza, lo dice y la orden sigue bloqueada', async () => {
+    const user = userEvent.setup()
+    await renderOrder(shortOrder())
+    vi.mocked(adminApi.orders.retryStock).mockResolvedValue(shortOrder())
+
+    await user.click(screen.getByRole('button', { name: 'Reintentar descuento' }))
+
+    expect(toast.success).toHaveBeenCalledWith('Todavía falta stock para algunas líneas')
+    expect(screen.getByRole('button', { name: 'Marcar enviada' })).toBeDisabled()
+  })
+
+  it('liberar el bloqueo exige una nota', async () => {
+    const user = userEvent.setup()
+    await renderOrder(shortOrder())
+    vi.mocked(adminApi.orders.releaseStockShortage).mockResolvedValue(order([], { items: [item()] }))
+
+    const release = screen.getByRole('button', { name: 'Liberar bloqueo' })
+    expect(release).toBeDisabled()
+
+    await user.type(screen.getByLabelText('Nota'), 'Conseguido en la otra sucursal')
+    await user.click(release)
+
+    expect(adminApi.orders.releaseStockShortage).toHaveBeenCalledWith(10, 'Conseguido en la otra sucursal')
+    expect(screen.queryByText('Cobrada sin stock')).not.toBeInTheDocument()
   })
 })

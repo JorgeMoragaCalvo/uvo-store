@@ -16,6 +16,8 @@ const TABS = [
   { value: 'processing', label: 'En proceso' },
   { value: 'shipped', label: 'Enviadas' },
   { value: 'cancelled', label: 'Canceladas' },
+  // GAP-03: cobradas sin stock que esperan reposición, liberación o reembolso.
+  { value: 'stock', label: 'Sin stock' },
 ]
 
 const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
@@ -121,7 +123,10 @@ export default function OrdersList() {
                   </TableCell>
                   <TableCell>{formatCurrency(order.total)}</TableCell>
                   <TableCell>
-                    <Badge variant={STATUS_VARIANT[order.status] ?? 'outline'}>{order.status}</Badge>
+                    <div className="flex flex-wrap gap-1">
+                      <Badge variant={STATUS_VARIANT[order.status] ?? 'outline'}>{order.status}</Badge>
+                      {order.stockShortage && <Badge variant="destructive">Sin stock</Badge>}
+                    </div>
                   </TableCell>
                   <TableCell className="text-muted-foreground">{order.paymentStatus}</TableCell>
                   <TableCell className="text-muted-foreground">

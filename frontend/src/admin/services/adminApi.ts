@@ -296,6 +296,11 @@ export const adminApi = {
       note: string,
     ): Promise<AdminOrderDetail> =>
       client.post(`/orders/${id}/refunds/${refundId}/resolve`, { outcome, reference, note }),
+    // GAP-03. Vuelve a descontar las líneas que faltaron al pagar; si ya no falta ninguna, la orden se despacha.
+    retryStock: (id: number): Promise<AdminOrderDetail> => client.post(`/orders/${id}/stock-shortage/retry`),
+    // GAP-03. Desbloquea el despacho sin descontar nada; la nota es obligatoria y va al historial.
+    releaseStockShortage: (id: number, note: string): Promise<AdminOrderDetail> =>
+      client.post(`/orders/${id}/stock-shortage/release`, { note }),
   },
   paymentGateways: {
     list: (): Promise<PaymentGatewayConfigDto[]> => client.get('/payment-gateways'),

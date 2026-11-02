@@ -387,6 +387,8 @@ export interface AdminOrderSummary {
   total: number
   itemsCount: number
   createdAt: string
+  // GAP-03: cobrada sin stock para alguna línea; no se despacha hasta reponer o liberar.
+  stockShortage: boolean
 }
 
 export interface AdminOrderItem {
@@ -398,6 +400,8 @@ export interface AdminOrderItem {
   quantity: number
   price: number
   subtotal: number
+  // GAP-03: esta línea es la que no se pudo descontar al confirmar el pago.
+  stockMissing: boolean
 }
 
 export interface AdminOrderDetail {
@@ -433,6 +437,8 @@ export interface AdminOrderDetail {
   // G4: lo ya devuelto. El saldo (total - refundedAmount) es lo que queda por reembolsar.
   refundedAmount: number
   refunds: AdminOrderRefund[]
+  // GAP-03: el backend rechaza enviar, entregar o guardar el seguimiento mientras sea true.
+  stockShortage: boolean
 }
 
 export interface AdminOrderRefund {
@@ -460,6 +466,8 @@ export interface AdminOrderStats {
   processing: number
   shipped: number
   cancelled: number
+  // GAP-03: cobradas sin stock que esperan reposición, liberación o reembolso.
+  stockShortage: number
 }
 
 export type PaymentGateway = 'STRIPE' | 'WEBPAY' | 'MERCADOPAGO'

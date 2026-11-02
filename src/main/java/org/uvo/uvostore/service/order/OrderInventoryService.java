@@ -230,6 +230,47 @@ public class OrderInventoryService {
         item.setStockApplied(true);
     }
 
+    /**
+     * GAP-03. Vuelve a descontar las líneas de una orden marcada que no se descontaron al confirmar el pago: es lo que
+     * hace el botón «Reintentar descuento» del panel cuando llegó reposición. Las que ahora sí se descuentan quedan
+     * con su marca de línea, así que una cancelación posterior las devuelve; si ya no falta ninguna, la orden deja de
+     * estar bloqueada.
+     *
+     * <p>Quien la llama tiene ya el cerrojo de la orden ({@code findByIdForUpdate}): sin él, dos reintentos a la vez
+     * leerían la misma línea sin descontar y la descontarían dos veces. Primero la orden y después el producto, el
+     * mismo orden que {@link #applyOrderStock}.
+     *
+     * @return las líneas que siguen sin poder descontarse; vacía si la orden quedó completa
+     */
+    @Transactional
+    public List<String> retryMissingStock(Order order) {
+        // Lo mismo que en applyOrderStock: el primer descuento saca la orden de la sesión.
+        order.getItems().forEach(item -> Hibernate.initialize(item.getProduct()));
+
+        List<String> failures = new ArrayList<>();
+        for (OrderItem item : order.getItems()) {
+            if (item.isStockApplied()) {
+                continue;
+            }
+            if (item.getVariation() != null) {
+                decrementVariation(item, failures);
+            } else {
+                // Un producto sin manageStock se salta sin marca, igual que al pagar: no le falta nada.
+                decrementSimpleProduct(item, failures);
+            }
+        }
+
+        if (failures.isEmpty()) {
+            order.setStockShortage(false);
+            appendHistory(order, "Stock repuesto: se descontaron las líneas pendientes");
+            log.info("Stock repuesto, orden desbloqueada order_id={} order_number={}", order.getId(), order.getOrderNumber());
+        } else {
+            appendHistory(order, "Reintento de descuento: sigue sin stock " + String.join("; ", failures));
+        }
+        orderRepository.save(order);
+        return failures;
+    }
+
     private void reportStockFailure(Order order, List<String> failures) {
         String detail = "Stock insuficiente al confirmar el pago: " + String.join("; ", failures);
 
@@ -237,6 +278,9 @@ public class OrderInventoryService {
         // going anywhere else. The status is left untouched: the order IS paid, it just can't be
         // fulfilled as it stands.
         appendHistory(order, detail);
+        // GAP-03: y queda marcada, que es lo que bloquea el despacho y la muestra en el panel. La nota sola no se veía
+        // en ninguna parte y la orden se podía marcar enviada como cualquier otra. El save de applyOrderStock la escribe.
+        order.setStockShortage(true);
 
         log.error("{} order_id={} order_number={}", detail, order.getId(), order.getOrderNumber());
         // Explicit: this runs in a listener that deliberately doesn't throw, so it would never reach
