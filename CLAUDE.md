@@ -1132,7 +1132,8 @@ are in V28's `REVISIÓN MANUAL` block; the store panel doesn't read it.
   mandatory in PROD-19.
 - **What is audited:** refunds (`REFUND_REQUEST`, `REFUND_ISSUE` S/F, `REFUND_RECORD_EXTERNAL`, and since GAP-02
   (V31) `REFUND_RESOLVE` with the `outcome` of a `PENDING` intent resolved from the panel); manual
-  cancellation (both panel paths) and payment status; gateway, carrier, Stripe and POS credentials; the eight F17
+  cancellation (both panel paths) and payment status; since GAP-03 (V32) `ORDER_STOCK_SHORTAGE_RELEASE`, the manual
+  release of a paid order blocked for missing stock (the note goes to the order history, not the audit); gateway, carrier, Stripe and POS credentials; the eight F17
   money settings (`SettingsServiceImpl.set` now returns the previous value); admin users (create, update,
   activate/deactivate, delete, resend, accept, reset) and logins; roles with permission names; store creation
   (not its idempotent replay), domain and verification, and since PROD-23 status changes, closing and owner access
@@ -1338,8 +1339,8 @@ fetch join over a collection with pagination makes Hibernate page in memory. `@O
 is the other trap — it can't be proxied, so it costs one SELECT per row no matter what `fetch` says.
 `ProductListingQueryCountTest` fails if any of this is undone.
 
-**Database**: PostgreSQL via Flyway, schema in `src/main/resources/db/migration/` — **31 migrations,
-currently up to `V31__refund_resolve_audit.sql`**, well past the original catalog/settings ones.
+**Database**: PostgreSQL via Flyway, schema in `src/main/resources/db/migration/` — **32 migrations,
+currently up to `V32__order_stock_shortage.sql`**, well past the original catalog/settings ones.
 Everything from V8 on is a hardening or new capability rather than the original port: V8 stores, V11
 store domains, V12 password reset, V13 stock/coupon integrity, V14 token versions, V15 the
 permission catalogue, V16 the listing indexes, V17 TIMESTAMPTZ + the enum CHECK constraints, V18
@@ -1348,7 +1349,9 @@ store status, V19 order refunds, V20 `order_items.stock_applied`, V21 refund int
 V25 the outbox, V26 the POS ordered inputs, V27 POS variants, V28 `audit_events` (PROD-18, the first
 plpgsql: its immutability trigger), V29 the store lifecycle (PROD-23: `CLOSED`, `status_changed_at`, two audit
 actions), V30 `outbox_messages.request_id` (PROD-15b), V31 the `REFUND_RESOLVE` audit action (GAP-02: resolving a
-`PENDING` refund intent from the panel, which replaces V21's manual `UPDATE`).
+`PENDING` refund intent from the panel, which replaces V21's manual `UPDATE`), V32 `orders.stock_shortage` and
+the `ORDER_STOCK_SHORTAGE_RELEASE` audit action (GAP-03: a paid order whose stock couldn't be taken is marked, can't
+be dispatched, and is unblocked by retrying the decrement or releasing it with a note).
 `spring.jpa.hibernate.ddl-auto=validate`, so any entity change must be paired with a new Flyway
 migration — **never edit an already-applied one**, add the next number (`V24__...sql`).
 

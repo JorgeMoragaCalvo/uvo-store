@@ -140,7 +140,8 @@ public class AdminCustomerServiceImpl implements AdminCustomerService {
         return new AdminOrderSummaryDto(
                 order.getId(), order.getOrderNumber(), order.getCustomerEmail(), order.getCustomerFirstName(),
                 order.getCustomerLastName(), order.getStatus().name(), order.getPaymentStatus().name(),
-                order.getFulfillmentStatus().name(), order.getTotal(), order.getItems().size(), order.getCreatedAt()
+                order.getFulfillmentStatus().name(), order.getTotal(), order.getItems().size(), order.getCreatedAt(),
+                order.isStockShortage()
         );
     }
 

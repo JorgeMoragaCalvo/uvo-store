@@ -23,6 +23,8 @@ import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.repository.OrderStatusHistoryRepository;
 import org.uvo.uvostore.repository.ProductRepository;
 import org.uvo.uvostore.repository.StoreRepository;
+import org.uvo.uvostore.security.TenantContext;
+import org.uvo.uvostore.service.order.AdminOrderService;
 import org.uvo.uvostore.service.order.CouponService;
 import org.uvo.uvostore.service.order.OrderInventoryService;
 
@@ -68,6 +70,8 @@ class StockConcurrencyTest {
     private CouponRepository couponRepository;
     @Autowired
     private OrderStatusHistoryRepository historyRepository;
+    @Autowired
+    private AdminOrderService adminOrderService;
 
     private final List<Order> createdOrders = new ArrayList<>();
     private final List<Coupon> createdCoupons = new ArrayList<>();
@@ -115,6 +119,41 @@ class StockConcurrencyTest {
         assertThat(ordersWithFailure)
                 .as("exactamente una de las dos órdenes debe quedar marcada como no surtible")
                 .isEqualTo(1);
+
+        // GAP-03: y esa es la que queda bloqueada para despacho y a la vista en el panel. La nota sola no bastaba: no
+        // se mostraba en ninguna parte y la orden se podía marcar enviada.
+        assertThat(List.of(first, second).stream()
+                .filter(o -> orderRepository.findById(o.getId()).orElseThrow().isStockShortage())
+                .count())
+                .as("exactamente una de las dos órdenes cobradas queda con el despacho bloqueado")
+                .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("Dos reintentos simultáneos tras reponer: la línea se descuenta una sola vez")
+    void concurrentRetriesTakeTheMissingLineOnce() throws Exception {
+        Store store = store();
+        Product product = product(store, 0);
+        Order order = order(store, product, 1);
+        orderInventoryService.applyOrderStock(order);
+        assertThat(orderRepository.findById(order.getId()).orElseThrow().isStockShortage()).isTrue();
+
+        Product restocked = productRepository.findById(product.getId()).orElseThrow();
+        restocked.setStock(2);
+        productRepository.save(restocked);
+
+        // GAP-03. Sin el cerrojo de la orden, los dos leerían la línea sin descontar y los dos la descontarían: el
+        // UPDATE condicional solo protege el stock negativo, y con 2 de reposición alcanza para ambos.
+        runConcurrently(
+                () -> TenantContext.runWithin(store, () -> adminOrderService.retryStock(order.getId())),
+                () -> TenantContext.runWithin(store, () -> adminOrderService.retryStock(order.getId())));
+
+        assertThat(productRepository.findById(product.getId()).orElseThrow().getStock())
+                .as("la línea de 1 unidad se descuenta una sola vez")
+                .isEqualTo(1);
+        assertThat(orderRepository.findById(order.getId()).orElseThrow().isStockShortage())
+                .as("y la orden queda desbloqueada")
+                .isFalse();
     }
 
     @Test

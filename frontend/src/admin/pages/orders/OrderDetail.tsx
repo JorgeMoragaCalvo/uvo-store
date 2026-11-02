@@ -68,11 +68,20 @@ function OrderDetailContent({ order, onBack }: { order: AdminOrderDetail; onBack
   const [tracking, setTracking] = useState(order.trackingNumber ?? '')
   const [busy, setBusy] = useState(false)
 
-  async function runAction(action: () => Promise<AdminOrderDetail>, successMessage: string) {
+  // El mensaje puede depender de la respuesta: reintentar el descuento no siempre alcanza (GAP-03).
+  async function runAction(
+    action: () => Promise<AdminOrderDetail>,
+    successMessage: string | ((updated: AdminOrderDetail) => string),
+  ) {
     setBusy(true)
     try {
-      await applyDetailUpdate(action)
-      toast.success(successMessage)
+      let message = ''
+      await applyDetailUpdate(async () => {
+        const updated = await action()
+        message = typeof successMessage === 'function' ? successMessage(updated) : successMessage
+        return updated
+      })
+      toast.success(message)
     } catch (err) {
       const message = (err as { message?: string })?.message
       toast.error(message ?? 'No se pudo actualizar la orden')
@@ -90,7 +99,10 @@ function OrderDetailContent({ order, onBack }: { order: AdminOrderDetail; onBack
         <h1 className="text-2xl font-semibold">{order.orderNumber}</h1>
         <Badge>{order.status}</Badge>
         <Badge variant="outline">{order.paymentStatus}</Badge>
+        {order.stockShortage && <Badge variant="destructive">Sin stock</Badge>}
       </div>
+
+      {order.stockShortage && <StockShortageCard order={order} busy={busy} runAction={runAction} />}
 
       <div className="flex flex-wrap gap-2">
         <Button
@@ -104,7 +116,8 @@ function OrderDetailContent({ order, onBack }: { order: AdminOrderDetail; onBack
         <Button
           size="sm"
           variant="outline"
-          disabled={busy}
+          // GAP-03: el backend lo rechaza igual; deshabilitado, el motivo está en la alerta de arriba.
+          disabled={busy || order.stockShortage}
           onClick={() => runAction(() => adminApi.orders.markShipped(order.id), 'Orden marcada como enviada')}
         >
           Marcar enviada
@@ -112,7 +125,7 @@ function OrderDetailContent({ order, onBack }: { order: AdminOrderDetail; onBack
         <Button
           size="sm"
           variant="outline"
-          disabled={busy}
+          disabled={busy || order.stockShortage}
           onClick={() => runAction(() => adminApi.orders.markDelivered(order.id), 'Orden marcada como entregada')}
         >
           Marcar entregada
@@ -146,7 +159,14 @@ function OrderDetailContent({ order, onBack }: { order: AdminOrderDetail; onBack
                 <TableBody>
                   {order.items.map((item) => (
                     <TableRow key={item.id}>
-                      <TableCell>{item.productName}</TableCell>
+                      <TableCell>
+                        {item.productName}
+                        {item.stockMissing && (
+                          <Badge variant="destructive" className="ml-2">
+                            Sin stock
+                          </Badge>
+                        )}
+                      </TableCell>
                       <TableCell className="text-muted-foreground">{item.productSku ?? '—'}</TableCell>
                       <TableCell>{item.quantity}</TableCell>
                       <TableCell className="text-right">{formatCurrency(item.subtotal)}</TableCell>
@@ -279,7 +299,8 @@ function OrderDetailContent({ order, onBack }: { order: AdminOrderDetail; onBack
                 <Input id="tracking" value={tracking} onChange={(event) => setTracking(event.target.value)} />
                 <Button
                   variant="outline"
-                  disabled={busy}
+                  // Guardar el seguimiento también marca la orden como enviada.
+                  disabled={busy || order.stockShortage}
                   onClick={() => runAction(() => adminApi.orders.saveTracking(order.id, tracking), 'Seguimiento guardado')}
                 >
                   Guardar
@@ -290,6 +311,85 @@ function OrderDetailContent({ order, onBack }: { order: AdminOrderDetail; onBack
         </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * GAP-03. La orden se cobró, pero al confirmar el pago no había stock para alguna línea (otro pago se llevó la
+ * última unidad, o se vendió en el mostrador). No se despacha hasta que se reponga, se libere con una nota o se
+ * reembolse.
+ */
+function StockShortageCard({
+  order,
+  busy,
+  runAction,
+}: {
+  order: AdminOrderDetail
+  busy: boolean
+  runAction: (
+    action: () => Promise<AdminOrderDetail>,
+    successMessage: string | ((updated: AdminOrderDetail) => string),
+  ) => Promise<void>
+}) {
+  const [note, setNote] = useState('')
+  const missing = order.items.filter((item) => item.stockMissing)
+
+  return (
+    <Card className="border-destructive">
+      <CardHeader>
+        <CardTitle>Cobrada sin stock</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3 text-sm">
+        <p>
+          Al confirmar el pago no había stock para{' '}
+          {missing.map((item) => `${item.productName} (×${item.quantity})`).join(', ') || 'algunas líneas'}. No se
+          puede despachar hasta resolverlo. Si no vas a conseguirlo, el reembolso está en la tarjeta de Reembolsos.
+        </p>
+        <div>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() =>
+              runAction(
+                () => adminApi.orders.retryStock(order.id),
+                (updated) =>
+                  updated.stockShortage
+                    ? 'Todavía falta stock para algunas líneas'
+                    : 'Stock descontado: la orden ya se puede despachar',
+              )
+            }
+          >
+            Reintentar descuento
+          </Button>
+        </div>
+        <div className="flex flex-col gap-2 border-t pt-3">
+          <Label htmlFor="stock-shortage-note">Nota</Label>
+          <Input
+            id="stock-shortage-note"
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            placeholder="Cómo se resolvió: se consiguió por fuera, se reembolsó lo que faltaba…"
+            aria-describedby="stock-shortage-note-hint"
+          />
+          <p id="stock-shortage-note-hint" className="text-xs text-muted-foreground">
+            Liberar no descuenta stock: solo permite despachar. Queda registrado.
+          </p>
+          <div>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy || note.trim() === ''}
+              onClick={() =>
+                runAction(() => adminApi.orders.releaseStockShortage(order.id, note), 'Bloqueo liberado')
+              }
+            >
+              Liberar bloqueo
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 

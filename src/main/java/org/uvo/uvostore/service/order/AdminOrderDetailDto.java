@@ -37,6 +37,9 @@ public record AdminOrderDetailDto(
         // G4. Lo ya devuelto y de qué se compone. El panel lo necesita para proponer el saldo como
         // monto por defecto y para no ofrecer reembolsar lo que ya se devolvió.
         BigDecimal refundedAmount,
-        List<OrderRefundDto> refunds
+        List<OrderRefundDto> refunds,
+        // GAP-03. Cobrada sin stock para alguna línea: no se despacha hasta reintentar el descuento o liberarla. Las
+        // líneas que faltan llevan stockMissing.
+        boolean stockShortage
 ) {
 }

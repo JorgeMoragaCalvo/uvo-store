@@ -11,4 +11,8 @@ public interface AdminOrderService {
     AdminOrderDetailDto updateStatus(Long orderId, String status);
     AdminOrderDetailDto updatePaymentStatus(Long orderId, String paymentStatus);
     AdminOrderDetailDto saveTracking(Long orderId, String trackingNumber);
+
+    // GAP-03: las dos salidas de una orden cobrada sin stock, además del reembolso.
+    AdminOrderDetailDto retryStock(Long orderId);
+    AdminOrderDetailDto releaseStockShortage(Long orderId, String note);
 }

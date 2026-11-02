@@ -201,6 +201,13 @@ public class Order {
     @Builder.Default
     private boolean stockRestored = false;
 
+    // GAP-03 (V32): cobrada, pero alguna línea no se pudo descontar al confirmar el pago. Bloquea el despacho hasta
+    // que se reintente el descuento o se libere con una nota (AdminOrderService). No dice qué líneas: eso lo dice
+    // OrderItem.stockApplied de cada una.
+    @Column(name = "stock_shortage", nullable = false)
+    @Builder.Default
+    private boolean stockShortage = false;
+
     @Column(columnDefinition = "text")
     private String notes;
 
