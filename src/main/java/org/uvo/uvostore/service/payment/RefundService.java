@@ -126,7 +126,7 @@ public class RefundService {
             String gateway = gatewayName(order.getPaymentMethod());
             throw new BusinessException("No se pudo confirmar si " + gateway + " hizo el reembolso de " + amount
                     + ". El monto queda reservado: revísalo en el panel de " + gateway
-                    + " antes de volver a intentarlo o de registrarlo como externo");
+                    + " y marca en esta orden si el reembolso se hizo o no");
         }
 
         return complete(intent, order, amount, reference, closesOrder, command);
@@ -148,6 +148,63 @@ public class RefundService {
         // El tipo es EXTERNAL lo cubra todo o no —lo que distingue a estos es que el dinero no se
         // movió desde aquí—, así que si cierra la orden se decide aparte, por el saldo.
         return registerExternal(order, amount, closesOrder(order, amount), command);
+    }
+
+    /**
+     * GAP-02. Cierra una intención {@code PENDING} con lo que el operador comprobó en el panel de la pasarela, sin
+     * llamar a nadie. Hasta aquí la única salida era el {@code UPDATE} a mano que describe V21.
+     *
+     * <p>No es lo mismo que un reembolso externo: ése agrega una fila y descuenta otra vez del saldo, cuando el
+     * importe de la intención ya está reservado. Usarlo para corregir una intención pendiente contaría el mismo
+     * dinero dos veces.
+     */
+    @Transactional
+    public OrderRefund resolve(ResolveRefundCommand command) {
+        if (command.note() == null || command.note().isBlank()) {
+            throw new BusinessException("Resolver un reembolso pendiente necesita una nota");
+        }
+        boolean completed = command.outcome() == RefundResolution.COMPLETED;
+        if (completed && (command.reference() == null || command.reference().isBlank())) {
+            throw new BusinessException("Indica la referencia del reembolso en la pasarela");
+        }
+        // Sin el guard de PAID de lockedOrder: una orden ya REFUNDED también puede tener una intención colgando.
+        Long storeId = TenantContext.requireStoreId();
+        Order order = orderRepository.findByIdForUpdate(command.orderId())
+                .filter(o -> o.getStore().getId().equals(storeId))
+                .orElseThrow(() -> new NoSuchElementException("Order " + command.orderId() + " not found"));
+        OrderRefund refund = refundRepository.findById(command.refundId())
+                .filter(r -> r.getOrder().getId().equals(order.getId()))
+                .orElseThrow(() -> new NoSuchElementException("Refund " + command.refundId() + " not found"));
+        if (refund.getStatus() != RefundStatus.PENDING) {
+            throw new BusinessException("Este reembolso ya está resuelto (" + refund.getStatus() + ")");
+        }
+
+        refund.setStatus(command.outcome().status());
+        if (completed) {
+            refund.setGatewayReference(command.reference().trim());
+        }
+        refundRepository.save(refund);
+
+        BigDecimal amount = refund.getAmount();
+        String detail = completed
+                ? "Reembolso pendiente de " + amount + " confirmado como hecho (referencia " + refund.getGatewayReference() + ")"
+                : "Reembolso pendiente de " + amount + " confirmado como no hecho: el monto vuelve a estar disponible";
+        detail += ". Nota: " + command.note().trim();
+        log.info("Reembolso pendiente resuelto order_id={} refund_id={} monto={} resultado={}",
+                order.getId(), refund.getId(), amount, command.outcome());
+        // La referencia y la nota no van aquí, igual que el motivo en el resto de reembolsos: la nota queda en el
+        // historial de la orden.
+        auditTrail.record(AuditEntry.of(AuditAction.REFUND_RESOLVE, AuditTargetType.ORDER, order.getId())
+                .details(RefundIntentStore.refundDetails(refund, order).with("outcome", command.outcome())));
+
+        // El importe ya contaba en el saldo mientras estaba PENDING, así que confirmarlo no lo cambia: si con él no
+        // queda nada por devolver, la compra se deshace como en finish.
+        if (completed && order.getPaymentStatus() == PaymentStatus.PAID && remaining(order).signum() == 0) {
+            orderStatusService.markRefunded(order.getId(), detail);
+        } else {
+            appendHistory(order, detail);
+        }
+        return refund;
     }
 
     private OrderRefund complete(OrderRefund intent, Order order, BigDecimal amount, String reference,

@@ -441,11 +441,17 @@ export interface AdminOrderRefund {
   // FULL y PARTIAL los hizo este sistema contra la pasarela; EXTERNAL es un reembolso hecho fuera y
   // registrado a mano, y por eso no trae referencia de pasarela.
   type: 'FULL' | 'PARTIAL' | 'EXTERNAL'
+  // GAP-02: PENDING es un resultado que no se conoce (la pasarela pudo haber devuelto); su importe
+  // sigue contando en refundedAmount hasta que alguien lo resuelva.
+  status: 'PENDING' | 'COMPLETED' | 'FAILED'
   gatewayReference: string | null
   reason: string | null
   userName: string | null
   createdAt: string
 }
+
+// GAP-02: lo que se comprobó en la pasarela al resolver un reembolso PENDING.
+export type RefundResolution = 'COMPLETED' | 'FAILED'
 
 export interface AdminOrderStats {
   all: number

@@ -113,6 +113,8 @@ class AdminOrderRefundTest extends IntegrationTestSupport {
                 // Parcial: la orden sigue pagada.
                 .andExpect(jsonPath("$.paymentStatus").value("PAID"))
                 .andExpect(jsonPath("$.refunds[0].type").value("EXTERNAL"))
+                // GAP-02: el panel distingue lo hecho de lo pendiente o rechazado. Un externo nace hecho.
+                .andExpect(jsonPath("$.refunds[0].status").value("COMPLETED"))
                 .andExpect(jsonPath("$.refunds[0].reason").value("Devuelto por transferencia"));
 
         // Y el resto, hasta completar el total, cierra la orden.

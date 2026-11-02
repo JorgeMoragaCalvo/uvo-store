@@ -130,8 +130,8 @@ public class AdminOrderQueryServiceImpl implements AdminOrderQueryService {
 
     private OrderRefundDto toRefundDto(org.uvo.uvostore.entity.order.OrderRefund refund) {
         return new OrderRefundDto(
-                refund.getId(), refund.getAmount(), refund.getType().name(), refund.getGatewayReference(),
-                refund.getReason(),
+                refund.getId(), refund.getAmount(), refund.getType().name(), refund.getStatus().name(),
+                refund.getGatewayReference(), refund.getReason(),
                 // Nulo si lo hizo un usuario que ya no existe: el reembolso sobrevive a la baja de
                 // quien lo pidió (ON DELETE SET NULL).
                 refund.getUser() == null ? null : refund.getUser().getName(),

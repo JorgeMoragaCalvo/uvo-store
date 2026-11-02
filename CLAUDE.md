@@ -1130,7 +1130,8 @@ are in V28's `REVISIÓN MANUAL` block; the store panel doesn't read it.
   (`[A-Za-z0-9][A-Za-z0-9._:@-]{0,63}`, one value; malformed ⇒ 400 `ApiError`, checked after network ⇒ 404 and key
   ⇒ 401) becomes `actor_label`. Absent ⇒ platform without operator (the operator form doesn't send it). It becomes
   mandatory in PROD-19.
-- **What is audited:** refunds (`REFUND_REQUEST`, `REFUND_ISSUE` S/F, `REFUND_RECORD_EXTERNAL`); manual
+- **What is audited:** refunds (`REFUND_REQUEST`, `REFUND_ISSUE` S/F, `REFUND_RECORD_EXTERNAL`, and since GAP-02
+  (V31) `REFUND_RESOLVE` with the `outcome` of a `PENDING` intent resolved from the panel); manual
   cancellation (both panel paths) and payment status; gateway, carrier, Stripe and POS credentials; the eight F17
   money settings (`SettingsServiceImpl.set` now returns the previous value); admin users (create, update,
   activate/deactivate, delete, resend, accept, reset) and logins; roles with permission names; store creation
@@ -1337,8 +1338,8 @@ fetch join over a collection with pagination makes Hibernate page in memory. `@O
 is the other trap — it can't be proxied, so it costs one SELECT per row no matter what `fetch` says.
 `ProductListingQueryCountTest` fails if any of this is undone.
 
-**Database**: PostgreSQL via Flyway, schema in `src/main/resources/db/migration/` — **30 migrations,
-currently up to `V30__outbox_request_id.sql`**, well past the original catalog/settings ones.
+**Database**: PostgreSQL via Flyway, schema in `src/main/resources/db/migration/` — **31 migrations,
+currently up to `V31__refund_resolve_audit.sql`**, well past the original catalog/settings ones.
 Everything from V8 on is a hardening or new capability rather than the original port: V8 stores, V11
 store domains, V12 password reset, V13 stock/coupon integrity, V14 token versions, V15 the
 permission catalogue, V16 the listing indexes, V17 TIMESTAMPTZ + the enum CHECK constraints, V18
@@ -1346,7 +1347,8 @@ store status, V19 order refunds, V20 `order_items.stock_applied`, V21 refund int
 `users.password` (admin invitations), V23 `stores.domain_verified_at` (PROD-04), V24 `orders.paid_at`,
 V25 the outbox, V26 the POS ordered inputs, V27 POS variants, V28 `audit_events` (PROD-18, the first
 plpgsql: its immutability trigger), V29 the store lifecycle (PROD-23: `CLOSED`, `status_changed_at`, two audit
-actions), V30 `outbox_messages.request_id` (PROD-15b).
+actions), V30 `outbox_messages.request_id` (PROD-15b), V31 the `REFUND_RESOLVE` audit action (GAP-02: resolving a
+`PENDING` refund intent from the panel, which replaces V21's manual `UPDATE`).
 `spring.jpa.hibernate.ddl-auto=validate`, so any entity change must be paired with a new Flyway
 migration — **never edit an already-applied one**, add the next number (`V24__...sql`).
 

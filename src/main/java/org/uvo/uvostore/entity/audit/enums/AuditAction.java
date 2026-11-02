@@ -5,10 +5,12 @@ package org.uvo.uvostore.entity.audit.enums;
  * los valores (B6), y {@code AuditCatalogConsistencyTest} falla si las dos listas se separan.
  */
 public enum AuditAction {
-    // Reembolsos: la intención (antes de llamar a la pasarela), el resultado y el registrado a mano.
+    // Reembolsos: la intención (antes de llamar a la pasarela), el resultado, el registrado a mano y, desde GAP-02
+    // (V31), la resolución de una intención cuyo resultado no se conocía.
     REFUND_REQUEST,
     REFUND_ISSUE,
     REFUND_RECORD_EXTERNAL,
+    REFUND_RESOLVE,
 
     // Órdenes desde el panel.
     ORDER_CANCEL,

@@ -77,10 +77,10 @@ public class OrderRefund {
     private RefundStatus status = RefundStatus.COMPLETED;
 
     /**
-     * F12. La clave que identifica <b>esta</b> devolución, derivada de (orden, ya devuelto, importe) y
-     * por tanto estable entre reintentos del mismo reembolso. Es única en la base: aunque la lógica
-     * falle, no se puede guardar dos veces la misma intención. Donde el SDK lo permite (Stripe,
-     * MercadoPago) viaja además a la pasarela para que deduplique en su lado.
+     * F12. La clave que identifica <b>esta</b> devolución, derivada de (orden, ya devuelto, importe) y,
+     * desde GAP-02, de los rechazos previos de la orden: un reintento tras un rechazo lleva otra. Es única
+     * en la base: aunque la lógica falle, no se puede guardar dos veces la misma intención. Donde el SDK
+     * lo permite (Stripe, MercadoPago) viaja además a la pasarela para que deduplique en su lado.
      */
     @Column(name = "idempotency_key")
     private String idempotencyKey;

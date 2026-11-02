@@ -20,6 +20,7 @@ import org.uvo.uvostore.service.order.AdminOrderStatsDto;
 import org.uvo.uvostore.service.order.AdminOrderSummaryDto;
 import org.uvo.uvostore.service.payment.RefundCommand;
 import org.uvo.uvostore.service.payment.RefundService;
+import org.uvo.uvostore.service.payment.ResolveRefundCommand;
 
 @io.swagger.v3.oas.annotations.tags.Tag(name = "Órdenes (admin)", description = "Gestión de órdenes de la tienda, JWT bearer con rol ADMIN")
 @io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "bearerAuth")
@@ -135,6 +136,18 @@ public class AdminOrderController {
     public AdminOrderDetailDto recordExternalRefund(@PathVariable Long id, @RequestBody @jakarta.validation.Valid RefundRequest request,
                                                     org.springframework.security.core.Authentication authentication) {
         refundService.recordExternal(new RefundCommand(id, request.amount(), request.reason(), currentUserId(authentication)));
+        return adminOrderQueryService.getById(id);
+    }
+
+    /**
+     * GAP-02. Resuelve un reembolso que quedó PENDING porque no se supo qué hizo la pasarela, con lo que el operador
+     * comprobó en su panel. No mueve dinero.
+     */
+    @PostMapping("/{id}/refunds/{refundId}/resolve")
+    @PreAuthorize("hasAuthority('orders.refund')")
+    public AdminOrderDetailDto resolveRefund(@PathVariable Long id, @PathVariable Long refundId,
+                                             @RequestBody @jakarta.validation.Valid ResolveRefundRequest request) {
+        refundService.resolve(new ResolveRefundCommand(id, refundId, request.outcome(), request.reference(), request.note()));
         return adminOrderQueryService.getById(id);
     }
 

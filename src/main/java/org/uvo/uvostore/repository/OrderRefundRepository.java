@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import org.uvo.uvostore.entity.order.OrderRefund;
+import org.uvo.uvostore.entity.order.enums.RefundStatus;
 
 import java.math.BigDecimal;
 import java.util.Collection;
@@ -14,6 +15,9 @@ import java.util.List;
 public interface OrderRefundRepository extends JpaRepository<OrderRefund, Long> {
 
     List<OrderRefund> findByOrderIdOrderByCreatedAtDesc(Long orderId);
+
+    /** GAP-02. Cuántos rechazos lleva una orden: renueva la clave de idempotencia al reintentar (ver {@code RefundIntentStore}). */
+    long countByOrderIdAndStatus(Long orderId, RefundStatus status);
 
     /**
      * G4. Lo ya devuelto de una orden, que es contra lo que se valida cada reembolso nuevo: la suma

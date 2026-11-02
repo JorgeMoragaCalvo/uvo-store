@@ -12,6 +12,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.uvo.uvostore.entity.order.Order;
 import org.uvo.uvostore.entity.order.enums.PaymentMethodType;
@@ -36,6 +37,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -156,8 +158,79 @@ class RefundAuditCommitTest {
         assertThat(AuditRows.forStore(jdbc, store.getId(), "REFUND_ISSUE")).isEmpty();
     }
 
+    @Test
+    @DisplayName("GAP-02. Un rechazo se puede reintentar por el mismo importe: la clave nueva no choca con la única")
+    void aRejectedRefundCanBeRetriedForTheSameAmount() throws Exception {
+        when(webpayService.refund(eq(order.getId()), any()))
+                .thenThrow(new BusinessException("Transbank rechazó el reembolso (HTTP 422): amount"))
+                .thenReturn("NULLIFIED");
+
+        refund("{\"amount\":1000}", 400);
+        // Antes: misma clave que la intención FAILED, violación de order_refunds_idempotency_key_unique y un 500.
+        refund("{\"amount\":1000}", 200);
+
+        assertThat(jdbc.queryForList("SELECT status || ' ' || idempotency_key FROM order_refunds WHERE order_id = ? ORDER BY id",
+                String.class, order.getId()))
+                .containsExactly("FAILED refund:" + order.getId() + ":0:1000",
+                        "COMPLETED refund:" + order.getId() + ":0:1000:1");
+    }
+
+    @Test
+    @DisplayName("GAP-02. Un PENDING confirmado como no hecho queda FAILED, auditado sin la nota, y el importe vuelve a estar disponible")
+    void anUncertainRefundResolvedAsNotDoneReleasesTheBalance() throws Exception {
+        when(webpayService.refund(eq(order.getId()), any()))
+                .thenThrow(new IllegalStateException("Error al reembolsar en Webpay: Read timed out"))
+                .thenReturn("NULLIFIED");
+        refund("{\"amount\":10000}", 400);
+        Long refundId = jdbc.queryForObject("SELECT id FROM order_refunds WHERE order_id = ?", Long.class, order.getId());
+
+        resolve(refundId, "{\"outcome\":\"FAILED\",\"note\":\"nota-privada: no aparece en Transbank\"}", 200)
+                .andExpect(jsonPath("$.refundedAmount").value(0))
+                .andExpect(jsonPath("$.refunds[0].status").value("FAILED"));
+
+        AuditRows.Row resolved = AuditRows.single(jdbc, store.getId(), "REFUND_RESOLVE");
+        assertThat(resolved.result()).isEqualTo("SUCCESS");
+        assertThat(resolved.targetId()).isEqualTo(order.getId());
+        assertThat(resolved.json().path("outcome").asText()).isEqualTo("FAILED");
+        assertThat(resolved.json().path("refundId").asLong()).isEqualTo(refundId);
+        assertThat(String.valueOf(resolved.details())).doesNotContain("nota-privada");
+        // Lo que no se podía hacer con la intención colgando: volver a pedir el total.
+        refund("{\"amount\":10000}", 200);
+        // Y no se resuelve dos veces.
+        resolve(refundId, "{\"outcome\":\"COMPLETED\",\"reference\":\"x\",\"note\":\"otra vez\"}", 400);
+    }
+
+    @Test
+    @DisplayName("GAP-02. Un PENDING confirmado como hecho guarda la referencia, fuera de la auditoría, y cierra la orden si agota el saldo")
+    void anUncertainRefundResolvedAsDoneKeepsTheReference() throws Exception {
+        when(webpayService.refund(eq(order.getId()), any()))
+                .thenThrow(new IllegalStateException("Error al reembolsar en Webpay: Read timed out"));
+        refund("{\"amount\":10000}", 400);
+        Long refundId = jdbc.queryForObject("SELECT id FROM order_refunds WHERE order_id = ?", Long.class, order.getId());
+
+        // Sin referencia no se confirma como hecho.
+        resolve(refundId, "{\"outcome\":\"COMPLETED\",\"note\":\"Visto en Transbank\"}", 400);
+        resolve(refundId, "{\"outcome\":\"COMPLETED\",\"reference\":\"REF-TBK-77\",\"note\":\"Visto en Transbank\"}", 200)
+                .andExpect(jsonPath("$.paymentStatus").value("REFUNDED"))
+                .andExpect(jsonPath("$.refunds[0].status").value("COMPLETED"))
+                .andExpect(jsonPath("$.refunds[0].gatewayReference").value("REF-TBK-77"));
+
+        AuditRows.Row resolved = AuditRows.single(jdbc, store.getId(), "REFUND_RESOLVE");
+        assertThat(resolved.json().path("outcome").asText()).isEqualTo("COMPLETED");
+        assertThat(String.valueOf(resolved.details())).doesNotContain("REF-TBK-77", "Visto en Transbank");
+    }
+
     private void refund(String body, int expectedStatus) throws Exception {
         mockMvc.perform(post("/api/admin/orders/" + order.getId() + "/refund")
+                        .header("Host", host())
+                        .header("Authorization", "Bearer " + token)
+                        .contentType("application/json")
+                        .content(body))
+                .andExpect(status().is(expectedStatus));
+    }
+
+    private ResultActions resolve(Long refundId, String body, int expectedStatus) throws Exception {
+        return mockMvc.perform(post("/api/admin/orders/" + order.getId() + "/refunds/" + refundId + "/resolve")
                         .header("Host", host())
                         .header("Authorization", "Bearer " + token)
                         .contentType("application/json")
