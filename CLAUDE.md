@@ -1339,8 +1339,8 @@ fetch join over a collection with pagination makes Hibernate page in memory. `@O
 is the other trap — it can't be proxied, so it costs one SELECT per row no matter what `fetch` says.
 `ProductListingQueryCountTest` fails if any of this is undone.
 
-**Database**: PostgreSQL via Flyway, schema in `src/main/resources/db/migration/` — **32 migrations,
-currently up to `V32__order_stock_shortage.sql`**, well past the original catalog/settings ones.
+**Database**: PostgreSQL via Flyway, schema in `src/main/resources/db/migration/` — **33 migrations,
+currently up to `V33__order_tax_allocation.sql`**, well past the original catalog/settings ones.
 Everything from V8 on is a hardening or new capability rather than the original port: V8 stores, V11
 store domains, V12 password reset, V13 stock/coupon integrity, V14 token versions, V15 the
 permission catalogue, V16 the listing indexes, V17 TIMESTAMPTZ + the enum CHECK constraints, V18
@@ -1351,7 +1351,11 @@ plpgsql: its immutability trigger), V29 the store lifecycle (PROD-23: `CLOSED`, 
 actions), V30 `outbox_messages.request_id` (PROD-15b), V31 the `REFUND_RESOLVE` audit action (GAP-02: resolving a
 `PENDING` refund intent from the panel, which replaces V21's manual `UPDATE`), V32 `orders.stock_shortage` and
 the `ORDER_STOCK_SHORTAGE_RELEASE` audit action (GAP-03: a paid order whose stock couldn't be taken is marked, can't
-be dispatched, and is unblocked by retrying the decrement or releasing it with a note).
+be dispatched, and is unblocked by retrying the decrement or releasing it with a note), V33 `orders.tax_included`
+and `order_items.discount_amount` (GAP-05: IVA is computed after the coupon, and the coupon discount and the IVA are
+spread across the lines so they add up to the order; with tax-inclusive prices the order keeps the gross subtotal and
+the IVA is contained, not added). Migration comments must stay WIN1252-encodable (no `−` or `Σ`): the local
+database's client encoding rejects them and Flyway fails.
 `spring.jpa.hibernate.ddl-auto=validate`, so any entity change must be paired with a new Flyway
 migration — **never edit an already-applied one**, add the next number (`V24__...sql`).
 

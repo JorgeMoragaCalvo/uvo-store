@@ -439,6 +439,8 @@ export interface AdminOrderDetail {
   refunds: AdminOrderRefund[]
   // GAP-03: el backend rechaza enviar, entregar o guardar el seguimiento mientras sea true.
   stockShortage: boolean
+  // GAP-05: con precios con IVA incluido, subtotal y descuento van con IVA y taxAmount está contenido, no se suma.
+  taxIncluded: boolean
 }
 
 export interface AdminOrderRefund {

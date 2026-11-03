@@ -173,7 +173,10 @@ public class CheckoutServiceImpl implements CheckoutService {
         order.setCustomerLastName(command.customerLastName());
         order.setCustomerPhone(command.customerPhone());
 
-        order.setSubtotal(totals.subtotalWithoutTax());
+        // GAP-05: con precios con IVA incluido, el subtotal se guarda como lo vio el comprador y el IVA queda
+        // contenido; así subtotal − descuento + envío da el total, y las líneas suman el subtotal.
+        order.setTaxIncluded(totals.taxIncluded());
+        order.setSubtotal(totals.taxIncluded() ? totals.subtotalWithTax() : totals.subtotalWithoutTax());
         order.setDiscountAmount(totals.discountAmount());
         order.setShippingCost(totals.shippingCost());
         order.setTaxAmount(totals.taxAmount());
@@ -213,8 +216,8 @@ public class CheckoutServiceImpl implements CheckoutService {
         }
 
         List<OrderItem> items = new ArrayList<>();
-        for (CartLineCommand line : command.lines()) {
-            items.add(buildOrderItem(order, line));
+        for (int i = 0; i < command.lines().size(); i++) {
+            items.add(buildOrderItem(order, command.lines().get(i), totals.lines().get(i)));
         }
         order.setItems(items);
 
@@ -378,7 +381,7 @@ public class CheckoutServiceImpl implements CheckoutService {
         return requested.equals(stored);
     }
 
-    private OrderItem buildOrderItem(Order order, CartLineCommand line) {
+    private OrderItem buildOrderItem(Order order, CartLineCommand line, LineAmounts amounts) {
         Product product;
         ProductVariation variation = null;
         BigDecimal unitPrice;
@@ -417,7 +420,10 @@ public class CheckoutServiceImpl implements CheckoutService {
         item.setQuantity(line.quantity());
         item.setPrice(unitPrice);
         item.setSubtotal(unitPrice.multiply(BigDecimal.valueOf(line.quantity())));
-        item.setTaxAmount(BigDecimal.ZERO);
+        // GAP-05: la parte del descuento y del IVA de la orden que le toca a esta línea, como la repartió
+        // CartPricingServiceImpl. Antes el IVA de la línea era siempre cero y las líneas no sumaban la orden.
+        item.setDiscountAmount(amounts.discount());
+        item.setTaxAmount(amounts.tax());
         return item;
     }
 

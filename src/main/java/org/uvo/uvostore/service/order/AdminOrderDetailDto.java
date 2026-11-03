@@ -40,6 +40,9 @@ public record AdminOrderDetailDto(
         List<OrderRefundDto> refunds,
         // GAP-03. Cobrada sin stock para alguna línea: no se despacha hasta reintentar el descuento o liberarla. Las
         // líneas que faltan llevan stockMissing.
-        boolean stockShortage
+        boolean stockShortage,
+        // GAP-05. Con precios con IVA incluido el subtotal y el descuento van con IVA y taxAmount está contenido:
+        // el panel lo muestra como «IVA incluido» y no como un sumando.
+        boolean taxIncluded
 ) {
 }

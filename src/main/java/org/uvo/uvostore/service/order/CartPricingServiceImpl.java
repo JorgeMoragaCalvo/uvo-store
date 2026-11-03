@@ -20,6 +20,7 @@ import org.uvo.uvostore.service.shipping.ShippingRateService;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Optional;
@@ -53,6 +54,7 @@ public class CartPricingServiceImpl implements CartPricingService {
         Long storeId = TenantContext.requireStoreId();
         BigDecimal subtotalWithTax = BigDecimal.ZERO;
         BigDecimal totalWeight = BigDecimal.ZERO;
+        List<BigDecimal> lineSubtotals = new ArrayList<>(lines.size());
         for (CartLineCommand line : lines) {
             BigDecimal unitPrice;
             BigDecimal unitWeight;
@@ -76,7 +78,9 @@ public class CartPricingServiceImpl implements CartPricingService {
                 unitPrice = EffectivePrice.of(product);
                 unitWeight = product.getWeight();
             }
-            subtotalWithTax = subtotalWithTax.add(unitPrice.multiply(BigDecimal.valueOf(line.quantity())));
+            BigDecimal lineSubtotal = unitPrice.multiply(BigDecimal.valueOf(line.quantity()));
+            lineSubtotals.add(lineSubtotal);
+            subtotalWithTax = subtotalWithTax.add(lineSubtotal);
             if (unitWeight != null) {
                 totalWeight = totalWeight.add(unitWeight.multiply(BigDecimal.valueOf(line.quantity())));
             }
@@ -96,20 +100,13 @@ public class CartPricingServiceImpl implements CartPricingService {
         // la comparación de markPaid: lo que se persiste tiene que ser exactamente lo que una pasarela
         // puede cobrar, y también lo que viaja al POS en el documento tributario.
         //
-        // El subtotal primero, para que lo que se derive de él ya sea entero; y el IVA por diferencia
-        // en el caso de precios con IVA incluido, no redondeado por su cuenta, para que
-        // subtotalSinIVA + IVA sea exactamente el subtotal y no se descuadre por un peso.
+        // El subtotal primero, para que lo que se derive de él ya sea entero. El IVA se calcula más abajo,
+        // después del cupón (GAP-05).
         subtotalWithTax = Money.round(subtotalWithTax);
 
-        BigDecimal subtotalWithoutTax;
-        BigDecimal taxAmount;
-        if (pricesIncludeTax) {
-            subtotalWithoutTax = Money.round(subtotalWithTax.divide(BigDecimal.ONE.add(taxRate), 6, RoundingMode.HALF_UP));
-            taxAmount = subtotalWithTax.subtract(subtotalWithoutTax);
-        } else {
-            subtotalWithoutTax = subtotalWithTax;
-            taxAmount = Money.round(subtotalWithTax.multiply(taxRate));
-        }
+        BigDecimal subtotalWithoutTax = pricesIncludeTax
+                ? Money.round(subtotalWithTax.divide(BigDecimal.ONE.add(taxRate), 6, RoundingMode.HALF_UP))
+                : subtotalWithTax;
 
         boolean shippingEnabled = settingRepository.findByStoreIdAndSettingKey(storeId, "shipping_enabled")
                 .map(s -> Boolean.parseBoolean(s.getValue())).orElse(true);
@@ -139,9 +136,12 @@ public class CartPricingServiceImpl implements CartPricingService {
             // —que sí validaba bien— se limitaba a no adjuntar el cupón. El descuento se quedaba.
             CouponValidationResult result = couponService.validate(couponCode, subtotalWithoutTax, customerId);
             if (result.valid()) {
-                // Ya viene redondeado de calculateDiscount, que es también quien calcula el importe de
-                // la fila de CouponUsage: si se redondeara aquí y no allí, los informes de cupones
-                // dejarían de cuadrar con los totales de las órdenes.
+                // Ya viene redondeado de calculateDiscount. La fila de CouponUsage copia este mismo importe
+                // de la orden (GAP-05), así que los informes de cupones cuadran con los totales.
+                //
+                // La base es el subtotal sin IVA también con precios con IVA incluido: el 10 % de un
+                // precio de 11.900 descuenta 1.000. Es el criterio de siempre y GAP-05 lo mantiene; lo
+                // que corrige es el IVA que se calcula después.
                 discountAmount = couponService.calculateDiscount(result.coupon(), subtotalWithoutTax);
                 couponApplied = true;
                 appliedCoupon = result.coupon();
@@ -153,17 +153,48 @@ public class CartPricingServiceImpl implements CartPricingService {
             }
         }
 
-        // Todos los sumandos ya son enteros, así que el total lo es sin necesidad de redondearlo — y,
-        // lo que importa más, es exactamente la suma de las partes que se guardan con él. Redondear el
-        // total por separado habría dejado órdenes donde subtotal + IVA + envío − descuento no da el
-        // total, que es lo que descuadra los informes y el documento del POS.
-        BigDecimal total = pricesIncludeTax
-                ? subtotalWithTax.add(shippingCost).subtract(discountAmount)
-                : subtotalWithTax.add(taxAmount).add(shippingCost).subtract(discountAmount);
+        // GAP-05. El IVA va sobre lo que de verdad se paga, después del cupón. Antes se calculaba sobre el
+        // subtotal sin descontar: con precios sin IVA, 10.000 con un cupón de 1.000 cobraba 10.900 en vez de
+        // 10.710, y con precios con IVA la orden y el documento POS declaraban un IVA de 1.900 cuando el
+        // contenido era 1.740. El envío sigue fuera de la base, como estaba.
+        //
+        // Todos los sumandos son enteros, así que el total lo es sin redondearlo, y es exactamente la suma
+        // de las partes que se guardan con él. Con IVA incluido, el IVA sale por diferencia y no redondeado
+        // por su cuenta, para que neto + IVA sea exactamente lo pagado (F06).
+        BigDecimal taxAmount;
+        BigDecimal total;
+        if (pricesIncludeTax) {
+            BigDecimal paid = subtotalWithTax.subtract(discountAmount);
+            taxAmount = paid.subtract(Money.round(paid.divide(BigDecimal.ONE.add(taxRate), 6, RoundingMode.HALF_UP)));
+            total = paid.add(shippingCost);
+        } else {
+            BigDecimal taxable = subtotalWithoutTax.subtract(discountAmount);
+            taxAmount = Money.round(taxable.multiply(taxRate));
+            total = taxable.add(taxAmount).add(shippingCost);
+        }
 
         return new CartTotals(subtotalWithoutTax, taxAmount, subtotalWithTax, shippingCost, discountAmount, total,
                 shippingAvailable, couponApplied, appliedCoupon, customerRejectionReason,
-                best.orElse(null));
+                best.orElse(null), pricesIncludeTax, lineAmounts(lineSubtotals, discountAmount, taxAmount));
+    }
+
+    /**
+     * GAP-05. El descuento se reparte en proporción al subtotal de cada línea, y el IVA en proporción a lo que
+     * queda de cada una después de su descuento, que es su base. Así las líneas suman exactamente el descuento y
+     * el IVA de la orden, y el documento POS cuadra línea por línea.
+     */
+    private static List<LineAmounts> lineAmounts(List<BigDecimal> subtotals, BigDecimal discount, BigDecimal tax) {
+        List<BigDecimal> discounts = AmountSpread.spread(discount, subtotals);
+        List<BigDecimal> bases = new ArrayList<>(subtotals.size());
+        for (int i = 0; i < subtotals.size(); i++) {
+            bases.add(subtotals.get(i).subtract(discounts.get(i)));
+        }
+        List<BigDecimal> taxes = AmountSpread.spread(tax, bases);
+        List<LineAmounts> result = new ArrayList<>(subtotals.size());
+        for (int i = 0; i < subtotals.size(); i++) {
+            result.add(new LineAmounts(subtotals.get(i), discounts.get(i), taxes.get(i)));
+        }
+        return result;
     }
 
     private boolean freeShippingReached(Long storeId, BigDecimal orderAmount) {

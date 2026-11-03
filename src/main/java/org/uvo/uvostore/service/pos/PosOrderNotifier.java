@@ -247,11 +247,12 @@ public class PosOrderNotifier {
     private Optional<PosOrderItem> toPosItem(OrderItem item, ProductSyncMapping mapping) {
         if (item.getVariation() == null) {
             return Optional.of(new PosOrderItem(mapping.getExternalId(), null, item.getQuantity(), item.getPrice(),
-                    item.getSubtotal(), item.getTaxAmount()));
+                    item.getSubtotal(), item.getDiscountAmount(), item.getTaxAmount()));
         }
         return variantMappingRepository.findByMappingIdAndVariationId(mapping.getId(), item.getVariation().getId())
                 .map(variant -> new PosOrderItem(mapping.getExternalId(), variant.getExternalVariantId(),
-                        item.getQuantity(), item.getPrice(), item.getSubtotal(), item.getTaxAmount()));
+                        item.getQuantity(), item.getPrice(), item.getSubtotal(), item.getDiscountAmount(),
+                        item.getTaxAmount()));
     }
 
     /**

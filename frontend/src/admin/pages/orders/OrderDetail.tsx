@@ -188,14 +188,21 @@ function OrderDetailContent({ order, onBack }: { order: AdminOrderDetail; onBack
                   <span className="text-muted-foreground">Envío</span>
                   <span>{formatCurrency(order.shippingCost)}</span>
                 </div>
-                <div className="flex w-48 justify-between">
-                  <span className="text-muted-foreground">Impuesto</span>
-                  <span>{formatCurrency(order.taxAmount)}</span>
-                </div>
+                {/* GAP-05: con IVA incluido el impuesto ya está dentro del subtotal; listado como sumando,
+                    la columna no daría el total. Va como nota bajo el total, igual que en el carrito. */}
+                {!order.taxIncluded && (
+                  <div className="flex w-48 justify-between">
+                    <span className="text-muted-foreground">Impuesto</span>
+                    <span>{formatCurrency(order.taxAmount)}</span>
+                  </div>
+                )}
                 <div className="flex w-48 justify-between font-semibold">
                   <span>Total</span>
                   <span>{formatCurrency(order.total)}</span>
                 </div>
+                {order.taxIncluded && (
+                  <p className="text-xs text-muted-foreground">IVA incluido: {formatCurrency(order.taxAmount)}</p>
+                )}
               </div>
             </CardContent>
           </Card>

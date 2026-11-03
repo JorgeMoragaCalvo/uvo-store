@@ -39,6 +39,9 @@ import java.util.Map;
  *       compartida haría que el segundo se descartara como repetido.</li>
  *   <li>POS-5: que una línea de variación identifique la variante con {@code variant_id}, junto al
  *       {@code product_id} del producto.</li>
+ *   <li>GAP-05: {@code tax_included} en la orden y {@code discount_amount} por ítem. Las líneas suman
+ *       el descuento y el IVA de la orden; con {@code tax_included = true} el subtotal y el descuento
+ *       van con IVA y el IVA está contenido, y con {@code false} el IVA se suma.</li>
  * </ol>
  */
 @Component
@@ -59,6 +62,9 @@ public class PosOrderPayloadMapper {
         body.put("discount_amount", amount(order.getDiscountAmount()));
         body.put("shipping_cost", amount(order.getShippingCost()));
         body.put("tax_amount", amount(order.getTaxAmount()));
+        // GAP-05: true cuando subtotal y descuento van con IVA y tax_amount está contenido en ellos; false cuando
+        // tax_amount se suma. Sin esto el receptor no sabe cuál de las dos sumas da el total.
+        body.put("tax_included", order.isTaxIncluded());
         body.put("total", amount(order.getTotal()));
         body.put("items", items.stream().map(PosOrderPayloadMapper::itemBody).toList());
 
@@ -85,6 +91,7 @@ public class PosOrderPayloadMapper {
         body.put("quantity", item.quantity());
         body.put("price", amount(item.price()));
         body.put("subtotal", amount(item.subtotal()));
+        body.put("discount_amount", amount(item.discountAmount()));
         body.put("tax_amount", amount(item.taxAmount()));
         return Collections.unmodifiableMap(body);
     }
