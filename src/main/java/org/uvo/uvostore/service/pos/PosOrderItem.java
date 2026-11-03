@@ -7,6 +7,7 @@ import java.math.BigDecimal;
 // este payload no puede cuadrar con lo que se cobró.
 // POS-5: variantId es la variante del POS (ProductVariationSyncMapping.externalVariantId) en una línea de
 // variación, y null en una de producto simple.
+// GAP-05: discountAmount es la parte del descuento de la orden que le toca a la línea; taxAmount, la del IVA.
 public record PosOrderItem(Long productId, Long variantId, int quantity, BigDecimal price, BigDecimal subtotal,
-                           BigDecimal taxAmount) {
+                           BigDecimal discountAmount, BigDecimal taxAmount) {
 }

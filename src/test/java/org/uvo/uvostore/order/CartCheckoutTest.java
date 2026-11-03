@@ -109,6 +109,10 @@ class CartCheckoutTest extends IntegrationTestSupport {
 
         assertEquals(0, new BigDecimal("4115").compareTo(order.getDiscountAmount()));
         assertEquals(0, new BigDecimal("44855").compareTo(order.getTotal()));
+        // GAP-05: el total no cambia, pero el IVA es el contenido en lo pagado (44.855 − 37.693) y no el de antes
+        // del cupón (7.819).
+        assertEquals(0, new BigDecimal("7162").compareTo(order.getTaxAmount()));
+        assertTrue(order.isTaxIncluded());
     }
 
     @Test

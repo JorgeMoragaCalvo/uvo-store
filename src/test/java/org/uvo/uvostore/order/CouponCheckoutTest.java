@@ -51,11 +51,12 @@ class CouponCheckoutTest extends IntegrationTestSupport {
         Product product = createProduct(store, createCategory(store, "Cat"), "Producto", BigDecimal.valueOf(10000));
         Coupon coupon = onePerCustomerCoupon(store);
 
-        // 10.000 + 19 % de IVA − 1.000 de cupón. El IVA es el default cuando la tienda no configura
-        // tax_rate, así que estos números son los de una tienda recién creada.
+        // 10.000 − 1.000 de cupón + 19 % de IVA sobre los 9.000 (GAP-05: antes el IVA iba sobre los 10.000 y
+        // daba 10.900). El IVA es el default cuando la tienda no configura tax_rate, así que estos números son
+        // los de una tienda recién creada.
         mockMvc.perform(checkout(store, product, coupon.getCode()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.total").value(10900));
+                .andExpect(jsonPath("$.total").value(10710));
 
         Order order = lastOrderOf(store);
         assertThat(order.getCoupon()).as("el cupón queda atado a la orden").isNotNull();

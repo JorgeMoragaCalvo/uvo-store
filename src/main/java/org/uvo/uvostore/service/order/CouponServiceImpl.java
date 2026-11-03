@@ -110,7 +110,10 @@ public class CouponServiceImpl implements CouponService {
         usage.setCoupon(coupon);
         usage.setOrder(order);
         usage.setCustomer(customer);
-        usage.setDiscountAmount(calculateDiscount(coupon, order.getSubtotal()));
+        // GAP-05: el descuento que de verdad entró en la orden, no uno recalculado. Recalcularlo sobre
+        // order.getSubtotal() daba otro importe con precios con IVA incluido, donde ese subtotal es bruto y el
+        // cupón se calcula sobre el neto.
+        usage.setDiscountAmount(order.getDiscountAmount());
         couponUsageRepository.save(usage);
     }
 }

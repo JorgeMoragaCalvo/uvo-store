@@ -32,11 +32,14 @@ class PosOrderPayloadMapperTest {
     @Test
     @DisplayName("El cuerpo lleva los importes de la orden, los del ítem y la clave de idempotencia")
     void theBodyFixesTheWholeContract() {
+        // GAP-05: el descuento y el IVA de las líneas suman los de la orden (6.000 + 4.000 y 10.260 + 6.840).
         Order order = order("ORD-2026-0001", "100000", "10000", "3990", "17100", "111090");
 
         PosOrderPayload payload = mapper.toPayload(order, 42L, List.of(
-                new PosOrderItem(777L, null, 2, new BigDecimal("30000"), new BigDecimal("60000"), new BigDecimal("11400")),
-                new PosOrderItem(888L, null, 1, new BigDecimal("40000"), new BigDecimal("40000"), new BigDecimal("7600"))
+                new PosOrderItem(777L, null, 2, new BigDecimal("30000"), new BigDecimal("60000"), new BigDecimal("6000"),
+                        new BigDecimal("10260")),
+                new PosOrderItem(888L, null, 1, new BigDecimal("40000"), new BigDecimal("40000"), new BigDecimal("4000"),
+                        new BigDecimal("6840"))
         ));
 
         assertThat(payload.body()).isEqualTo(Map.of(
@@ -47,12 +50,15 @@ class PosOrderPayloadMapperTest {
                 "discount_amount", new BigDecimal("10000"),
                 "shipping_cost", new BigDecimal("3990"),
                 "tax_amount", new BigDecimal("17100"),
+                "tax_included", false,
                 "total", new BigDecimal("111090"),
                 "items", List.of(
                         Map.of("product_id", 777L, "quantity", 2, "price", new BigDecimal("30000"),
-                                "subtotal", new BigDecimal("60000"), "tax_amount", new BigDecimal("11400")),
+                                "subtotal", new BigDecimal("60000"), "discount_amount", new BigDecimal("6000"),
+                                "tax_amount", new BigDecimal("10260")),
                         Map.of("product_id", 888L, "quantity", 1, "price", new BigDecimal("40000"),
-                                "subtotal", new BigDecimal("40000"), "tax_amount", new BigDecimal("7600"))
+                                "subtotal", new BigDecimal("40000"), "discount_amount", new BigDecimal("4000"),
+                                "tax_amount", new BigDecimal("6840"))
                 )
         ));
     }
@@ -63,15 +69,19 @@ class PosOrderPayloadMapperTest {
         Order order = order("ORD-2026-0006", "50000", "0", "0", "9500", "59500");
 
         PosOrderPayload payload = mapper.toPayload(order, 42L, List.of(
-                new PosOrderItem(500L, 501L, 1, new BigDecimal("10000"), new BigDecimal("10000"), new BigDecimal("1900")),
-                new PosOrderItem(777L, null, 2, new BigDecimal("20000"), new BigDecimal("40000"), new BigDecimal("7600"))
+                new PosOrderItem(500L, 501L, 1, new BigDecimal("10000"), new BigDecimal("10000"), BigDecimal.ZERO,
+                        new BigDecimal("1900")),
+                new PosOrderItem(777L, null, 2, new BigDecimal("20000"), new BigDecimal("40000"), BigDecimal.ZERO,
+                        new BigDecimal("7600"))
         ));
 
         assertThat(payload.body().get("items")).isEqualTo(List.of(
                 Map.of("product_id", 500L, "variant_id", 501L, "quantity", 1, "price", new BigDecimal("10000"),
-                        "subtotal", new BigDecimal("10000"), "tax_amount", new BigDecimal("1900")),
+                        "subtotal", new BigDecimal("10000"), "discount_amount", BigDecimal.ZERO,
+                        "tax_amount", new BigDecimal("1900")),
                 Map.of("product_id", 777L, "quantity", 2, "price", new BigDecimal("20000"),
-                        "subtotal", new BigDecimal("40000"), "tax_amount", new BigDecimal("7600"))
+                        "subtotal", new BigDecimal("40000"), "discount_amount", BigDecimal.ZERO,
+                        "tax_amount", new BigDecimal("7600"))
         ));
     }
 
@@ -119,7 +129,7 @@ class PosOrderPayloadMapperTest {
         order.setTaxAmount(null);
 
         Map<String, Object> body = mapper.toPayload(order, 1L,
-                List.of(new PosOrderItem(1L, null, 1, new BigDecimal("1000"), null, null))).body();
+                List.of(new PosOrderItem(1L, null, 1, new BigDecimal("1000"), null, null, null))).body();
 
         assertThat(body.get("discount_amount")).isEqualTo(BigDecimal.ZERO);
         assertThat(body.get("shipping_cost")).isEqualTo(BigDecimal.ZERO);
@@ -128,11 +138,23 @@ class PosOrderPayloadMapperTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> firstItem = ((List<Map<String, Object>>) body.get("items")).getFirst();
         assertThat(firstItem.get("subtotal")).isEqualTo(BigDecimal.ZERO);
+        assertThat(firstItem.get("discount_amount")).isEqualTo(BigDecimal.ZERO);
         assertThat(firstItem.get("tax_amount")).isEqualTo(BigDecimal.ZERO);
     }
 
+    @Test
+    @DisplayName("GAP-05: una orden con precios con IVA incluido lo dice, para que el receptor sepa cómo suma")
+    void aTaxInclusiveOrderSaysSo() {
+        // 11.900 − 1.000 = 10.900, con 1.740 de IVA contenido: aquí el IVA no se suma.
+        Order order = order("ORD-2026-0007", "11900", "1000", "0", "1740", "10900");
+        order.setTaxIncluded(true);
+
+        assertThat(mapper.toPayload(order, 1L, List.of(item())).body().get("tax_included")).isEqualTo(true);
+    }
+
     private static PosOrderItem item() {
-        return new PosOrderItem(1L, null, 1, new BigDecimal("1000"), new BigDecimal("1000"), new BigDecimal("190"));
+        return new PosOrderItem(1L, null, 1, new BigDecimal("1000"), new BigDecimal("1000"), BigDecimal.ZERO,
+                new BigDecimal("190"));
     }
 
     private static Order order(String orderNumber, String subtotal, String discount, String shipping, String tax, String total) {

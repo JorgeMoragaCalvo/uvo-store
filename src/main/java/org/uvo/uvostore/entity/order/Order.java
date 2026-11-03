@@ -94,6 +94,16 @@ public class Order {
     @Builder.Default
     private BigDecimal taxAmount = BigDecimal.ZERO;
 
+    /**
+     * GAP-05. Cómo suman los montos de esta orden. {@code true} con precios con IVA incluido: el subtotal y el
+     * descuento van como los vio el comprador y el IVA está contenido, {@code subtotal − descuento + envío = total}.
+     * {@code false}: el IVA se suma, {@code subtotal − descuento + IVA + envío = total}. Se guarda en la orden y no se
+     * lee del ajuste porque el ajuste puede cambiar después.
+     */
+    @Column(name = "tax_included", nullable = false)
+    @Builder.Default
+    private boolean taxIncluded = false;
+
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal total;
 

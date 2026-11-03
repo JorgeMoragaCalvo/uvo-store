@@ -80,6 +80,7 @@ function order(refunds: AdminOrderRefund[], overrides: Partial<AdminOrderDetail>
     refundedAmount: refunds.filter((r) => r.status !== 'FAILED').reduce((sum, r) => sum + r.amount, 0),
     refunds,
     stockShortage: false,
+    taxIncluded: false,
     ...overrides,
   }
 }
@@ -261,5 +262,50 @@ describe('OrderDetail: orden cobrada sin stock', () => {
 
     expect(adminApi.orders.releaseStockShortage).toHaveBeenCalledWith(10, 'Conseguido en la otra sucursal')
     expect(screen.queryByText('Cobrada sin stock')).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * GAP-05. Con precios con IVA incluido el IVA está dentro del subtotal: listado como sumando, la columna
+ * 11.900 − 1.000 + 1.740 no daba el total de 10.900.
+ */
+describe('OrderDetail: IVA de la orden', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    useAdminOrdersStore.setState({ detail: null, detailLoading: false })
+    useAdminAuthStore.setState({
+      token: 'jwt',
+      user: { id: 1, name: 'Admin', email: 'admin@test.local', permissions: ['orders.view'] },
+    })
+  })
+
+  async function renderOrder(detail: AdminOrderDetail) {
+    vi.mocked(adminApi.orders.getById).mockResolvedValue(detail)
+    render(
+      <MemoryRouter initialEntries={['/admin/orders/10']}>
+        <Routes>
+          <Route path="/admin/orders/:id" element={<OrderDetail />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    await screen.findByText('Productos')
+  }
+
+  it('con IVA incluido lo muestra como nota y no como sumando', async () => {
+    await renderOrder(
+      order([], { taxIncluded: true, subtotal: 11900, discountAmount: 1000, taxAmount: 1740, total: 10900 }),
+    )
+
+    expect(screen.queryByText('Impuesto')).not.toBeInTheDocument()
+    expect(screen.getByText(/IVA incluido: .*1\.740/)).toBeInTheDocument()
+  })
+
+  it('con IVA sumado lo lista como un sumando más', async () => {
+    await renderOrder(
+      order([], { taxIncluded: false, subtotal: 10000, discountAmount: 1000, taxAmount: 1710, total: 10710 }),
+    )
+
+    expect(screen.getByText('Impuesto')).toBeInTheDocument()
+    expect(screen.queryByText(/IVA incluido/)).not.toBeInTheDocument()
   })
 })

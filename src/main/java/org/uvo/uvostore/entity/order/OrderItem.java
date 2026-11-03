@@ -79,6 +79,15 @@ public class OrderItem {
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal subtotal;
 
+    /**
+     * GAP-05. La parte del descuento de la orden que le toca a esta línea, en proporción a su subtotal. Junto con
+     * {@link #taxAmount} hace que las líneas sumen la orden: Σ descuento = {@code Order.discountAmount} y Σ IVA =
+     * {@code Order.taxAmount}. El subtotal sigue siendo precio × cantidad, antes del descuento.
+     */
+    @Column(name = "discount_amount", nullable = false, precision = 10, scale = 2)
+    @Builder.Default
+    private BigDecimal discountAmount = BigDecimal.ZERO;
+
     @Column(name = "tax_amount", nullable = false, precision = 10, scale = 2)
     @Builder.Default
     private BigDecimal taxAmount = BigDecimal.ZERO;

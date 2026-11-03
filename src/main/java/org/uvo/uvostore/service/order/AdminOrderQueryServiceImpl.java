@@ -138,7 +138,8 @@ public class AdminOrderQueryServiceImpl implements AdminOrderQueryService {
                 order.getShippingRegion(), order.getShippingCommune(), order.getShippingPostalCode(),
                 order.getCustomerNotes(), order.getNotes(), items,
                 order.getCreatedAt(), order.getShippedAt(), order.getDeliveredAt(),
-                refundRepository.totalRefunded(order.getId()), refunds, order.isStockShortage()
+                refundRepository.totalRefunded(order.getId()), refunds, order.isStockShortage(),
+                order.isTaxIncluded()
         );
     }
 

@@ -4,6 +4,7 @@ import org.uvo.uvostore.entity.order.Coupon;
 import org.uvo.uvostore.service.shipping.ShippingOption;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 /**
  * @param shippingAvailable false when the store does ship but no zone covers the given
@@ -31,6 +32,11 @@ public record CartTotals(
         // con qué lo decidió. Antes solo sobrevivía el número, así que la orden no podía guardar qué
         // transportista ni qué tarifa lo respaldaron — y con ello los guardas de borrado de zonas y
         // métodos, que preguntan por órdenes asociadas, nunca encontraban ninguna.
-        ShippingOption appliedShipping
+        ShippingOption appliedShipping,
+        // GAP-05: si el IVA va dentro del subtotal (precios con IVA incluido) o se suma, y cómo se reparten el
+        // descuento y el IVA entre las líneas, en el orden de las líneas recibidas. Viajan con el precio por lo
+        // mismo que `appliedCoupon`: el checkout copia el reparto, no lo vuelve a calcular.
+        boolean taxIncluded,
+        List<LineAmounts> lines
 ) {
 }
