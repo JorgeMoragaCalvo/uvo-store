@@ -70,7 +70,7 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
   tenant through its order — so the test doesn't scan that repository.) Adding a
   global query is possible; it just has to be written down. Three of those are flagged in the test as
   *not store-checked by their caller* (`UserRepository.findByPasswordResetToken` and Stripe's two
-  `findByStripe…Id`) — a known gap, not an endorsement. For Stripe it is wider than the repository:
+  `findByStripe…Id`) — a known gap, not an endorsement. For Stripe, it is wider than the repository:
   `PaymentServiceImpl.handleWebhook` verifies the signature with the *tenant's* webhook secret but never
   compares the found order's store with the request's, and `orderFromIntent` resolves the order with a
   plain `findById` from the event's `order_id` metadata (not covered by this test — it is an inherited
@@ -100,7 +100,7 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
     the gateway got a URL describing the internal hop (`http`, upstream port). **Don't "fix" that
     class of problem with `server.forward-headers-strategy`** — see the `ClientIpResolver` note
     underrate limiting. `LocalFileStorageService.publicUrl` was the last place that built a URL this
-    way (image URLs came out as `http://…:8080` behind the proxy — mixed content from an https page);
+    way (image URLs came out as `http://…:8080` behind the proxy — mixed content from a https page);
     **PROD-05b** moved it to `StorePublicUrlResolver.apiUrl(store, "/uploads/…")`. It reads the store
     from `TenantContext` instead of taking it as a parameter, on purpose: all nine call sites are request
     code already inside a store (the banner and settings services read `TenantContext` in the same
@@ -310,7 +310,7 @@ PROD-14a the proxy keeps the browser's store: a page on `<slug>.localhost:5173` 
     The token deliberately survives, so reactivating someone revives their invitation.
   Also aligned: **a password reset now consumes a pending invitation**. An invitee who never accepted can
   set a password through "forgot password" — both paths prove the same mailbox, so it's not a shortcut —
-  but it used to leave a live invitation link for days afterwards and `invitation_accepted_at` null, which
+  but it used to leave a live invitation link for days afterward and `invitation_accepted_at` null, which
   made the one column that answers "did they ever set their own password?" lie.
   Still missing in this family: the **customer** half (`/cuenta/activar`, F24) has no screen either, plus
   customer password recovery (see the F24 bullet below). **PROD-07 settled that half by deferring it
