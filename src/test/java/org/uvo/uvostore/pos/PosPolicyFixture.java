@@ -1,8 +1,14 @@
 package org.uvo.uvostore.pos;
 
 import org.uvo.uvostore.entity.settings.Setting;
+import org.uvo.uvostore.repository.PosConnectionRepository;
+import org.uvo.uvostore.repository.ProductRepository;
+import org.uvo.uvostore.repository.ProductSyncMappingRepository;
+import org.uvo.uvostore.repository.ProductVariationRepository;
+import org.uvo.uvostore.repository.ProductVariationSyncMappingRepository;
 import org.uvo.uvostore.repository.SettingRepository;
 import org.uvo.uvostore.service.pos.PosIntegrationPolicy;
+import org.uvo.uvostore.service.pos.PosSaleCoverage;
 
 import java.util.Optional;
 
@@ -37,6 +43,16 @@ final class PosPolicyFixture {
     /** La plataforma lo permite y la tienda no lo quiere: la mitad que hasta PROD-12 no decidía nada. */
     static PosIntegrationPolicy storeDisabled() {
         return new PosIntegrationPolicy(true, settingsSaying("false"));
+    }
+
+    /**
+     * GAP-06. La regla de a qué empresa va cada línea, sobre los mismos mapeos simulados del test. El notificador
+     * solo usa {@code companiesByLine}, que no mira ni la política ni la conexión.
+     */
+    static PosSaleCoverage coverage(ProductSyncMappingRepository mappings,
+                                    ProductVariationSyncMappingRepository variantMappings) {
+        return new PosSaleCoverage(mappings, variantMappings, mock(ProductRepository.class),
+                mock(ProductVariationRepository.class), mock(PosConnectionRepository.class), enabled());
     }
 
     private static SettingRepository settingsSaying(String value) {
