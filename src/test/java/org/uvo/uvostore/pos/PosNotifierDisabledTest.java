@@ -68,7 +68,8 @@ class PosNotifierDisabledTest {
     private void assertNothingLeavesWith(PosIntegrationPolicy policy) {
         PosOrderNotifier notifier = new PosOrderNotifier(orderRepository, mappingRepository, variantMappingRepository,
                 connectionRepository,
-                new PosOrderPayloadMapper(), policy, 3, new BusinessMetrics(new SimpleMeterRegistry()));
+                new PosOrderPayloadMapper(), policy, PosPolicyFixture.coverage(mappingRepository, variantMappingRepository),
+                3, new BusinessMetrics(new SimpleMeterRegistry()));
         Order order = paidOrderWithASyncedItem();
 
         assertThat(notifier.companiesToNotify(order)).isEmpty();

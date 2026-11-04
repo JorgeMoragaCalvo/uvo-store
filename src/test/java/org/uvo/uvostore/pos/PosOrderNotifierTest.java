@@ -1,8 +1,12 @@
 package org.uvo.uvostore.pos;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.uvo.uvostore.entity.catalog.Product;
 import org.uvo.uvostore.entity.order.Order;
 import org.uvo.uvostore.entity.order.OrderItem;
@@ -54,7 +58,8 @@ class PosOrderNotifierTest {
     private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
     private final PosOrderNotifier notifier = new PosOrderNotifier(
             orderRepository, mappingRepository, variantMappingRepository, connectionRepository, new PosOrderPayloadMapper(),
-            PosPolicyFixture.enabled(), 3, new BusinessMetrics(meterRegistry));
+            PosPolicyFixture.enabled(), PosPolicyFixture.coverage(mappingRepository, variantMappingRepository), 3,
+            new BusinessMetrics(meterRegistry));
 
     @Test
     @DisplayName("Las empresas salen de los mapeos, sin repetir y ordenadas")
@@ -79,6 +84,31 @@ class PosOrderNotifierTest {
                 mapping(product, 1L, 100L), mapping(product, 2L, 200L)));
 
         assertThat(notifier.companiesToNotify(order)).containsExactly(1L, 2L);
+    }
+
+    @Test
+    @DisplayName("GAP-06: una orden de dos empresas que se cuela se envía igual, pero deja aviso")
+    void anOrderOfTwoCompaniesLeavesAWarning() {
+        // El checkout ya no la deja pasar con el POS activo; esto es para las anteriores o las creadas con el POS
+        // apagado. Cada documento lleva los totales de la orden completa, y eso alguien lo tiene que revisar.
+        Order order = orderWithTwoItems();
+        Product first = order.getItems().get(0).getProduct();
+        Product second = order.getItems().get(1).getProduct();
+        when(mappingRepository.findByProductIdIn(any())).thenReturn(List.of(
+                mapping(first, 1L, 100L), mapping(second, 2L, 200L)));
+        ListAppender<ILoggingEvent> logs = new ListAppender<>();
+        logs.start();
+        Logger logger = (Logger) LoggerFactory.getLogger(PosOrderNotifier.class);
+        logger.addAppender(logs);
+        try {
+            assertThat(notifier.companiesToNotify(order)).containsExactly(1L, 2L);
+        } finally {
+            logger.detachAppender(logs);
+        }
+
+        assertThat(logs.list).anySatisfy(event -> assertThat(event.getFormattedMessage())
+                .contains("Orden de 2 empresas del POS")
+                .contains(order.getOrderNumber()));
     }
 
     @Test

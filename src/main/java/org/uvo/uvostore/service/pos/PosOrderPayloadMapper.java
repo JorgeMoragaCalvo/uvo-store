@@ -36,7 +36,10 @@ import java.util.Map;
  *       mismo — mandar de más es inocuo, quedarse corto duplica documentos.</li>
  *   <li>Si la clave debe ser única por orden o por orden y empresa. Aquí es por orden y empresa,
  *       porque una orden con productos de dos empresas genera dos documentos distintos y una clave
- *       compartida haría que el segundo se descartara como repetido.</li>
+ *       compartida haría que el segundo se descartara como repetido. GAP-06: desde que el checkout
+ *       exige una empresa por orden ({@link PosSaleCoverage}), esas órdenes solo pueden ser
+ *       anteriores, y por eso los totales de abajo son los de la orden completa. Una orden de dos
+ *       empresas que se cuele deja un aviso en {@code PosOrderNotifier}.</li>
  *   <li>POS-5: que una línea de variación identifique la variante con {@code variant_id}, junto al
  *       {@code product_id} del producto.</li>
  *   <li>GAP-05: {@code tax_included} en la orden y {@code discount_amount} por ítem. Las líneas suman

@@ -25,7 +25,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * Lo que el e-commerce sabe de cómo registrar una venta en UvoPOS, partido en las dos mitades del outbox
@@ -54,13 +53,14 @@ public class PosOrderNotifier {
     private final PosConnectionRepository posConnectionRepository;
     private final PosOrderPayloadMapper payloadMapper;
     private final PosIntegrationPolicy posPolicy;
+    private final PosSaleCoverage saleCoverage;
     private final int divergenceAlertThreshold;
     private final BusinessMetrics metrics;
 
     public PosOrderNotifier(OrderRepository orderRepository, ProductSyncMappingRepository mappingRepository,
                             ProductVariationSyncMappingRepository variantMappingRepository,
                             PosConnectionRepository posConnectionRepository, PosOrderPayloadMapper payloadMapper,
-                            PosIntegrationPolicy posPolicy,
+                            PosIntegrationPolicy posPolicy, PosSaleCoverage saleCoverage,
                             @Value("${app.pos.stock-divergence-alert-threshold:3}") int divergenceAlertThreshold,
                             BusinessMetrics metrics) {
         this.metrics = metrics;
@@ -70,6 +70,7 @@ public class PosOrderNotifier {
         this.posConnectionRepository = posConnectionRepository;
         this.payloadMapper = payloadMapper;
         this.posPolicy = posPolicy;
+        this.saleCoverage = saleCoverage;
         this.divergenceAlertThreshold = divergenceAlertThreshold;
     }
 
@@ -88,36 +89,31 @@ public class PosOrderNotifier {
             return List.of();
         }
 
-        Set<Long> productIds = order.getItems().stream()
-                .map(item -> item.getProduct().getId())
-                .collect(Collectors.toSet());
-        if (productIds.isEmpty()) {
+        if (order.getItems().isEmpty()) {
             return List.of();
         }
 
-        List<ProductSyncMapping> mappings = mappingRepository.findByProductIdIn(productIds);
-        Set<Long> mappedProducts = mappings.stream()
-                .map(mapping -> mapping.getProduct().getId())
-                .collect(Collectors.toSet());
-        // POS-5. Una línea de variación solo se puede registrar si su variante está mapeada: si no, prepare() no la
-        // envía (el POS descontaría otra cosa), y aquí cuenta como no cubierta.
-        Set<Long> mappedVariations = mappings.isEmpty() ? Set.of() : variantMappingRepository
-                .findByMappingIdIn(mappings.stream().map(ProductSyncMapping::getId).toList()).stream()
-                .map(variantMapping -> variantMapping.getVariation().getId())
-                .collect(Collectors.toSet());
-        long unmappedItems = order.getItems().stream()
-                .filter(item -> !mappedProducts.contains(item.getProduct().getId())
-                        || (item.getVariation() != null && !mappedVariations.contains(item.getVariation().getId())))
-                .count();
+        // GAP-06: la misma regla que el carrito y el checkout. POS-5: una línea de variación solo se puede registrar
+        // si su variante está mapeada bajo esa empresa; si no, prepare() no la envía (el POS descontaría otra cosa), y
+        // aquí cuenta como no cubierta.
+        List<Set<Long>> companiesByLine = saleCoverage.companiesByLine(order.getItems().stream()
+                .map(item -> new PosSaleCoverage.SaleLine(item.getProduct().getId(),
+                        item.getVariation() == null ? null : item.getVariation().getId()))
+                .toList());
+        long unmappedItems = companiesByLine.stream().filter(Set::isEmpty).count();
         if (unmappedItems > 0) {
             reportIncompleteCoverage(order, unmappedItems);
         }
 
-        return mappings.stream()
-                .map(ProductSyncMapping::getCompanyId)
+        List<Long> companies = companiesByLine.stream()
+                .flatMap(Set::stream)
                 .distinct()
                 .sorted()
                 .toList();
+        if (companies.size() > 1) {
+            reportSeveralCompanies(order, companies);
+        }
+        return companies;
     }
 
     /**
@@ -258,9 +254,12 @@ public class PosOrderNotifier {
     /**
      * G3.2, la mitad que sí se puede arreglar sin decidir nada de negocio. Si una orden tiene ítems
      * sin {@code ProductSyncMapping} se notifica solo una parte —y si no tiene ninguno, no se
-     * notifica nada—, con lo que el documento tributario sale incompleto o no sale. Qué hacer con
-     * eso (¿rechazar la venta? ¿emitir parcial?) es decisión de negocio y sigue abierta; el
-     * comportamiento no cambia. Lo que cambia es que deja rastro: hoy no se enteraba nadie.
+     * notifica nada—, con lo que el documento tributario sale incompleto o no sale. Lo que cambia es
+     * que deja rastro: antes no se enteraba nadie.
+     *
+     * <p>GAP-06: la decisión de negocio ya está tomada, y con el POS activo el checkout no vende
+     * productos sin mapeo ({@link PosSaleCoverage}). Esto queda para lo que se cuela igual: órdenes
+     * anteriores, o creadas con el POS apagado y pagadas ya encendido.
      *
      * <p>Solo alerta si la tienda tiene una conexión POS activa. Sin ese filtro, cada orden de cada
      * tienda que no usa POS —que es la mayoría— generaría un evento, y la alerta se volvería el
@@ -276,6 +275,21 @@ public class PosOrderNotifier {
 
         String message = "Orden notificada al POS de forma incompleta: %d de %d ítems sin ProductSyncMapping (order_number=%s)"
                 .formatted(unmappedItems, order.getItems().size(), order.getOrderNumber());
+        afterCommit(() -> {
+            log.warn(message);
+            Sentry.captureMessage(message);
+        });
+    }
+
+    /**
+     * GAP-06. Desde que el checkout exige una empresa por orden, esto solo puede pasar con órdenes anteriores, con
+     * órdenes creadas con el POS apagado y pagadas ya encendido, o con un producto mapeado a dos empresas. Se
+     * envían igual, pero cada documento lleva los totales de la orden completa ({@link PosOrderPayloadMapper}), y
+     * eso hay que revisarlo a mano.
+     */
+    private static void reportSeveralCompanies(Order order, List<Long> companies) {
+        String message = "Orden de %d empresas del POS %s: cada documento lleva los totales de la orden completa (order_number=%s)"
+                .formatted(companies.size(), companies, order.getOrderNumber());
         afterCommit(() -> {
             log.warn(message);
             Sentry.captureMessage(message);

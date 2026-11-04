@@ -15,7 +15,13 @@ public class OutOfStockException extends RuntimeException {
     private final transient Map<String, String> errors;
 
     public OutOfStockException(Map<String, String> errors) {
-        super("Uno o más productos no tienen stock suficiente");
+        this("Uno o más productos no tienen stock suficiente", errors);
+    }
+
+    // GAP-06. El mismo 409 por línea cuando lo que falla no es el stock sino el POS: productos de dos empresas, o
+    // sin mapeo. El SPA muestra este mensaje, y "no tienen stock suficiente" habría sido falso.
+    public OutOfStockException(String message, Map<String, String> errors) {
+        super(message);
         this.errors = errors;
     }
 

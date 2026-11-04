@@ -28,6 +28,7 @@ import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.customer.CustomerService;
 import org.uvo.uvostore.service.geo.GeoCatalog;
 import org.uvo.uvostore.service.outbox.OutboxService;
+import org.uvo.uvostore.service.pos.PosSaleCoverage;
 import org.uvo.uvostore.service.settings.SettingValues;
 import org.uvo.uvostore.service.shipping.ShippingOption;
 
@@ -64,6 +65,7 @@ public class CheckoutServiceImpl implements CheckoutService {
     private final ShippingMethodRepository shippingMethodRepository;
     private final ShippingRateRepository shippingRateRepository;
     private final GeoCatalog geoCatalog;
+    private final PosSaleCoverage posSaleCoverage;
     private final int retryWindowMinutes;
 
     public CheckoutServiceImpl(
@@ -80,6 +82,7 @@ public class CheckoutServiceImpl implements CheckoutService {
             ShippingMethodRepository shippingMethodRepository,
             ShippingRateRepository shippingRateRepository,
             GeoCatalog geoCatalog,
+            PosSaleCoverage posSaleCoverage,
             @org.springframework.beans.factory.annotation.Value("${app.abandoned-orders.retry-window-minutes:60}") int retryWindowMinutes) {
         this.cartPricingService = cartPricingService;
         this.cartService = cartService;
@@ -94,6 +97,7 @@ public class CheckoutServiceImpl implements CheckoutService {
         this.shippingMethodRepository = shippingMethodRepository;
         this.shippingRateRepository = shippingRateRepository;
         this.geoCatalog = geoCatalog;
+        this.posSaleCoverage = posSaleCoverage;
         this.retryWindowMinutes = retryWindowMinutes;
     }
 
@@ -115,6 +119,14 @@ public class CheckoutServiceImpl implements CheckoutService {
             // Resolve the lines first: a product belonging to another store must still answer 404
             // (tenant isolation), never a 409 that would confirm it exists somewhere else.
             command.lines().forEach(this::resolveLineOrThrow);
+            // GAP-06: validateItems también rechaza, con el POS activo, una orden de dos empresas o con productos
+            // sin mapeo. Si eso es todo lo que falla, el mensaje lo dice; si además falta stock, manda el de stock.
+            Map<String, String> posErrors = posSaleCoverage.lineErrors(TenantContext.requireCurrent(), command.lines());
+            if (posErrors.entrySet().containsAll(stockCheck.errors().entrySet())) {
+                throw new OutOfStockException(
+                        "Algunos productos no se pueden comprar en este pedido. Revisa el detalle de cada uno.",
+                        stockCheck.errors());
+            }
             throw new OutOfStockException(stockCheck.errors());
         }
 

@@ -13,6 +13,7 @@ import org.uvo.uvostore.repository.SettingRepository;
 import org.uvo.uvostore.service.catalog.EffectivePrice;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.catalog.FileStorageService;
+import org.uvo.uvostore.service.pos.PosSaleCoverage;
 import org.uvo.uvostore.service.settings.SettingValues;
 
 import java.math.BigDecimal;
@@ -29,15 +30,17 @@ public class CartServiceImpl implements CartService {
     private final CartPricingService cartPricingService;
     private final SettingRepository settingRepository;
     private final FileStorageService fileStorageService;
+    private final PosSaleCoverage posSaleCoverage;
 
     public CartServiceImpl(ProductRepository productRepository, ProductVariationRepository variationRepository,
                             CartPricingService cartPricingService, SettingRepository settingRepository,
-                            FileStorageService fileStorageService) {
+                            FileStorageService fileStorageService, PosSaleCoverage posSaleCoverage) {
         this.productRepository = productRepository;
         this.variationRepository = variationRepository;
         this.cartPricingService = cartPricingService;
         this.settingRepository = settingRepository;
         this.fileStorageService = fileStorageService;
+        this.posSaleCoverage = posSaleCoverage;
     }
 
     @Override
@@ -108,17 +111,18 @@ public class CartServiceImpl implements CartService {
             }
         }
 
+        // GAP-06. Con el POS activo, una orden es de una sola empresa y no lleva productos sin mapeo. Va aquí para
+        // que el carrito lo muestre antes de pagar, en la misma línea que el stock; putIfAbsent porque el problema
+        // de stock de una línea, o que no exista, se explica primero.
+        posSaleCoverage.lineErrors(TenantContext.requireCurrent(), toLines(items)).forEach(errors::putIfAbsent);
+
         return new CartValidationResult(errors.isEmpty(), validated, errors);
     }
 
     @Override
     @Transactional(readOnly = true)
     public CartCalculationResult calculate(List<CartItemCommand> items, String region, String commune, String couponCode) {
-        List<CartLineCommand> lines = items.stream()
-                .map(item -> "variation".equals(item.type())
-                        ? new CartLineCommand(null, item.id(), item.quantity())
-                        : new CartLineCommand(item.id(), null, item.quantity()))
-                .toList();
+        List<CartLineCommand> lines = toLines(items);
 
         // F05: cotización pública, sin cliente. Aquí no hay email —el checkout es quien identifica al
         // comprador— así que se muestra el mejor precio posible; si el cupón resulta no aplicarle a
@@ -164,5 +168,13 @@ public class CartServiceImpl implements CartService {
                 .or(() -> product.getProductImages().stream().findFirst())
                 .map(img -> fileStorageService.publicUrl(img.getImagePath()))
                 .orElse(null);
+    }
+
+    private static List<CartLineCommand> toLines(List<CartItemCommand> items) {
+        return items.stream()
+                .map(item -> "variation".equals(item.type())
+                        ? new CartLineCommand(null, item.id(), item.quantity())
+                        : new CartLineCommand(item.id(), null, item.quantity()))
+                .toList();
     }
 }
