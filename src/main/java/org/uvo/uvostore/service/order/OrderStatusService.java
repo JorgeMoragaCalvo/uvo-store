@@ -24,6 +24,12 @@ public interface OrderStatusService {
     Order markCancelled(Long orderId);
 
     /**
+     * GAP-07. La misma cancelación, con el motivo que queda en el historial. El checkout la usa para reemplazar una
+     * orden pendiente cuyo total ya no es el que el comprador ve: "Sesión de pago expirada" no explicaría nada.
+     */
+    Order markCancelled(Long orderId, String reason);
+
+    /**
      * G4. Cierra una orden devuelta del todo: {@code REFUNDED} en pago y estado, y el inventario y el
      * cupón de vuelta, igual que una cancelación. Idempotente como {@link #markPaid}: llamarlo dos
      * veces no devuelve el stock dos veces.

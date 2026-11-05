@@ -58,7 +58,7 @@ describe('useCartStore', () => {
     const api = (await import('@/services/api')).default
     vi.mocked(api.cart.calculate).mockResolvedValue(calculationResult)
     const { useCartStore } = await import('./useCartStore')
-    useCartStore.setState({ items: [], totals: useCartStore.getInitialState().totals })
+    useCartStore.setState({ items: [], totals: useCartStore.getInitialState().totals, priceChanges: {} })
   })
 
   it('adds a new product to an empty cart', async () => {
@@ -177,6 +177,40 @@ describe('useCartStore', () => {
     await vi.waitFor(() => expect(api.cart.calculate).toHaveBeenCalled())
 
     expect(useCartStore.getState().totals.total).toBe(1190)
+  })
+
+  // GAP-07. El carrito guardado no sabe si el precio cambió; /cart/validate sí.
+  it('keeps the price the backend confirmed, without a notice when it is the one shown', async () => {
+    const api = (await import('@/services/api')).default
+    vi.mocked(api.cart.validate).mockResolvedValue({
+      valid: true,
+      items: [{ id: 1, type: 'product', name: product.name, variation: null, price: 1000, stock: 10, image: null, maxQuantity: 10 }],
+      errors: {},
+    })
+    const { useCartStore } = await import('./useCartStore')
+    useCartStore.getState().addItem(product)
+
+    await useCartStore.getState().validateCart()
+
+    expect(useCartStore.getState().items[0].unitPrice).toBe(1000)
+    expect(useCartStore.getState().priceChanges).toEqual({})
+  })
+
+  it('flags a line whose price changed since the customer saw it, and saves the new one', async () => {
+    const api = (await import('@/services/api')).default
+    vi.mocked(api.cart.validate).mockResolvedValue({
+      valid: true,
+      items: [{ id: 1, type: 'product', name: product.name, variation: null, price: 1200, stock: 10, image: null, maxQuantity: 10 }],
+      errors: {},
+    })
+    const { useCartStore } = await import('./useCartStore')
+    useCartStore.getState().addItem(product)
+
+    await useCartStore.getState().validateCart()
+
+    expect(useCartStore.getState().priceChanges).toEqual({ 'product:1': { from: 1000, to: 1200 } })
+    expect(useCartStore.getState().items[0].unitPrice).toBe(1200)
+    expect(JSON.parse(localStorage.getItem('uvostore_cart') ?? '[]')[0].unitPrice).toBe(1200)
   })
 
   it('selectItemCount sums quantities across all lines', async () => {

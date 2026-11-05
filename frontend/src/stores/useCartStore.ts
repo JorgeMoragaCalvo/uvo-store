@@ -12,6 +12,21 @@ export interface CartLine {
   product: Product
   variation: ProductVariation | null
   quantity: number
+  // GAP-07. El último precio unitario que confirmó el backend (/cart/validate). Opcional porque los carritos
+  // guardados antes no lo tienen: entonces vale el del producto o la variación tal como se agregaron.
+  unitPrice?: number
+}
+
+// GAP-07. Un precio que cambió desde que el comprador lo vio, para avisarlo en la línea.
+export interface PriceChange {
+  from: number
+  to: number
+}
+
+// El precio unitario que el comprador está viendo. `product.price` ya es el vigente (el de oferta si la hay,
+// ProductDto); es null en un producto variable, que lleva el precio en cada variación.
+export function linePrice(line: CartLine): number | null {
+  return line.unitPrice ?? line.variation?.price ?? line.product.price ?? null
 }
 
 export interface CartTotals {
@@ -111,6 +126,9 @@ interface CartState {
   // cuánto hay. Lo llena validateCart() (o el 409 de stock del checkout) y lo pinta cada línea.
   lineErrors: Record<string, string>
   maxQuantities: Record<string, number>
+  // GAP-07. Las líneas cuyo precio cambió desde que el comprador lo vio, según validateCart(). Solo en
+  // memoria: el aviso es para esta visita.
+  priceChanges: Record<string, PriceChange>
   // El último /cart/calculate falló: los totales en pantalla pueden ya no ser verdad.
   totalsError: boolean
   isSidebarOpen: boolean
@@ -138,6 +156,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   loading: false,
   lineErrors: {},
   maxQuantities: {},
+  priceChanges: {},
   totalsError: false,
   isSidebarOpen: false,
 
@@ -214,6 +233,7 @@ export const useCartStore = create<CartState>((set, get) => ({
       couponCode: '',
       lineErrors: {},
       maxQuantities: {},
+      priceChanges: {},
       totalsError: false,
     })
   },
@@ -269,8 +289,32 @@ export const useCartStore = create<CartState>((set, get) => ({
       const result = await api.cart.validate(payload)
 
       const maxQuantities: Record<string, number> = {}
-      for (const validated of result.items) maxQuantities[cartLineKey(validated)] = validated.maxQuantity
-      set({ lineErrors: errorsByLine(items, result.errors), maxQuantities })
+      const prices: Record<string, number> = {}
+      for (const validated of result.items) {
+        maxQuantities[cartLineKey(validated)] = validated.maxQuantity
+        prices[cartLineKey(validated)] = validated.price
+      }
+
+      // GAP-07. El precio vigente de cada línea reemplaza al guardado, y si es otro se avisa en la línea. Un
+      // carrito de hace días mostraba el precio de entonces mientras el total ya era el de hoy. Sobre las líneas
+      // de ahora y no las de antes de la llamada: el comprador pudo cambiar el carrito mientras tanto.
+      const priceChanges = { ...get().priceChanges }
+      let repriced = false
+      const current = get().items.map((line) => {
+        const price = prices[cartLineKey(line)]
+        if (price === undefined || price === line.unitPrice) return line
+        const shown = linePrice(line)
+        if (shown !== null && shown !== price) priceChanges[cartLineKey(line)] = { from: shown, to: price }
+        repriced = true
+        return { ...line, unitPrice: price }
+      })
+      if (repriced) saveToLocalStorage(current)
+      set({
+        ...(repriced ? { items: current } : {}),
+        lineErrors: errorsByLine(items, result.errors),
+        maxQuantities,
+        priceChanges,
+      })
 
       return { valid: result.valid }
     } catch (error) {

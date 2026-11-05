@@ -54,6 +54,7 @@ public class CartPricingServiceImpl implements CartPricingService {
         Long storeId = TenantContext.requireStoreId();
         BigDecimal subtotalWithTax = BigDecimal.ZERO;
         BigDecimal totalWeight = BigDecimal.ZERO;
+        List<BigDecimal> unitPrices = new ArrayList<>(lines.size());
         List<BigDecimal> lineSubtotals = new ArrayList<>(lines.size());
         for (CartLineCommand line : lines) {
             BigDecimal unitPrice;
@@ -79,6 +80,7 @@ public class CartPricingServiceImpl implements CartPricingService {
                 unitWeight = product.getWeight();
             }
             BigDecimal lineSubtotal = unitPrice.multiply(BigDecimal.valueOf(line.quantity()));
+            unitPrices.add(unitPrice);
             lineSubtotals.add(lineSubtotal);
             subtotalWithTax = subtotalWithTax.add(lineSubtotal);
             if (unitWeight != null) {
@@ -175,7 +177,7 @@ public class CartPricingServiceImpl implements CartPricingService {
 
         return new CartTotals(subtotalWithoutTax, taxAmount, subtotalWithTax, shippingCost, discountAmount, total,
                 shippingAvailable, couponApplied, appliedCoupon, customerRejectionReason,
-                best.orElse(null), pricesIncludeTax, lineAmounts(lineSubtotals, discountAmount, taxAmount));
+                best.orElse(null), pricesIncludeTax, lineAmounts(unitPrices, lineSubtotals, discountAmount, taxAmount));
     }
 
     /**
@@ -183,7 +185,8 @@ public class CartPricingServiceImpl implements CartPricingService {
      * queda de cada una después de su descuento, que es su base. Así las líneas suman exactamente el descuento y
      * el IVA de la orden, y el documento POS cuadra línea por línea.
      */
-    private static List<LineAmounts> lineAmounts(List<BigDecimal> subtotals, BigDecimal discount, BigDecimal tax) {
+    private static List<LineAmounts> lineAmounts(List<BigDecimal> unitPrices, List<BigDecimal> subtotals,
+                                                 BigDecimal discount, BigDecimal tax) {
         List<BigDecimal> discounts = AmountSpread.spread(discount, subtotals);
         List<BigDecimal> bases = new ArrayList<>(subtotals.size());
         for (int i = 0; i < subtotals.size(); i++) {
@@ -192,7 +195,7 @@ public class CartPricingServiceImpl implements CartPricingService {
         List<BigDecimal> taxes = AmountSpread.spread(tax, bases);
         List<LineAmounts> result = new ArrayList<>(subtotals.size());
         for (int i = 0; i < subtotals.size(); i++) {
-            result.add(new LineAmounts(subtotals.get(i), discounts.get(i), taxes.get(i)));
+            result.add(new LineAmounts(unitPrices.get(i), subtotals.get(i), discounts.get(i), taxes.get(i)));
         }
         return result;
     }

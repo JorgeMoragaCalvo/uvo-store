@@ -201,6 +201,8 @@ describe('Checkout page', () => {
           commune: 'Santiago',
           couponCode: '',
         }),
+        // GAP-07: el mismo total que cotiza el carrito; si fuera otro, se crearía una orden nueva.
+        total: 8990,
         region: 'Metropolitana de Santiago',
         commune: 'Santiago',
         couponCode: '',

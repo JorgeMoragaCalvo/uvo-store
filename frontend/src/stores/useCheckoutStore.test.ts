@@ -58,11 +58,15 @@ const cartLine: CartLine = { id: 1, type: 'product', product, variation: null, q
 
 const confirmation: OrderConfirmation = { orderId: 42, orderNumber: 'ORD-42', total: 2000 }
 
+// GAP-07: el total que el comprador ve, el mismo de la orden que se crea.
+const totals = { total: 2000 }
+
 async function setup() {
   vi.clearAllMocks()
   const { useCartStore } = await import('@/stores/useCartStore')
   vi.mocked(useCartStore.getState).mockReturnValue({
     items: [cartLine],
+    totals,
     clearCart,
   } as never)
 
@@ -176,7 +180,7 @@ describe('useCheckoutStore.processCheckout', () => {
     const { api, useCheckoutStore } = await setup()
     const applyStockErrors = vi.fn()
     const { useCartStore } = await import('@/stores/useCartStore')
-    vi.mocked(useCartStore.getState).mockReturnValue({ items: [cartLine], clearCart, applyStockErrors } as never)
+    vi.mocked(useCartStore.getState).mockReturnValue({ items: [cartLine], totals, clearCart, applyStockErrors } as never)
     vi.mocked(api.checkout.createOrder).mockRejectedValue({
       status: 409,
       message: 'Uno o más productos no tienen stock suficiente',
@@ -187,6 +191,39 @@ describe('useCheckoutStore.processCheckout', () => {
 
     expect(applyStockErrors).toHaveBeenCalledWith({ 'items.0': 'Stock insuficiente. Solo hay 1 disponibles' })
     expect(useCheckoutStore.getState().error).toBe('Uno o más productos no tienen stock suficiente')
+  })
+
+  // GAP-07. El backend cobra el total que el comprador vio, o nada.
+  it('sends the total the buyer is looking at', async () => {
+    const { api, useCheckoutStore } = await setup()
+
+    await useCheckoutStore.getState().processCheckout()
+
+    expect(api.checkout.createOrder).toHaveBeenCalledWith(expect.objectContaining({ expectedTotal: 2000 }))
+  })
+
+  it('re-prices and re-validates the cart when the total changed', async () => {
+    const { api, useCheckoutStore } = await setup()
+    const calculateTotals = vi.fn().mockResolvedValue(undefined)
+    const validateCart = vi.fn().mockResolvedValue({ valid: true })
+    const { useCartStore } = await import('@/stores/useCartStore')
+    vi.mocked(useCartStore.getState).mockReturnValue({
+      items: [cartLine],
+      totals,
+      clearCart,
+      calculateTotals,
+      validateCart,
+    } as never)
+    const message = 'El total de tu pedido cambió de $2.000 a $2.400. Revisa el carrito y confirma de nuevo.'
+    vi.mocked(api.checkout.createOrder).mockRejectedValue({ status: 409, message })
+
+    const result = await useCheckoutStore.getState().processCheckout()
+
+    expect(result).toEqual({ success: false })
+    expect(calculateTotals).toHaveBeenCalled()
+    expect(validateCart).toHaveBeenCalled()
+    expect(useCheckoutStore.getState().error).toBe(message)
+    expect(clearCart).not.toHaveBeenCalled()
   })
 
   // El botón no puede volver a activarse mientras el navegador sale hacia la pasarela.
@@ -241,7 +278,7 @@ describe('useCheckoutStore — retrying a payment', () => {
 
     await useCheckoutStore.getState().processCheckout()
     const { useCartStore } = await import('@/stores/useCartStore')
-    vi.mocked(useCartStore.getState).mockReturnValue({ items: [{ ...cartLine, quantity: 3 }], clearCart } as never)
+    vi.mocked(useCartStore.getState).mockReturnValue({ items: [{ ...cartLine, quantity: 3 }], totals, clearCart } as never)
     await useCheckoutStore.getState().processCheckout()
 
     expect(api.checkout.createOrder).toHaveBeenCalledTimes(2)
@@ -265,6 +302,22 @@ describe('useCheckoutStore — retrying a payment', () => {
     expect(api.checkout.createOrder).toHaveBeenCalledTimes(2)
     expect(api.webpay.create).toHaveBeenLastCalledWith(43)
     expect(result).toEqual({ success: true, webpayForm: { url: 'https://webpay.test/init', token: 'tok_2' } })
+  })
+
+  // GAP-07. Pagar la orden guardada cobraría el total de entonces, no el que se ve ahora: se pasa por /checkout,
+  // que la reemplaza y cobra el vigente.
+  it('creates a new order when the total is no longer the one of the saved order', async () => {
+    const { api, useCheckoutStore } = await setup()
+    useCheckoutStore.setState({ paymentMethod: 'stripe' })
+    vi.mocked(api.payment.createCheckoutSession).mockResolvedValue({ sessionId: 'sess_1', url: 'https://stripe.test/pay' })
+
+    await useCheckoutStore.getState().processCheckout()
+    const { useCartStore } = await import('@/stores/useCartStore')
+    vi.mocked(useCartStore.getState).mockReturnValue({ items: [cartLine], totals: { total: 2400 }, clearCart } as never)
+    await useCheckoutStore.getState().processCheckout()
+
+    expect(api.checkout.createOrder).toHaveBeenCalledTimes(2)
+    expect(api.checkout.createOrder).toHaveBeenLastCalledWith(expect.objectContaining({ expectedTotal: 2400 }))
   })
 
   it('never reuses an order for a cash-on-delivery purchase', async () => {

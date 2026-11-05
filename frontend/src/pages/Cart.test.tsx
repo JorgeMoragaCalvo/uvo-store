@@ -72,7 +72,7 @@ function renderCart() {
 describe('Cart page', () => {
   beforeEach(() => {
     localStorage.clear()
-    useCartStore.setState({ lineErrors: {}, maxQuantities: {}, totalsError: false })
+    useCartStore.setState({ lineErrors: {}, maxQuantities: {}, priceChanges: {}, totalsError: false })
   })
 
   it('shows an empty-cart message with a link back to the shop', () => {
@@ -134,5 +134,21 @@ describe('Cart page', () => {
     await vi.waitFor(() =>
       expect(screen.getByRole('button', { name: 'Agregar uno de Producto de prueba' })).toBeDisabled(),
     )
+  })
+
+  // GAP-07. Un carrito de hace días mostraba el precio de entonces en la línea y el de hoy en el total.
+  it('shows the current price of a line and says it changed', async () => {
+    const api = (await import('@/services/api')).default
+    vi.mocked(api.cart.validate).mockResolvedValueOnce({
+      valid: true,
+      items: [{ id: 1, type: 'product', name: product.name, variation: null, price: 6000, stock: 10, image: null, maxQuantity: 10 }],
+      errors: {},
+    })
+    useCartStore.setState({ items: [line], totals: { ...useCartStore.getInitialState().totals, total: 12000 } })
+
+    renderCart()
+
+    expect(await screen.findByText('Cambió de precio: antes $5.000, ahora $6.000 por unidad')).toBeInTheDocument()
+    expect(screen.getAllByText('$12.000')).toHaveLength(2) // line subtotal at the new price + order total
   })
 })

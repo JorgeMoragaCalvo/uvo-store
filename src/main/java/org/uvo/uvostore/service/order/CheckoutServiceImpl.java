@@ -23,7 +23,6 @@ import org.uvo.uvostore.repository.ProductVariationRepository;
 import org.uvo.uvostore.repository.SettingRepository;
 import org.uvo.uvostore.repository.ShippingMethodRepository;
 import org.uvo.uvostore.repository.ShippingRateRepository;
-import org.uvo.uvostore.service.catalog.EffectivePrice;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.customer.CustomerService;
 import org.uvo.uvostore.service.geo.GeoCatalog;
@@ -51,6 +50,7 @@ import java.util.NoSuchElementException;
 public class CheckoutServiceImpl implements CheckoutService {
 
     private static final String SKU_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    static final String REPLACED_BY_CURRENT_PRICE = "Reemplazada por una orden con el precio vigente";
 
     private final CartPricingService cartPricingService;
     private final CartService cartService;
@@ -66,6 +66,7 @@ public class CheckoutServiceImpl implements CheckoutService {
     private final ShippingRateRepository shippingRateRepository;
     private final GeoCatalog geoCatalog;
     private final PosSaleCoverage posSaleCoverage;
+    private final OrderStatusService orderStatusService;
     private final int retryWindowMinutes;
 
     public CheckoutServiceImpl(
@@ -83,6 +84,7 @@ public class CheckoutServiceImpl implements CheckoutService {
             ShippingRateRepository shippingRateRepository,
             GeoCatalog geoCatalog,
             PosSaleCoverage posSaleCoverage,
+            OrderStatusService orderStatusService,
             @org.springframework.beans.factory.annotation.Value("${app.abandoned-orders.retry-window-minutes:60}") int retryWindowMinutes) {
         this.cartPricingService = cartPricingService;
         this.cartService = cartService;
@@ -98,6 +100,7 @@ public class CheckoutServiceImpl implements CheckoutService {
         this.shippingRateRepository = shippingRateRepository;
         this.geoCatalog = geoCatalog;
         this.posSaleCoverage = posSaleCoverage;
+        this.orderStatusService = orderStatusService;
         this.retryWindowMinutes = retryWindowMinutes;
     }
 
@@ -151,10 +154,20 @@ public class CheckoutServiceImpl implements CheckoutService {
         Optional<Order> retried = findReusablePendingOrder(customer, command);
         if (retried.isPresent()) {
             Order existing = retried.get();
-            // No se vuelve a cotizar ni a reclamar el cupón: la reserva ya es de esta orden, y su total es
-            // el precio que el cliente aceptó hace un momento. Tampoco se encola otro acuse de recibo, que
-            // mandaría un segundo "recibimos tu pedido".
-            return new OrderConfirmation(existing.getId(), existing.getOrderNumber(), existing.getTotal());
+            if (command.expectedTotal() == null || existing.getTotal().compareTo(command.expectedTotal()) == 0) {
+                // No se vuelve a cotizar ni a reclamar el cupón: la reserva ya es de esta orden, y su total es
+                // el precio que el cliente ve. Tampoco se encola otro acuse de recibo, que mandaría un segundo
+                // "recibimos tu pedido".
+                return new OrderConfirmation(existing.getId(), existing.getOrderNumber(), existing.getTotal());
+            }
+            // GAP-07: el comprador ve otro total, así que el precio cambió desde el primer intento. Se crea una
+            // orden con el precio de hoy. La vieja se cancela antes de cotizar, para que su reserva de cupón no
+            // cuente contra la nueva; si la compra falla más abajo, el rollback la deja como estaba. Solo si
+            // nunca abrió una sesión de pago: si la abrió, el comprador podría estar pagándola en otra pestaña,
+            // y cancelarla dejaría ese pago sin orden. Esa queda para la conciliación y para AbandonedOrderJob.
+            if (existing.getPaymentId() == null && existing.getStripeCheckoutSessionId() == null) {
+                orderStatusService.markCancelled(existing.getId(), REPLACED_BY_CURRENT_PRICE);
+            }
         }
 
         CartTotals totals = cartPricingService.price(command.lines(), command.couponCode(), command.region(),
@@ -174,6 +187,14 @@ public class CheckoutServiceImpl implements CheckoutService {
         // la compra sigue a precio completo, como hasta ahora.
         if (totals.customerRejectionReason() != null) {
             throw new BusinessException(totals.customerRejectionReason());
+        }
+
+        // GAP-07: se cobra el total que el comprador vio al confirmar, o nada. Entre la cotización del carrito y
+        // este punto pudo vencer una oferta o cambiar un precio en el POS o en el panel; cobrar la diferencia sin
+        // avisar es justo lo que no debe pasar, y en el pago manual ni siquiera hay una pasarela que muestre el
+        // monto. El SPA recotiza con el 409 y el comprador acepta el total nuevo.
+        if (command.expectedTotal() != null && totals.total().compareTo(command.expectedTotal()) != 0) {
+            throw new PriceChangedException(command.expectedTotal(), totals.total());
         }
 
         Order order = new Order();
@@ -346,15 +367,19 @@ public class CheckoutServiceImpl implements CheckoutService {
      *   <li><b>Mismas líneas</b>: mismo producto o variación y misma cantidad, sin importar el orden en
      *       que lleguen.</li>
      *   <li><b>Mismo cupón</b>, incluido "ninguno en ninguna de las dos".</li>
-     *   <li><b>Reciente.</b> Es la que acota el riesgo. No se compara el total —no se puede: al recotizar,
-     *       el cupón que reservó el primer intento ya está gastado, así que el importe nuevo nunca
-     *       coincidiría con el de la orden—, y a cambio la ventana es corta. Reintentar un pago pasa en
-     *       minutos; pasado el plazo se crea una orden nueva con el precio de hoy y de la vieja se encarga
+     *   <li><b>Reciente.</b> Es la que acota el riesgo. Aquí no se recotiza para comparar —no se puede: el
+     *       cupón que reservó el primer intento ya está gastado, así que el importe nuevo nunca coincidiría
+     *       con el de la orden—, y a cambio la ventana es corta. Reintentar un pago pasa en minutos; pasado
+     *       el plazo se crea una orden nueva con el precio de hoy y de la vieja se encarga
      *       {@code AbandonedOrderJob}.</li>
      * </ul>
      *
-     * <p>Consecuencia asumida: dentro de esa ventana se honra el precio de la orden existente aunque el
-     * catálogo haya cambiado. Es el precio que el cliente aceptó hace un momento, así que es lo correcto.
+     * <p><b>Cuándo se respeta el precio congelado (GAP-07).</b> Lo que sí se compara es el total de la orden
+     * con el que el comprador ve ({@code expectedTotal}), en {@code checkout}: la orden se reutiliza solo si
+     * coinciden. Si el precio cambió, el comprador está viendo otro total, y se cobra ese, el vigente: la
+     * orden vieja se reemplaza. Una orden ya creada sí se cobra siempre por su total en la pasarela, que es el
+     * que el comprador aceptó al crearla. Sin {@code expectedTotal} (clientes de la API anteriores al campo)
+     * no hay con qué comparar, y se reutiliza como antes.
      *
      * <p>Solo se mira la más reciente: si hubiera varias pendientes iguales (de antes de este arreglo),
      * reutilizar la última es lo razonable y el job se encarga del resto.
@@ -396,7 +421,6 @@ public class CheckoutServiceImpl implements CheckoutService {
     private OrderItem buildOrderItem(Order order, CartLineCommand line, LineAmounts amounts) {
         Product product;
         ProductVariation variation = null;
-        BigDecimal unitPrice;
         String sku;
 
         Long storeId = TenantContext.requireStoreId();
@@ -405,7 +429,6 @@ public class CheckoutServiceImpl implements CheckoutService {
                     .filter(v -> v.getStore().getId().equals(storeId))
                     .orElseThrow(() -> new NoSuchElementException("Variation " + line.variationId() + " not found"));
             product = variation.getProduct();
-            unitPrice = variation.getPrice();
             sku = variation.getSku();
         } else {
             product = productRepository.findById(line.productId())
@@ -416,10 +439,6 @@ public class CheckoutServiceImpl implements CheckoutService {
             // OrderItem — por si mañana alguien reordena las llamadas de checkout() y esta línea deja de
             // pasar por la validación.
             CartPricingServiceImpl.requireSimpleProduct(product);
-            // F11: el snapshot del OrderItem es lo que se cobra y lo que va al documento del POS, así que
-            // tiene que llevar el precio vigente — el mismo que cotizó CartPricingServiceImpl. Si aquí se
-            // colara product.getPrice(), el total y las líneas de la orden dejarían de cuadrar.
-            unitPrice = EffectivePrice.of(product);
             sku = product.getSku();
         }
 
@@ -430,8 +449,12 @@ public class CheckoutServiceImpl implements CheckoutService {
         item.setProductName(product.getName());
         item.setProductSku(sku);
         item.setQuantity(line.quantity());
-        item.setPrice(unitPrice);
-        item.setSubtotal(unitPrice.multiply(BigDecimal.valueOf(line.quantity())));
+        // F11: el snapshot del OrderItem es lo que se cobra y lo que va al documento del POS, así que tiene que
+        // llevar el precio vigente, el de oferta si la hay. GAP-07: y se copia de la cotización en vez de volver a
+        // leer el producto. Una escritura del POS o del panel entre las dos lecturas dejaba líneas que no
+        // sumaban el total de la orden.
+        item.setPrice(amounts.unitPrice());
+        item.setSubtotal(amounts.subtotal());
         // GAP-05: la parte del descuento y del IVA de la orden que le toca a esta línea, como la repartió
         // CartPricingServiceImpl. Antes el IVA de la línea era siempre cero y las líneas no sumaban la orden.
         item.setDiscountAmount(amounts.discount());
