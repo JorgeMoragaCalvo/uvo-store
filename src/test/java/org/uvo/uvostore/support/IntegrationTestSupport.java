@@ -141,8 +141,8 @@ public abstract class IntegrationTestSupport {
     }
 
     /**
-     * An admin restricted to the named permissions, for testing the checks themselves.
-     * e.g. createAdmin(store, "readonly", "products.view")
+     * An admin restricted to the named permissions for testing the checks themselves.
+     * e.g., createAdmin(store, "readonly", "products.view")
      */
     protected User createAdminWithPermissions(Store store, String emailPrefix, String... permissionNames) {
         Set<String> wanted = Set.of(permissionNames);
@@ -213,9 +213,9 @@ public abstract class IntegrationTestSupport {
 
     /**
      * Marks a store as not shipping at all. Since A7, a checkout is refused with 409 when the store
-     * ships but no zone covers the address — which is every store that has no zones configured.
+     *  ships, but no zone covers the address — which is every store that has no zones configured.
      * Tests that aren't about shipping (order totals, payment gateways, admin order CRUD) use this
-     * so they don't each have to seed a zone, a method and a rate. Tests that ARE about shipping
+     * so they don't each have to seed a zone, a method, and a rate. Tests that ARE about shipping
      * seed real ones instead — see ShippingCoverageTest.
      */
     protected void disableShipping(Store store) {

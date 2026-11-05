@@ -28,7 +28,7 @@ import java.io.IOException;
  *
  * <p>Y los dos escriben el cuerpo <b>directamente</b>, no con {@code sendError}: eso despacha a
  * {@code /error} y devuelve el JSON por defecto de Boot, que no trae el campo {@code message} que lee el
- * interceptor. Por eso lo que se veía en el panel no era un mensaje del proyecto sino el texto de axios
+ * interceptor. Por eso lo que se veía en el panel no era un mensaje del proyecto, sino el texto de axios
  * ("Request failed with status code 403").
  *
  * <p>Ojo con el tercer caso, que no pasa por aquí: un administrador autenticado al que le falta un

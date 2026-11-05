@@ -2,7 +2,6 @@ package org.uvo.uvostore.service.settings;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.multipart.MultipartFile;
 import org.uvo.uvostore.entity.settings.HomeBanner;
 import org.uvo.uvostore.entity.settings.enums.TextColor;
 import org.uvo.uvostore.entity.settings.enums.TextPosition;

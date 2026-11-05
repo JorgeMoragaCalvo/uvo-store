@@ -13,9 +13,9 @@ import java.util.Optional;
 // auth scheme, request/response fields) isn't public/documented enough for this implementation to
 // build against with any confidence (unlike Chilexpress's developers.wschilexpress.com portal), and
 // no sandbox credentials were available to verify against. A store can select CORREOS_CHILE as a
-// method's carrier and this class satisfies the ShippingCarrierQuoteClient contract so checkout
+// method's carrier, and this class satisfies the ShippingCarrierQuoteClient contract, so checkout
 // keeps working (the method is just never offered), but it always returns empty until someone with
-// real Correos de Chile API docs/credentials implements the actual HTTP call here — same shape as
+// real Correos de Chile API docs/credentials implements the actual HTTP call here — the same shape as
 // ChilexpressQuoteClient once that's available.
 //
 // PROD-12: la frase "a store can select CORREOS_CHILE as a method's carrier" ya no es cierta, y era el

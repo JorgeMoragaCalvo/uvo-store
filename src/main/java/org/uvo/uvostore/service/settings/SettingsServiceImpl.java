@@ -253,7 +253,7 @@ public class SettingsServiceImpl implements SettingsService {
     // doesn't touch it must not wipe out what's already configured.
     //
     // Devuelve si se guardó uno nuevo. La auditoría no compara con el anterior: habría que descifrarlo, y si la
-    // clave de cifrado rotó eso falla justo en el guardado que lo arregla.
+    // clave de cifrado rotó, eso falla justo en el guardado que lo arregla.
     private boolean setSecret(String key, String value) {
         if (!notBlank(value)) {
             return false;

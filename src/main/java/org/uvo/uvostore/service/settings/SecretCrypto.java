@@ -11,7 +11,7 @@ import java.util.Base64;
 
 // The `settings` table is a generic key/value store (colors, toggles, currency, secrets — all
 // share the same TEXT column), so secret columns can't get a JPA AttributeConverter the way
-// PosConnection.apiKey/webhookSecret do (see EncryptedStringConverter). Same AES-256-GCM scheme
+// PosConnection.apiKey/webhookSecret do (see EncryptedStringConverter). The same AES-256-GCM scheme
 // and EncryptionKeyHolder key, applied at the service layer instead, only to the handful of
 // Setting keys that hold secrets (stripe_secret_key, stripe_webhook_secret).
 public final class SecretCrypto {

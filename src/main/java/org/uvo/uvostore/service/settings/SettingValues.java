@@ -39,7 +39,7 @@ public final class SettingValues {
      * guarda en qué divisa se cobró una orden.
      *
      * <p>Admitir otra sin eso no es una funcionalidad, es un cobro mal hecho: {@code unit_amount} de
-     * Stripe va en la unidad mínima de la divisa, así que un total de 11888 enviado como {@code usd}
+     * Stripe va en la unidad mínima de la divisa, así que un total de 11888 enviados como {@code usd}
      * cobra 118,88 dólares por un pedido de unos 12 — y
      * {@code PaymentServiceImpl.stripeAmount} compara 11888 contra 11888 y lo da por bueno, porque la
      * comprobación de importe es ciega a la unidad. El día que se admita otra divisa, esta constante y

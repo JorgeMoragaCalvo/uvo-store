@@ -31,7 +31,7 @@ import java.util.Set;
  *
  * <p><b>Y las que se armaban desde la petición en curso</b> ({@code return_url} de Webpay,
  * {@code notification_url} de MercadoPago, con {@code getScheme()}/{@code getServerName()}/
- * {@code getServerPort()}) resolvían la tienda correcta pero describían el tramo interno: detrás de un
+ * {@code getServerPort()}) resolvían la tienda correcta, pero describían el tramo interno: detrás de un
  * proxy que termina TLS el esquema es {@code http} y el puerto es el del upstream, así que en la pasarela
  * quedaba registrada una URL de la red privada. No se arregla activando
  * {@code server.forward-headers-strategy}: {@code ClientIpResolver} (F18) documenta que
