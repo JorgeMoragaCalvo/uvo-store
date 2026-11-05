@@ -43,7 +43,7 @@ public class CheckoutController {
         CheckoutCommand command = new CheckoutCommand(
                 request.customer().email(), request.customer().firstName(), request.customer().lastName(),
                 request.customer().phone(), address, request.region(), request.commune(), lines,
-                request.couponCode(), request.paymentMethod(), request.customerNotes()
+                request.couponCode(), request.paymentMethod(), request.customerNotes(), request.expectedTotal()
         );
 
         return checkoutService.checkout(command);

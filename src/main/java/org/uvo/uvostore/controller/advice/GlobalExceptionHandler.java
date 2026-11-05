@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.uvo.uvostore.service.BusinessException;
 import org.uvo.uvostore.service.TooManyRequestsException;
 import org.uvo.uvostore.service.order.OutOfStockException;
+import org.uvo.uvostore.service.order.PriceChangedException;
 import org.uvo.uvostore.service.order.ShippingUnavailableException;
 
 import java.util.HashMap;
@@ -98,9 +99,10 @@ public class GlobalExceptionHandler {
                 .body(ApiError.of(HttpStatus.CONFLICT.value(), "Conflict", ex.getMessage(), ex.getErrors()));
     }
 
-    // Same reasoning as out-of-stock: the request is fine, the store just can't fulfil it.
-    @ExceptionHandler(ShippingUnavailableException.class)
-    public ResponseEntity<ApiError> handleShippingUnavailable(ShippingUnavailableException ex) {
+    // Same reasoning as out-of-stock: the request is fine, the store just can't fulfil it. GAP-07: a price that
+    // changed since the buyer saw the total is the same kind of conflict.
+    @ExceptionHandler({ShippingUnavailableException.class, PriceChangedException.class})
+    public ResponseEntity<ApiError> handleStoreConflict(RuntimeException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ApiError.of(HttpStatus.CONFLICT.value(), "Conflict", ex.getMessage()));
     }

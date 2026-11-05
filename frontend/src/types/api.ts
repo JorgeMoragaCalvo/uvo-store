@@ -210,6 +210,8 @@ export interface CheckoutRequestPayload {
   couponCode?: string
   paymentMethod: 'manual' | 'stripe' | 'webpay' | 'mercadopago'
   customerNotes?: string
+  // GAP-07: el total que el comprador vio al confirmar; si el backend cotiza otro, responde 409.
+  expectedTotal?: number
 }
 
 export interface OrderConfirmation {

@@ -33,6 +33,9 @@ export interface PendingPayment {
   paymentMethod: GatewayMethod
   // Lo que define la orden: si cambió, la orden guardada ya no es la del carrito y no se reutiliza.
   cartSignature: string
+  // GAP-07. El total de la orden. Si el carrito ya cotiza otro, el precio cambió y la orden no se paga
+  // directamente: se pasa por /checkout, que cobra el vigente. Opcional por lo guardado antes de este campo.
+  total?: number
   region: string
   commune: string
   couponCode: string
@@ -163,8 +166,15 @@ export const useCheckoutStore = create<CheckoutState>((set, get) => ({
       if (paymentMethod !== 'manual') {
         // Reintento tras volver de la pasarela sin pagar: misma orden, mismo medio. Con otro medio se crea
         // una orden nueva, porque la guardada ya registra el que se eligió (reportes, conciliación).
+        // GAP-07: y con el mismo total que se ve en pantalla. Si el precio cambió, pagar la orden guardada
+        // cobraría un monto distinto del que el comprador está viendo.
         const pending = loadPendingPayment()
-        if (pending && pending.paymentMethod === paymentMethod && pending.cartSignature === signature) {
+        if (
+          pending &&
+          pending.paymentMethod === paymentMethod &&
+          pending.cartSignature === signature &&
+          pending.total === cartState.totals.total
+        ) {
           try {
             // `loading` sigue en true: la página se va a la pasarela, y si volviera a false el botón
             // quedaría activo durante la navegación y un segundo clic crearía otra orden.
@@ -192,6 +202,9 @@ export const useCheckoutStore = create<CheckoutState>((set, get) => ({
         items: cartState.items.map((item) => ({ id: item.id, type: item.type, quantity: item.quantity })),
         paymentMethod,
         customerNotes: customerNotes || undefined,
+        // GAP-07: el total que el comprador ve al confirmar. Si el backend cotiza otro, responde 409 en vez
+        // de cobrar la diferencia.
+        expectedTotal: cartState.totals.total,
       }
 
       const confirmation = await api.checkout.createOrder(payload)
@@ -209,6 +222,7 @@ export const useCheckoutStore = create<CheckoutState>((set, get) => ({
         orderNumber: confirmation.orderNumber,
         paymentMethod,
         cartSignature: signature,
+        total: confirmation.total,
         region: cartState.region ?? '',
         commune: cartState.commune ?? '',
         couponCode: cartState.couponCode ?? '',
@@ -219,9 +233,16 @@ export const useCheckoutStore = create<CheckoutState>((set, get) => ({
       return { success: true, ...(await startPayment(paymentMethod, confirmation.orderId)) }
     } catch (error) {
       // C5: el 409 de stock trae el problema de cada línea; se pinta en la línea del carrito.
+      // GAP-07: el 409 de precio no trae líneas: se recotiza y se revalida, para que el comprador vea el total
+      // nuevo y en qué línea cambió el precio antes de confirmar otra vez.
       const failure = error as ApiFailure
-      if (failure.status === 409 && failure.fieldErrors) {
-        useCartStore.getState().applyStockErrors(failure.fieldErrors)
+      if (failure.status === 409) {
+        const cart = useCartStore.getState()
+        if (failure.fieldErrors) {
+          cart.applyStockErrors(failure.fieldErrors)
+        } else {
+          await Promise.all([cart.calculateTotals(), cart.validateCart()])
+        }
       }
       set({ loading: false, error: friendlyError(error, 'No pudimos procesar tu pedido. Inténtalo de nuevo.') })
       return { success: false }

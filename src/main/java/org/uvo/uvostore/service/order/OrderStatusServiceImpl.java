@@ -110,13 +110,19 @@ public class OrderStatusServiceImpl implements OrderStatusService {
     @Override
     @Transactional
     public Order markCancelled(Long orderId) {
+        return markCancelled(orderId, "Sesión de pago expirada o cancelada");
+    }
+
+    @Override
+    @Transactional
+    public Order markCancelled(Long orderId, String reason) {
         Order order = findForUpdateOrThrow(orderId);
-        if (!canFail(order, "Sesión de pago expirada o cancelada")) {
+        if (!canFail(order, reason)) {
             return order;
         }
         order.setPaymentStatus(PaymentStatus.FAILED);
         order.setStatus(OrderStatus.CANCELLED);
-        appendHistory(order, OrderStatus.CANCELLED, "Sesión de pago expirada o cancelada");
+        appendHistory(order, OrderStatus.CANCELLED, reason);
         // C5: both are no-ops when the order never got paid (nothing was decremented, and the
         // guards inside handle the repeat case), so this is safe on any cancellation.
         orderInventoryService.restoreOrderStock(order);

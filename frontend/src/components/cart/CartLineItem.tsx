@@ -1,4 +1,4 @@
-import { cartLineKey, useCartStore } from '../../stores/useCartStore'
+import { cartLineKey, linePrice, useCartStore } from '../../stores/useCartStore'
 import type { CartLine } from '../../stores/useCartStore'
 import { formatCurrency } from '../../utils/currency'
 
@@ -9,13 +9,16 @@ export default function CartLineItem({ line }: { line: CartLine }) {
   // a la venta) y cuánto se puede pedir como máximo.
   const lineError = useCartStore((state) => state.lineErrors[cartLineKey(line)])
   const maxQuantity = useCartStore((state) => state.maxQuantities[cartLineKey(line)])
+  // GAP-07. Si el precio cambió desde que el comprador lo vio, se dice aquí, antes de que confirme.
+  const priceChange = useCartStore((state) => state.priceChanges[cartLineKey(line)])
 
   const image = line.variation?.image ?? line.product.featuredImage
   // M5: product.price is null for a variable product — it carries its price on each variation — so
   // this only resolves to null for a line that has neither, which the cart never creates. The
   // fallback keeps the row rendering instead of printing NaN if one ever slips through; the totals
-  // shown below the list come from the backend, not from here.
-  const unitPrice = line.variation?.price ?? line.product.price ?? 0
+  // shown below the list come from the backend, not from here. GAP-07: once validated, the price is
+  // the one the backend confirmed, not the one saved when the line was added.
+  const unitPrice = linePrice(line) ?? 0
   const attributesLabel = line.variation
     ? Object.entries(line.variation.attributes)
         .map(([key, value]) => `${key}: ${value}`)
@@ -37,6 +40,11 @@ export default function CartLineItem({ line }: { line: CartLine }) {
         {lineError && (
           <p className="text-xs text-red-700">
             {lineError}
+          </p>
+        )}
+        {priceChange && (
+          <p className="text-xs text-amber-800">
+            Cambió de precio: antes {formatCurrency(priceChange.from)}, ahora {formatCurrency(priceChange.to)} por unidad
           </p>
         )}
 
