@@ -57,6 +57,12 @@ public class OutboxDispatcher {
 
     private static final long MAX_BACKOFF_MINUTES = 30;
 
+    /**
+     * GAP-04. Cómo empieza {@code last_error} cuando el destino rechazó la entrega: lo único que asegura que una venta
+     * no llegó al POS. {@code OutboxAdminService} trata cualquier otro fallo de una venta como incierto.
+     */
+    static final String REJECTED_PREFIX = "Rechazado: ";
+
     private final OutboxMessageRepository repository;
     private final OutboxStore store;
     private final AdvisoryLock advisoryLock;
@@ -231,7 +237,7 @@ public class OutboxDispatcher {
         switch (result.outcome()) {
             case DELIVERED -> close(message, attempts, OutboxStatus.SENT, null, now);
             case SKIPPED -> close(message, attempts, OutboxStatus.SKIPPED, result.detail(), now);
-            case PERMANENT -> fail(message, attempts, "Rechazado: " + result.detail(), now);
+            case PERMANENT -> fail(message, attempts, REJECTED_PREFIX + result.detail(), now);
             case UNCERTAIN -> {
                 if (message.getType().channel() == OutboxChannel.POS && !posRetryEnabled) {
                     fail(message, attempts, "Resultado incierto, la venta pudo haber llegado al POS: "
@@ -245,7 +251,10 @@ public class OutboxDispatcher {
     }
 
     private void retryLater(OutboxMessage message, int attempts, String detail, Instant now) {
-        if (message.getCreatedAt() != null && message.getCreatedAt().plus(giveUpAfter).isBefore(now)) {
+        // GAP-04: desde el último reencolado manual, si lo hubo; si no, una fila vieja reintentada desde el panel
+        // volvería a FAILED en su primer fallo.
+        Instant windowStart = message.retryWindowStart();
+        if (windowStart != null && windowStart.plus(giveUpAfter).isBefore(now)) {
             fail(message, attempts, "Sin éxito tras " + giveUpAfter.toHours() + " h: " + detail, now);
             return;
         }

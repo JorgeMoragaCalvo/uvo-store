@@ -155,7 +155,9 @@ public class PaymentServiceImpl implements PaymentService {
         Order order = orderRepository.findByStripeCheckoutSessionId(session.getId())
                 .orElseThrow(() -> new NoSuchElementException("Orden no encontrada"));
 
-        if ("paid".equals(session.getPaymentStatus()) && order.getPaymentStatus() == PaymentStatus.PENDING) {
+        // GAP-04: sin filtrar por PENDING. markPaid es idempotente con una orden ya pagada, y si la orden se canceló
+        // entretanto deja constancia del cobro en vez de ignorarlo.
+        if ("paid".equals(session.getPaymentStatus())) {
             // M4: amount_total comes back in the same unit createCheckoutSession sent (whole pesos
             // for CLP — see the setUnitAmount call above), so this compares like with like.
             order = orderStatusService.markPaid(order.getId(), session.getPaymentIntent(), stripeAmount(session.getAmountTotal()));
@@ -218,9 +220,10 @@ public class PaymentServiceImpl implements PaymentService {
         }
 
         switch (event.getType()) {
+            // GAP-04: los dos avisos de cobro llegan a markPaid aunque la orden ya no esté PENDING: con una ya
+            // pagada no hace nada, y con una cancelada deja la nota y la alerta de un cobro que hay que devolver.
             case "checkout.session.completed" -> deserialize(event, Session.class).ifPresent(session ->
                     orderRepository.findByStripeCheckoutSessionId(session.getId())
-                            .filter(order -> order.getPaymentStatus() == PaymentStatus.PENDING)
                             .ifPresent(order -> orderStatusService.markPaid(order.getId(), session.getPaymentIntent(),
                                     stripeAmount(session.getAmountTotal()))));
             case "checkout.session.expired" -> deserialize(event, Session.class).ifPresent(session ->
@@ -234,7 +237,6 @@ public class PaymentServiceImpl implements PaymentService {
             // hacia atrás a la columna.
             case "payment_intent.succeeded" -> deserialize(event, PaymentIntent.class).ifPresent(intent ->
                     orderFromIntent(intent)
-                            .filter(order -> order.getPaymentStatus() == PaymentStatus.PENDING)
                             .ifPresent(order -> orderStatusService.markPaid(order.getId(), intent.getId(),
                                     stripeAmount(intent.getAmount()))));
             // Estos dos se quedan buscando SOLO por la columna, y es deliberado. Resolverlos por la

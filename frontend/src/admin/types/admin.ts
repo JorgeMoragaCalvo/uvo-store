@@ -470,6 +470,28 @@ export interface AdminOrderStats {
   cancelled: number
   // GAP-03: cobradas sin stock que esperan reposición, liberación o reembolso.
   stockShortage: number
+  // GAP-04: entregas del outbox (venta al POS, correos) que fallaron y esperan revisión en «Envíos fallidos».
+  outboxFailed: number
+}
+
+export type OutboxType = 'POS_ORDER' | 'ORDER_PLACED_EMAIL' | 'ORDER_CONFIRMATION_EMAIL' | 'CUSTOMER_INVITATION_EMAIL'
+
+// GAP-04. Una entrega del outbox que falló de forma definitiva (OutboxFailureDto).
+export interface OutboxFailure {
+  id: number
+  type: OutboxType
+  channel: 'POS' | 'MAIL'
+  orderId: number
+  orderNumber: string
+  companyId: number | null
+  attempts: number
+  lastError: string | null
+  createdAt: string
+  updatedAt: string | null
+  // Una venta que pudo haber llegado al POS: reintentarla sin revisarlo puede emitir un segundo documento.
+  uncertain: boolean
+  // Anterior al outbox y sin empresa: solo se puede marcar resuelta.
+  legacy: boolean
 }
 
 export type PaymentGateway = 'STRIPE' | 'WEBPAY' | 'MERCADOPAGO'

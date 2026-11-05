@@ -101,6 +101,8 @@ export const routes: RouteObject[] = [
           { path: 'orders', lazy: lazyRoute(() => import('./admin/pages/orders/OrdersList')), handle: { permission: 'orders.view' } },
           { path: 'orders/:id', lazy: lazyRoute(() => import('./admin/pages/orders/OrderDetail')), handle: { permission: 'orders.view' } },
           { path: 'coupons', lazy: lazyRoute(() => import('./admin/pages/coupons/CouponsList')), handle: { permission: 'coupons.view' } },
+          // GAP-04. Las entregas del outbox que fallaron. Ver con orders.view; reintentar o resolver pide orders.manage.
+          { path: 'outbox', lazy: lazyRoute(() => import('./admin/pages/outbox/OutboxFailures')), handle: { permission: 'orders.view' } },
           { path: 'coupons/new', lazy: lazyRoute(() => import('./admin/pages/coupons/CouponForm')), handle: { permission: 'coupons.manage' } },
           { path: 'coupons/:id/edit', lazy: lazyRoute(() => import('./admin/pages/coupons/CouponForm')), handle: { permission: 'coupons.manage' } },
           { path: 'customers', lazy: lazyRoute(() => import('./admin/pages/customers/CustomersList')), handle: { permission: 'customers.view' } },

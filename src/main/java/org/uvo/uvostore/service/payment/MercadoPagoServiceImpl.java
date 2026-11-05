@@ -226,15 +226,21 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
         Order order = orderRepository.findByOrderNumber(payment.getExternalReference())
                 .filter(o -> o.getStore().getId().equals(storeId))
                 .orElse(null);
-        if (order == null || order.getPaymentStatus() != PaymentStatus.PENDING) {
+        if (order == null) {
             return;
         }
 
         switch (payment.getStatus()) {
-            // M4: transactionAmount is what the buyer was actually charged.
+            // M4: transactionAmount is what the buyer was actually charged. GAP-04: sin filtrar por PENDING: un pago
+            // aprobado sobre una orden que ya falló (MercadoPago deja reintentar con la misma preferencia) o que se
+            // canceló es dinero cobrado, y markPaid deja la nota y la alerta. Con una orden ya pagada no hace nada.
             case "approved" -> orderStatusService.markPaid(order.getId(), String.valueOf(payment.getId()),
                     payment.getTransactionAmount());
-            case "rejected", "cancelled" -> orderStatusService.markPaymentFailed(order.getId());
+            case "rejected", "cancelled" -> {
+                if (order.getPaymentStatus() == PaymentStatus.PENDING) {
+                    orderStatusService.markPaymentFailed(order.getId());
+                }
+            }
             default -> {
                 // "pending"/"in_process"/etc. — no state change, wait for the next notification.
             }

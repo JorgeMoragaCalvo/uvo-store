@@ -91,4 +91,16 @@ public class OutboxMessage {
      */
     @Column(name = "request_id", length = 64)
     private String requestId;
+
+    /**
+     * GAP-04. Cuándo un operador la devolvió a la cola desde el panel por última vez. El plazo de abandono del
+     * despachador se mide desde aquí, para que una fila vieja reencolada tenga sus intentos. Null si nunca.
+     */
+    @Column(name = "requeued_at")
+    private Instant requeuedAt;
+
+    /** GAP-04. Desde cuándo cuenta el plazo de abandono: el último reencolado manual o, si no hubo, la creación. */
+    public Instant retryWindowStart() {
+        return requeuedAt != null ? requeuedAt : createdAt;
+    }
 }
