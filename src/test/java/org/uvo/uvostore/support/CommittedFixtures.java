@@ -124,6 +124,9 @@ public final class CommittedFixtures {
         jdbc.update("DELETE FROM audit_events WHERE store_id = ?", storeId);
         // Los hijos de una orden (ítems, historial, reembolsos, outbox) caen en cascada.
         jdbc.update("DELETE FROM orders WHERE store_id = ?", storeId);
+        // Los usos de cupón ya cayeron con las órdenes; GAP-04 crea cupones y la configuración de la pasarela.
+        jdbc.update("DELETE FROM coupons WHERE store_id = ?", storeId);
+        jdbc.update("DELETE FROM payment_gateway_configs WHERE store_id = ?", storeId);
         jdbc.update("DELETE FROM products WHERE store_id = ?", storeId);
         jdbc.update("DELETE FROM categories WHERE store_id = ?", storeId);
         jdbc.update("DELETE FROM settings WHERE store_id = ?", storeId);

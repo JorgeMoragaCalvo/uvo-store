@@ -21,6 +21,7 @@ import type {
   GeneralSettingsUpdateRequest,
   HomeBannerDto,
   PaymentGateway,
+  OutboxFailure,
   PaymentGatewayConfigDto,
   PaymentMethodDetailDto,
   PaymentMethodRevenueDto,
@@ -301,6 +302,13 @@ export const adminApi = {
     // GAP-03. Desbloquea el despacho sin descontar nada; la nota es obligatoria y va al historial.
     releaseStockShortage: (id: number, note: string): Promise<AdminOrderDetail> =>
       client.post(`/orders/${id}/stock-shortage/release`, { note }),
+  },
+  // GAP-04. Las entregas del outbox que fallaron. Reintentar solo las devuelve a la cola: las entrega el despachador.
+  outbox: {
+    failed: (page: number): Promise<Page<OutboxFailure>> => client.get('/outbox/failed', { params: { page } }),
+    retry: (id: number, note: string, posChecked: boolean): Promise<void> =>
+      client.post(`/outbox/${id}/retry`, { note, posChecked }),
+    resolve: (id: number, note: string): Promise<void> => client.post(`/outbox/${id}/resolve`, { note }),
   },
   paymentGateways: {
     list: (): Promise<PaymentGatewayConfigDto[]> => client.get('/payment-gateways'),

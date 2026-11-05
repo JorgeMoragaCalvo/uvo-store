@@ -33,6 +33,9 @@ public class OrderStatusServiceImpl implements OrderStatusService {
      */
     public static final String AMOUNT_MISMATCH_PREFIX = "Monto pagado no coincide";
 
+    /** GAP-04. El comienzo de la nota de un cobro que llegó cuando la orden ya estaba cancelada o fallida. */
+    public static final String LATE_PAYMENT_PREFIX = "Pago confirmado por la pasarela sobre una orden cerrada";
+
     private final OrderRepository orderRepository;
     private final ApplicationEventPublisher applicationEventPublisher;
     private final OrderInventoryService orderInventoryService;
@@ -57,6 +60,9 @@ public class OrderStatusServiceImpl implements OrderStatusService {
         // PaymentConfirmedEvent.
         Order order = findForUpdateOrThrow(orderId);
         if (order.getPaymentStatus() != PaymentStatus.PENDING) {
+            if (order.getPaymentStatus() == PaymentStatus.FAILED) {
+                reportPaymentOnClosedOrder(order, paymentReference, amountPaid);
+            }
             return order;
         }
 
@@ -206,6 +212,33 @@ public class OrderStatusServiceImpl implements OrderStatusService {
         // Visible where the operator already looks — the order's own history — and in Sentry, the
         // same pair OrderInventoryService uses for a failed stock decrement.
         appendHistory(order, order.getStatus(), detail);
+        log.error("{} order_id={} order_number={}", detail, order.getId(), order.getOrderNumber());
+        Sentry.captureMessage(detail + " [order_number=" + order.getOrderNumber() + "]");
+    }
+
+    /**
+     * GAP-04. La pasarela confirma un cobro sobre una orden que ya se dio por perdida: la canceló
+     * {@code AbandonedOrderJob} porque la conciliación no la resolvió a tiempo, la canceló alguien desde el panel
+     * mientras el comprador pagaba, o el pago se rechazó y el comprador reintentó con éxito. La orden no revive —ya
+     * devolvió su stock y su cupón, y otro pudo usarlos—, pero el dinero entró, así que no puede quedar en silencio.
+     *
+     * <p>Una sola vez por referencia: los webhooks se repiten durante días y cada uno pasaría por aquí.
+     */
+    private void reportPaymentOnClosedOrder(Order order, String paymentReference, BigDecimal amountPaid) {
+        // Por referencia y no por el texto entero: la misma confirmación llega con el monto escrito distinto según la
+        // vía (Transbank lo da como double, 900.0; la conciliación de otra pasarela, 900).
+        String reported = LATE_PAYMENT_PREFIX + " (referencia " + paymentReference + ",";
+        boolean alreadyReported = order.getStatusHistory().stream()
+                .anyMatch(h -> h.getNotes() != null && h.getNotes().startsWith(reported));
+        if (alreadyReported) {
+            return;
+        }
+        String detail = reported + " monto "
+                + (amountPaid == null ? "desconocido" : amountPaid.stripTrailingZeros().toPlainString())
+                + "): la orden está " + order.getStatus()
+                + " y no se reactiva. Revisa el cobro en la pasarela y reembólsalo.";
+        appendHistory(order, order.getStatus(), detail);
+        orderRepository.save(order);
         log.error("{} order_id={} order_number={}", detail, order.getId(), order.getOrderNumber());
         Sentry.captureMessage(detail + " [order_number=" + order.getOrderNumber() + "]");
     }

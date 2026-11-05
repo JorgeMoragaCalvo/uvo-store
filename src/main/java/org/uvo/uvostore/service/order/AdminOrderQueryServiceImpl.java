@@ -12,6 +12,7 @@ import org.uvo.uvostore.entity.order.enums.OrderStatus;
 import org.uvo.uvostore.entity.order.enums.PaymentStatus;
 import org.uvo.uvostore.repository.OrderRefundRepository;
 import org.uvo.uvostore.repository.OrderRepository;
+import org.uvo.uvostore.repository.OutboxMessageRepository;
 import org.uvo.uvostore.security.TenantContext;
 
 import java.util.ArrayList;
@@ -23,10 +24,13 @@ public class AdminOrderQueryServiceImpl implements AdminOrderQueryService {
 
     private final OrderRepository orderRepository;
     private final OrderRefundRepository refundRepository;
+    private final OutboxMessageRepository outboxRepository;
 
-    public AdminOrderQueryServiceImpl(OrderRepository orderRepository, OrderRefundRepository refundRepository) {
+    public AdminOrderQueryServiceImpl(OrderRepository orderRepository, OrderRefundRepository refundRepository,
+                                      OutboxMessageRepository outboxRepository) {
         this.orderRepository = orderRepository;
         this.refundRepository = refundRepository;
+        this.outboxRepository = outboxRepository;
     }
 
     @Override
@@ -51,7 +55,8 @@ public class AdminOrderQueryServiceImpl implements AdminOrderQueryService {
                         cb.equal(root.get("store").get("id"), storeId), cb.equal(root.get("status"), OrderStatus.SHIPPED))),
                 orderRepository.count((root, query, cb) -> cb.and(
                         cb.equal(root.get("store").get("id"), storeId), cb.equal(root.get("status"), OrderStatus.CANCELLED))),
-                orderRepository.count(stockShortage().and((root, query, cb) -> cb.equal(root.get("store").get("id"), storeId)))
+                orderRepository.count(stockShortage().and((root, query, cb) -> cb.equal(root.get("store").get("id"), storeId))),
+                outboxRepository.countFailedForStore(storeId)
         );
     }
 

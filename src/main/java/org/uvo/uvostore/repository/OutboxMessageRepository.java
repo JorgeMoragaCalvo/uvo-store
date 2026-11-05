@@ -1,5 +1,6 @@
 package org.uvo.uvostore.repository;
 
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -13,6 +14,7 @@ import org.uvo.uvostore.entity.outbox.enums.OutboxType;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * PROD-13b. Las consultas del despachador recorren todas las tiendas a propósito —es un trabajo
@@ -131,6 +133,70 @@ public interface OutboxMessageRepository extends JpaRepository<OutboxMessage, Lo
                                org.uvo.uvostore.entity.outbox.enums.OutboxStatus.IN_FLIGHT)
             """)
     long countUnfinishedForStore(@Param("storeId") Long storeId);
+
+    /**
+     * GAP-04. Las entregas de una tienda que fallaron de forma definitiva y esperan a una persona: la página «Envíos
+     * fallidos» del panel. La fila no tiene tienda propia, así que el filtro va por su orden (y por eso este
+     * repositorio no lo vigila {@code RepositoryTenantScopeTest}).
+     */
+    @Query(value = """
+            select m from OutboxMessage m
+            join fetch m.order o
+            where o.store.id = :storeId
+              and m.status = org.uvo.uvostore.entity.outbox.enums.OutboxStatus.FAILED
+            order by m.updatedAt desc, m.id desc
+            """,
+            countQuery = """
+            select count(m) from OutboxMessage m
+            where m.order.store.id = :storeId
+              and m.status = org.uvo.uvostore.entity.outbox.enums.OutboxStatus.FAILED
+            """)
+    Page<OutboxMessage> findFailedForStore(@Param("storeId") Long storeId, Pageable pageable);
+
+    @Query("""
+            select count(m) from OutboxMessage m
+            where m.order.store.id = :storeId
+              and m.status = org.uvo.uvostore.entity.outbox.enums.OutboxStatus.FAILED
+            """)
+    long countFailedForStore(@Param("storeId") Long storeId);
+
+    @Query("""
+            select m from OutboxMessage m
+            join fetch m.order o
+            where m.id = :id
+              and o.store.id = :storeId
+            """)
+    Optional<OutboxMessage> findForStore(@Param("id") Long id, @Param("storeId") Long storeId);
+
+    /**
+     * GAP-04. Reintento desde el panel: de vuelta a la cola sin tocar {@code attempts}, que es lo que el despachador
+     * compara al cerrar el intento. Exige {@code FAILED}, y como el despachador nunca escribe en una fila así, no hace
+     * falta cerrojo: de dos operadores a la vez, uno recibe 1 y el otro 0.
+     */
+    @Modifying(flushAutomatically = true)
+    @Query("""
+            update OutboxMessage m
+            set m.status = org.uvo.uvostore.entity.outbox.enums.OutboxStatus.PENDING,
+                m.nextAttemptAt = :now,
+                m.requeuedAt = :now,
+                m.updatedAt = :now
+            where m.id = :id
+              and m.status = org.uvo.uvostore.entity.outbox.enums.OutboxStatus.FAILED
+            """)
+    int requeue(@Param("id") Long id, @Param("now") Instant now);
+
+    /** GAP-04. Cierre a mano, sin reenviar: ya se resolvió por otra vía. Mismo guard que {@link #requeue}. */
+    @Modifying(flushAutomatically = true)
+    @Query("""
+            update OutboxMessage m
+            set m.status = org.uvo.uvostore.entity.outbox.enums.OutboxStatus.SKIPPED,
+                m.lastError = :detail,
+                m.processedAt = :now,
+                m.updatedAt = :now
+            where m.id = :id
+              and m.status = org.uvo.uvostore.entity.outbox.enums.OutboxStatus.FAILED
+            """)
+    int resolveManually(@Param("id") Long id, @Param("detail") String detail, @Param("now") Instant now);
 
     /**
      * PROD-15b. Lo que el outbox tiene en cola ({@code PENDING}, {@code IN_FLIGHT}) y lo que falló de forma definitiva

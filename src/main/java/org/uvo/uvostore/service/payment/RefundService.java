@@ -84,6 +84,13 @@ public class RefundService {
     @Transactional
     public OrderRefund refund(RefundCommand command) {
         Order order = lockedOrder(command.orderId());
+        // GAP-04. Con una intención PENDING, el "ya devuelto" la incluye, así que un segundo reembolso del mismo monto
+        // deriva otra clave de idempotencia (RefundIntentStore) y Stripe o MercadoPago no lo reconocen como repetido:
+        // si el primero sí salió, el dinero se devolvía dos veces. Primero se resuelve el pendiente.
+        if (refundRepository.countByOrderIdAndStatus(order.getId(), RefundStatus.PENDING) > 0) {
+            throw new BusinessException("Hay un reembolso pendiente de confirmar en esta orden: revísalo en la pasarela "
+                    + "y resuélvelo antes de pedir otro");
+        }
         BigDecimal amount = resolveAmount(order, command.amount());
         // Se calcula ANTES de escribir nada: en cuanto se guarde la fila, el saldo cambia.
         boolean closesOrder = closesOrder(order, amount);

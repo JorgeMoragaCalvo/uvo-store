@@ -124,11 +124,11 @@ public class WebpayServiceImpl implements WebpayService {
         boolean approved = detail.getResponseCode() == 0 && "AUTHORIZED".equals(detail.getStatus());
 
         if (approved) {
-            if (order.getPaymentStatus() == PaymentStatus.PENDING) {
-                // M4: the commit response carries what Transbank actually captured.
-                order = orderStatusService.markPaid(order.getId(), token,
-                        java.math.BigDecimal.valueOf(detail.getAmount()));
-            }
+            // M4: the commit response carries what Transbank actually captured. GAP-04: sin filtrar por PENDING:
+            // Transbank ya capturó, así que si la orden se canceló mientras el comprador pagaba, markPaid tiene
+            // que dejar constancia del cobro. Con una orden ya pagada no hace nada.
+            order = orderStatusService.markPaid(order.getId(), token,
+                    java.math.BigDecimal.valueOf(detail.getAmount()));
         } else if (order.getPaymentStatus() == PaymentStatus.PENDING) {
             order = orderStatusService.markPaymentFailed(order.getId());
         }

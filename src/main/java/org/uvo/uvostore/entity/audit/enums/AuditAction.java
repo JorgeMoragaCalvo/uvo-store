@@ -17,6 +17,10 @@ public enum AuditAction {
     ORDER_PAYMENT_STATUS_UPDATE,
     ORDER_STOCK_SHORTAGE_RELEASE,
 
+    // GAP-04 (V34). Una entrega del outbox que falló de forma definitiva, devuelta a la cola o cerrada a mano.
+    OUTBOX_RETRY,
+    OUTBOX_RESOLVE,
+
     // Dinero y credenciales.
     PAYMENT_GATEWAY_UPDATE,
     SETTINGS_MONEY_UPDATE,
