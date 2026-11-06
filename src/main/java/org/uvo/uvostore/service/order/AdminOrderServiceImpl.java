@@ -81,6 +81,7 @@ public class AdminOrderServiceImpl implements AdminOrderService {
         Order order = findOrThrow(orderId);
         OrderStatus previous = order.getStatus();
         order.setStatus(OrderStatus.CANCELLED);
+        closePendingPayment(order);
         appendHistory(order, "Orden cancelada");
         releaseInventory(order);
         orderRepository.save(order);
@@ -122,6 +123,7 @@ public class AdminOrderServiceImpl implements AdminOrderService {
         order.setStatus(newStatus);
         appendHistory(order, "Estado actualizado manualmente");
         if (newStatus == OrderStatus.CANCELLED) {
+            closePendingPayment(order);
             releaseInventory(order);
         }
         orderRepository.save(order);
@@ -316,6 +318,19 @@ public class AdminOrderServiceImpl implements AdminOrderService {
     // C5: an admin cancelling or refunding an order has to give the inventory back, the same way
     // the automatic cancellation path does. Both calls are guarded internally, so they do nothing
     // for an order that was never paid, and nothing again on a second cancellation.
+    /**
+     * GAP-08. Una orden cancelada con el pago pendiente queda con el pago FAILED, como la que cancela
+     * {@code markCancelled} (sesión expirada, orden abandonada). Con el pago en PENDING, un cobro que la pasarela
+     * confirmara después la revivía: {@code markPaid} la dejaba pagada y en preparación, y volvía a descontar el
+     * stock que la cancelación acababa de liberar. Con FAILED, {@code markPaid} deja la nota y la alerta de cobro
+     * sobre orden cerrada (GAP-04) y la orden sigue cancelada.
+     */
+    private static void closePendingPayment(Order order) {
+        if (order.getPaymentStatus() == PaymentStatus.PENDING) {
+            order.setPaymentStatus(PaymentStatus.FAILED);
+        }
+    }
+
     private void releaseInventory(Order order) {
         orderInventoryService.restoreOrderStock(order);
         orderInventoryService.releaseCouponUsage(order);

@@ -65,7 +65,21 @@ class ProductionConfigurationRulesTest {
                 row("SWAGGER_ENABLED", "app.swagger.enabled", "on"),
                 row("APP_ENCRYPTION_KEY", "app.encryption-key", RequiredSecret.LEGACY_ENCRYPTION_KEY),
                 row("FLYWAY_USER", "app.flyway.user", ""),
-                row("FLYWAY_USER", "app.flyway.user", "uvostore_app"));
+                row("FLYWAY_USER", "app.flyway.user", "uvostore_app"),
+                // GAP-08: los dobles del E2E.
+                row("STRIPE_API_BASE", "stripe.api-base", "http://127.0.0.1:18089/stripe"),
+                row("WEBPAY_API_BASE", "webpay.api-base", "http://127.0.0.1:18089/webpay"),
+                row("MERCADOPAGO_API_BASE", "mercadopago.api-base", "http://127.0.0.1:18089/mercadopago"));
+    }
+
+    @Test
+    @DisplayName("Staging tampoco acepta desviar una pasarela a otro servidor")
+    void stagingRejectsAGatewayApiBase() {
+        MockEnvironment properties = production();
+        properties.setProperty("webpay.api-base", "http://127.0.0.1:18089/webpay");
+
+        assertThat(check(AppEnvironment.STAGING, properties, sentry("staging"), APP_ROLE).errors())
+                .singleElement().asString().startsWith("WEBPAY_API_BASE");
     }
 
     @ParameterizedTest(name = "{0}: {1}")

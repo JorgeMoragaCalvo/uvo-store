@@ -130,3 +130,22 @@ export async function saveTracking(page: Page, trackingNumber: string): Promise<
   await page.getByRole('button', { name: 'Guardar' }).click()
   await expect(page.getByText('Seguimiento guardado')).toBeVisible()
 }
+
+/** GAP-08. «Cancelar orden» en el detalle abierto. */
+export async function cancelOrder(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Cancelar orden' }).click()
+  await expect(page.getByText('Orden cancelada')).toBeVisible()
+}
+
+/** GAP-08. Un reembolso desde la tarjeta «Reembolsos» del detalle abierto; sin monto es todo el saldo. */
+export async function refund(page: Page, reason: string, amount?: number): Promise<void> {
+  await page.getByLabel('Monto (vacío = todo el saldo)').fill(amount === undefined ? '' : String(amount))
+  await page.getByLabel('Motivo').fill(reason)
+  await page.getByRole('button', { name: 'Reembolsar', exact: true }).click()
+  await expect(page.getByText('Reembolso realizado')).toBeVisible()
+}
+
+/** El importe de una fila de la tarjeta «Reembolsos» («Devuelto», «Por devolver»), tal como se ve. */
+export function refundRow(page: Page, label: 'Devuelto' | 'Por devolver') {
+  return page.getByText(label, { exact: true }).locator('xpath=..').locator('span').last()
+}

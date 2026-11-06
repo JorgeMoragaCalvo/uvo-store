@@ -25,7 +25,12 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     locale: 'es-CL',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  // GAP-08. El proyecto móvil corre solo el spec de pasarelas, con su propia tienda: el circuito ya recorre el
+  // panel completo en escritorio. Pixel 7 sobre el mismo Chromium que instala la CI.
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'mobile', testMatch: /pasarelas\.spec\.ts/, use: { ...devices['Pixel 7'] } },
+  ],
   webServer: [
     {
       command: 'node e2e/doubles/server.ts',

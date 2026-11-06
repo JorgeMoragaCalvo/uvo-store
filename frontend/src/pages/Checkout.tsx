@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { cartLineKey, useCartStore } from '../stores/useCartStore'
 import { clearPendingPayment, loadPendingPayment, useCheckoutStore } from '../stores/useCheckoutStore'
 import OrderSummary from '../components/cart/OrderSummary'
+import PaymentInProcess from '../components/PaymentInProcess'
 import api from '../services/api'
 import { useStoreTitle } from '../hooks/useDocumentTitle'
 import type { ShippingCoverage } from '../types/api'
@@ -208,30 +209,7 @@ export default function Checkout() {
   const communesForRegion = coverage.find((c) => c.region === selectedRegion)?.communes ?? []
 
   if (returnNotice === 'pending') {
-    return (
-      <div className="mx-auto max-w-lg p-4 py-8 text-center sm:p-8">
-        <h1 className="mb-2 text-xl font-semibold text-dark">Tu pago está en proceso</h1>
-        <p role="status" className="mb-4 text-secondary">
-          Cuando el medio de pago lo confirme, te avisaremos por correo. No hace falta que pagues de nuevo.
-        </p>
-        {pendingOrderNumber && (
-          <p className="mb-6 text-secondary">
-            Número de pedido: <strong>{pendingOrderNumber}</strong>
-          </p>
-        )}
-        <div className="flex flex-wrap justify-center gap-3">
-          <Link
-            to={pendingOrderNumber ? `/track-order?order=${encodeURIComponent(pendingOrderNumber)}` : '/track-order'}
-            className="rounded bg-primary px-4 py-2 text-sm font-medium text-white"
-          >
-            Seguir mi pedido
-          </Link>
-          <Link to="/shop" className="rounded border border-gray-400 px-4 py-2 text-sm font-medium text-dark">
-            Volver a la tienda
-          </Link>
-        </div>
-      </div>
-    )
+    return <PaymentInProcess orderNumber={pendingOrderNumber} />
   }
 
   if (items.length === 0) {

@@ -125,7 +125,7 @@ class MercadoPagoPreferenceTest {
 
         assertThat(request.getNotificationUrl()).isEqualTo("http://test.localhost/api/v1/mercadopago/webhook");
         assertThat(request.getBackUrls().getSuccess())
-                .isEqualTo("http://test.localhost/order-success?order=" + order.getOrderNumber());
+                .isEqualTo("http://test.localhost/order-success?order=" + order.getOrderNumber() + "&gateway=mercadopago");
         assertThat(request.getBackUrls().getFailure()).isEqualTo("http://test.localhost/checkout?error=mercadopago");
         assertThat(request.getBackUrls().getPending()).isEqualTo("http://test.localhost/checkout?pending=1");
     }

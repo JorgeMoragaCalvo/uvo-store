@@ -11,6 +11,8 @@ export interface HttpResult {
   status: number
   text: string
   json: unknown
+  /** Las cabeceras de la respuesta, en minúscula (la redirección de un retorno de pasarela va en `location`). */
+  headers: Record<string, string | string[] | undefined>
 }
 
 export interface HttpOptions {
@@ -33,7 +35,7 @@ export function http(method: string, url: string, options: HttpOptions = {}): Pr
       res.on('data', (chunk: Buffer) => chunks.push(chunk))
       res.on('end', () => {
         const text = Buffer.concat(chunks).toString('utf8')
-        resolve({ status: res.statusCode ?? 0, text, json: parseJson(text) })
+        resolve({ status: res.statusCode ?? 0, text, json: parseJson(text), headers: res.headers })
       })
     })
     req.on('error', reject)

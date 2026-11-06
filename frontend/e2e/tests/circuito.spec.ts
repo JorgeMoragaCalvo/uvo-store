@@ -233,7 +233,8 @@ test('tienda-pos: la venta web llega al POS', async () => {
 test('tienda-panel: sin conexión al POS, su venta no sale hacia el POS', async () => {
   const calls = await posOrdersReceived()
   expect(calls.some((call) => call.idempotencyKey?.startsWith(panelStore.orderNumber))).toBe(false)
-  expect(calls).toHaveLength(1)
+  // Solo las de la empresa de tienda-pos: el spec de pasarelas también vende al POS, con otras empresas.
+  expect(calls.filter((call) => call.companyId === String(POS_COMPANY_ID))).toHaveLength(1)
 })
 
 test('tienda-pos: un stock.updated del POS se refleja en la web', async ({ page }) => {

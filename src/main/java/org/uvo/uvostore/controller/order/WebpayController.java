@@ -66,6 +66,12 @@ public class WebpayController {
 
         try {
             WebpayCommitResult result = webpayService.commitTransaction(tokenWs);
+            // GAP-08. Un rechazo no lanza: commitTransaction marca el pago FAILED y vuelve. Antes redirigía igual a
+            // la página de éxito, que decía «¡Gracias por tu compra!» y vaciaba el carrito de un pedido sin pagar.
+            // También cae aquí un cobro sobre una orden ya cerrada, que no se reactiva (GAP-04).
+            if (!"PAID".equals(result.orderPaymentStatus())) {
+                return redirectTo(publicUrls.storefrontUrl(store, "/checkout?error=webpay"));
+            }
             return redirectTo(publicUrls.storefrontUrl(store, "/order-success?order=" + result.orderNumber()));
         } catch (Exception e) {
             // PROD-17a. El token_ws completo NO se registra. Es la credencial de esa transacción frente a

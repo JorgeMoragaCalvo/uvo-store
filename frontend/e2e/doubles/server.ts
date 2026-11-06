@@ -8,10 +8,12 @@
 //   /api/v1/orders/external y la lectura del catálogo en /api/v1/products/snapshot.
 // - SMTP: lo justo para que JavaMail entregue un SimpleMailMessage, sin STARTTLS ni AUTH. Guarda destinatario,
 //   asunto y cuerpo ya decodificados, para que los tests lean el enlace de la invitación tal cual.
+// - Pasarelas (GAP-08): Stripe, Webpay y MercadoPago, con su API y su página de pago. Ver gateways.ts.
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { createServer as createTcpServer, type Socket } from 'node:net'
-import { DOUBLES_HTTP_PORT, DOUBLES_SMTP_PORT } from '../support/env.ts'
+import { DOUBLES_HTTP_PORT, DOUBLES_SMTP_PORT, DOUBLES_URL } from '../support/env.ts'
+import { handleGateway } from './gateways.ts'
 
 export interface PosOrderCall {
   receivedAt: string
@@ -55,6 +57,7 @@ async function readBody(req: IncomingMessage): Promise<string> {
 const http = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
   try {
+    if (await handleGateway(req, res, url, DOUBLES_URL)) return
     if (req.method === 'POST' && url.pathname === '/api/v1/orders/external') {
       const raw = await readBody(req)
       posOrders.push({
