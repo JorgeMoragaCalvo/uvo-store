@@ -181,7 +181,10 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
                 .externalReference(order.getOrderNumber())
                 .notificationUrl(publicUrls.apiUrl(store, "/api/v1/mercadopago/webhook"))
                 .backUrls(PreferenceBackUrlsRequest.builder()
-                        .success(publicUrls.storefrontUrl(store, "/order-success?order=" + order.getOrderNumber()))
+                        // GAP-08. La marca le dice a la página de éxito que el pago todavía no está confirmado: lo
+                        // confirma el webhook o la conciliación, y este retorno puede llegar antes que ellos.
+                        .success(publicUrls.storefrontUrl(store,
+                                "/order-success?order=" + order.getOrderNumber() + "&gateway=mercadopago"))
                         .failure(publicUrls.storefrontUrl(store, "/checkout?error=mercadopago"))
                         .pending(publicUrls.storefrontUrl(store, "/checkout?pending=1"))
                         .build())

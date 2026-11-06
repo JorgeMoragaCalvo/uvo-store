@@ -26,6 +26,8 @@ export const PLATFORM_URL = `http://localhost:${VITE_PORT}`
 export const E2E_JWT_SECRET = 'e2e-only-jwt-secret-for-local-browser-tests-0123456789'
 export const E2E_ENCRYPTION_KEY = Buffer.from('e2e-only-encryption-key-32-bytes').toString('base64')
 export const E2E_PLATFORM_API_KEY = 'e2e-only-platform-key-for-local-browser-tests'
+/** GAP-08. El secreto de los webhooks de Stripe es de la plataforma (STRIPE_WEBHOOK_SECRET), no de la tienda. */
+export const E2E_STRIPE_WEBHOOK_SECRET = 'whsec_e2e_only_for_local_browser_tests'
 
 /** La base de la red. El lanzador la borra y la crea en cada corrida, así que el nombre tiene que delatarla. */
 export const E2E_DB_NAME = process.env.E2E_DB_NAME ?? 'uvostore_e2e'

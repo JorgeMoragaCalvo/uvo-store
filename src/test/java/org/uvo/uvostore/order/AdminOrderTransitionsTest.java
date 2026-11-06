@@ -6,13 +6,18 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.uvo.uvostore.entity.catalog.Category;
 import org.uvo.uvostore.entity.catalog.Product;
 import org.uvo.uvostore.entity.order.Order;
+import org.uvo.uvostore.entity.order.OrderStatusHistory;
+import org.uvo.uvostore.entity.order.enums.OrderStatus;
 import org.uvo.uvostore.entity.order.enums.PaymentStatus;
 import org.uvo.uvostore.entity.security.User;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.OrderRepository;
+import org.uvo.uvostore.service.order.OrderStatusService;
+import org.uvo.uvostore.service.order.OrderStatusServiceImpl;
 import org.uvo.uvostore.support.IntegrationTestSupport;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -38,6 +43,8 @@ class AdminOrderTransitionsTest extends IntegrationTestSupport {
     private OrderRepository orderRepository;
     @Autowired
     private org.uvo.uvostore.service.order.OrderInventoryService orderInventoryService;
+    @Autowired
+    private OrderStatusService orderStatusService;
 
     @Test
     @DisplayName("El panel no puede degradar una orden pagada a fallida")
@@ -153,6 +160,37 @@ class AdminOrderTransitionsTest extends IntegrationTestSupport {
                         .header("Host", hostHeader(f.store)).header("Authorization", "Bearer " + f.token)
                         .contentType("application/json").content("{\"status\":\"REFUNDED\"}"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("Una orden cancelada en el panel con el pago pendiente no revive con un cobro tardío")
+    void aCancelledPendingOrderIsNotRevivedByALatePayment() throws Exception {
+        // GAP-08. Las dos vías de cancelar dejaban el pago en PENDING, y un webhook aprobado que llegara después
+        // la marcaba pagada y en preparación, con el stock y el cupón ya liberados.
+        Fixture byButton = pendingOrder();
+        Fixture byStatus = pendingOrder();
+
+        mockMvc.perform(post("/api/admin/orders/" + byButton.orderId + "/cancel")
+                        .header("Host", hostHeader(byButton.store)).header("Authorization", "Bearer " + byButton.token))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/admin/orders/" + byStatus.orderId + "/status")
+                        .header("Host", hostHeader(byStatus.store)).header("Authorization", "Bearer " + byStatus.token)
+                        .contentType("application/json").content("{\"status\":\"CANCELLED\"}"))
+                .andExpect(status().isOk());
+
+        for (Fixture f : List.of(byButton, byStatus)) {
+            Order cancelled = orderRepository.findById(f.orderId).orElseThrow();
+            assertThat(cancelled.getPaymentStatus()).isEqualTo(PaymentStatus.FAILED);
+
+            orderStatusService.markPaid(f.orderId, "pago-tardio-" + f.orderId, cancelled.getTotal());
+
+            Order after = orderRepository.findById(f.orderId).orElseThrow();
+            assertThat(after.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+            assertThat(after.getPaymentStatus()).isEqualTo(PaymentStatus.FAILED);
+            assertThat(after.getStatusHistory()).extracting(OrderStatusHistory::getNotes)
+                    .filteredOn(note -> note != null && note.startsWith(OrderStatusServiceImpl.LATE_PAYMENT_PREFIX))
+                    .hasSize(1);
+        }
     }
 
     // --- fixtures ----------------------------------------------------------------------------------

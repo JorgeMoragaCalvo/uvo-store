@@ -5,16 +5,16 @@
 // 2. Lanza `java -jar target/uvo-store-*.jar` con un entorno propio y con el directorio de trabajo en un
 //    temporal, para que spring-dotenv no lea el `.env` del backend (que apunta a la base de desarrollo).
 //
-// Las credenciales de PostgreSQL salen de E2E_DB_USERNAME / E2E_DB_PASSWORD (la CI las pasa así). Si faltan,
-// se toman DB_USERNAME / DB_PASSWORD del `.env` del backend, para que en local funcione sin configurar nada.
+// Las credenciales de PostgreSQL salen de E2E_DB_USERNAME / E2E_DB_PASSWORD; ver support/database.ts.
 //
 // Corre directo con Node (`node e2e/launch/backend.ts`); Playwright lo arranca como webServer.
 
 import { spawn } from 'node:child_process'
-import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs'
+import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import pg from 'pg'
+import { dbConfig } from '../support/database.ts'
 import {
   BACKEND_PORT,
   DOUBLES_HTTP_PORT,
@@ -23,6 +23,7 @@ import {
   E2E_ENCRYPTION_KEY,
   E2E_JWT_SECRET,
   E2E_PLATFORM_API_KEY,
+  E2E_STRIPE_WEBHOOK_SECRET,
   VITE_PORT,
 } from '../support/env.ts'
 
@@ -30,22 +31,7 @@ const FRONTEND_DIR = path.resolve(import.meta.dirname, '..', '..')
 const REPO_DIR = path.resolve(FRONTEND_DIR, '..')
 const LOG_DIR = path.join(FRONTEND_DIR, 'e2e', '.logs')
 
-function backendDotEnv(): Map<string, string> {
-  const values = new Map<string, string>()
-  const file = path.join(REPO_DIR, '.env')
-  if (!existsSync(file)) return values
-  for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
-    const match = /^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/.exec(line)
-    if (match) values.set(match[1], match[2].replace(/^["']|["']$/g, ''))
-  }
-  return values
-}
-
-const dotEnv = backendDotEnv()
-const dbHost = process.env.E2E_DB_HOST ?? 'localhost'
-const dbPort = Number(process.env.E2E_DB_PORT ?? 5432)
-const dbUser = process.env.E2E_DB_USERNAME ?? dotEnv.get('DB_USERNAME') ?? 'uvostore'
-const dbPassword = process.env.E2E_DB_PASSWORD ?? dotEnv.get('DB_PASSWORD') ?? 'uvostore'
+const { host: dbHost, port: dbPort, user: dbUser, password: dbPassword } = dbConfig
 
 async function recreateDatabase(): Promise<void> {
   if (!/^[a-z0-9_]+_e2e$/.test(E2E_DB_NAME)) {
@@ -108,8 +94,19 @@ async function main(): Promise<void> {
     MAIL_PASSWORD: '',
     // Un solo cliente (127.0.0.1) hace todos los logins de la corrida; los límites por IP no aportan aquí.
     RATE_LIMIT_ENABLED: 'false',
+    // GAP-08. Las tres pasarelas van a sus dobles (frontend/e2e/doubles/gateways.ts). El backend solo lo acepta
+    // con APP_ENVIRONMENT=development.
+    STRIPE_API_BASE: `http://127.0.0.1:${DOUBLES_HTTP_PORT}/stripe`,
+    WEBPAY_API_BASE: `http://127.0.0.1:${DOUBLES_HTTP_PORT}/webpay`,
+    MERCADOPAGO_API_BASE: `http://127.0.0.1:${DOUBLES_HTTP_PORT}/mercadopago`,
+    STRIPE_WEBHOOK_SECRET: E2E_STRIPE_WEBHOOK_SECRET,
+    // GAP-08. La conciliación encendida para el retorno perdido de Webpay: mira las órdenes con pago pendiente
+    // de más de un minuto, así que no se adelanta a los webhooks que mandan los otros casos. Las de pago manual
+    // no las mira.
+    RECONCILIATION_ENABLED: 'true',
+    RECONCILIATION_INTERVAL_MS: '5000',
+    RECONCILIATION_AFTER_MINUTES: '1',
     // Los demás trabajos programados no forman parte del circuito y solo meterían ruido.
-    RECONCILIATION_ENABLED: 'false',
     POS_RECONCILIATION_ENABLED: 'false',
     ABANDONED_ORDERS_ENABLED: 'false',
     STOCK_RECOVERY_ENABLED: 'false',

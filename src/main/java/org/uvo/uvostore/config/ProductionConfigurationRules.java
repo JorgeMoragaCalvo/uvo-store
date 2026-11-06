@@ -69,6 +69,7 @@ public final class ProductionConfigurationRules {
         if (environment == AppEnvironment.PRODUCTION) {
             webpay(properties, errors);
         }
+        gatewayApiBases(properties, errors);
         storage(properties, errors);
         mail(properties, errors);
         swagger(properties, errors);
@@ -131,6 +132,24 @@ public final class ProductionConfigurationRules {
         if (IntegrationApiKeys.WEBPAY.equals(text(properties, "webpay.api-key", "").trim())) {
             errors.add("WEBPAY_API_KEY es la clave pública del sandbox de Transbank. Pon la clave de producción que "
                     + "Transbank emitió para la plataforma.");
+        }
+    }
+
+    /**
+     * GAP-08. Las tres direcciones existen para que el E2E hable con dobles de las pasarelas
+     * ({@link GatewayApiBaseConfig}). Con cualquiera de ellas puesta, los cobros, las consultas y las devoluciones
+     * van a otro servidor; por eso también se rechazan en staging, que se prueba contra el sandbox real.
+     */
+    private static void gatewayApiBases(PropertyResolver properties, List<String> errors) {
+        for (String[] gateway : new String[][]{
+                {"stripe.api-base", "STRIPE_API_BASE"},
+                {"webpay.api-base", "WEBPAY_API_BASE"},
+                {"mercadopago.api-base", "MERCADOPAGO_API_BASE"}}) {
+            String value = text(properties, gateway[0], "").trim();
+            if (!value.isEmpty()) {
+                errors.add(gateway[1] + " es '" + value + "': manda los cobros, las consultas y las devoluciones de la "
+                        + "pasarela a otro servidor. Solo existe para las pruebas E2E; déjala vacía fuera de development.");
+            }
         }
     }
 
