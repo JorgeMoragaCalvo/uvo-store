@@ -152,7 +152,7 @@ public class PaymentServiceImpl implements PaymentService {
             throw new IllegalStateException("Error al verificar pago: " + e.getMessage(), e);
         }
 
-        Order order = orderRepository.findByStripeCheckoutSessionId(session.getId())
+        Order order = orderOfSession(session.getId())
                 .orElseThrow(() -> new NoSuchElementException("Orden no encontrada"));
 
         // GAP-04: sin filtrar por PENDING. markPaid es idempotente con una orden ya pagada, y si la orden se canceló
@@ -223,11 +223,11 @@ public class PaymentServiceImpl implements PaymentService {
             // GAP-04: los dos avisos de cobro llegan a markPaid aunque la orden ya no esté PENDING: con una ya
             // pagada no hace nada, y con una cancelada deja la nota y la alerta de un cobro que hay que devolver.
             case "checkout.session.completed" -> deserialize(event, Session.class).ifPresent(session ->
-                    orderRepository.findByStripeCheckoutSessionId(session.getId())
+                    orderOfSession(session.getId())
                             .ifPresent(order -> orderStatusService.markPaid(order.getId(), session.getPaymentIntent(),
                                     stripeAmount(session.getAmountTotal()))));
             case "checkout.session.expired" -> deserialize(event, Session.class).ifPresent(session ->
-                    orderRepository.findByStripeCheckoutSessionId(session.getId())
+                    orderOfSession(session.getId())
                             .ifPresent(order -> orderStatusService.markCancelled(order.getId())));
             // F03: esto era código muerto. Buscaba por stripePaymentIntentId, columna que SOLO se
             // escribe dentro de markPaid, y encima filtraba por PENDING: la intersección es vacía, así
@@ -246,10 +246,10 @@ public class PaymentServiceImpl implements PaymentService {
             // FAILED es terminal —hoy lo es— y no es este arreglo. Mientras tanto, lo que cubre el
             // fallo real de una orden pendiente es el commit de Webpay/MercadoPago y la conciliación.
             case "payment_intent.payment_failed" -> deserialize(event, PaymentIntent.class).ifPresent(intent ->
-                    orderRepository.findByStripePaymentIntentId(intent.getId())
+                    orderOfIntent(intent.getId())
                             .ifPresent(order -> orderStatusService.markPaymentFailed(order.getId())));
             case "payment_intent.canceled" -> deserialize(event, PaymentIntent.class).ifPresent(intent ->
-                    orderRepository.findByStripePaymentIntentId(intent.getId())
+                    orderOfIntent(intent.getId())
                             .ifPresent(order -> orderStatusService.markCancelled(order.getId())));
             default -> {
                 // No-op — matches PaymentController::webhook()'s switch, which ignores unhandled types.
@@ -266,7 +266,7 @@ public class PaymentServiceImpl implements PaymentService {
         String orderId = intent.getMetadata() == null ? null : intent.getMetadata().get("order_id");
         if (orderId != null) {
             try {
-                Optional<Order> byMetadata = orderRepository.findById(Long.valueOf(orderId));
+                Optional<Order> byMetadata = ownedByStore(orderRepository.findById(Long.valueOf(orderId)), intent.getId());
                 if (byMetadata.isPresent()) {
                     return byMetadata;
                 }
@@ -276,7 +276,30 @@ public class PaymentServiceImpl implements PaymentService {
                 log.warn("order_id no numérico en la metadata del PaymentIntent {}: {}", intent.getId(), orderId);
             }
         }
-        return orderRepository.findByStripePaymentIntentId(intent.getId());
+        return orderOfIntent(intent.getId());
+    }
+
+    private Optional<Order> orderOfSession(String sessionId) {
+        return ownedByStore(orderRepository.findByStripeCheckoutSessionId(sessionId), sessionId);
+    }
+
+    private Optional<Order> orderOfIntent(String paymentIntentId) {
+        return ownedByStore(orderRepository.findByStripePaymentIntentId(paymentIntentId), paymentIntentId);
+    }
+
+    // GAP-11. El mismo filtro de Webpay y MercadoPago. La firma del webhook no lo reemplaza: se verifica con el
+    // secreto de la tienda del host, que elige su admin, así que prueba de qué tienda viene el evento, no de cuál
+    // es la orden que nombra. Una orden ajena se trata como una que no existe.
+    private Optional<Order> ownedByStore(Optional<Order> found, String stripeId) {
+        Long storeId = TenantContext.requireStoreId();
+        return found.filter(order -> {
+            boolean own = order.getStore().getId().equals(storeId);
+            if (!own) {
+                log.warn("Stripe: {} nombra la orden {} de la tienda {}, ignorada en la tienda {}",
+                        stripeId, order.getId(), order.getStore().getId(), storeId);
+            }
+            return own;
+        });
     }
 
     @SuppressWarnings("unchecked")

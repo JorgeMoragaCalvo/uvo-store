@@ -46,7 +46,7 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
     // tienda y ninguna tenía llamadores (eran los scopes de Laravel portados tal cual). Las dos primeras
     // listaban las órdenes de TODAS las tiendas. Las búsquedas por clave de pasarela de arriba siguen
     // siendo globales a propósito —el id lo emite la pasarela y es único—, pero quien las llama debe
-    // comprobar la tienda de la orden: así lo hacen el seguimiento, MercadoPago y Webpay.
+    // comprobar la tienda de la orden: así lo hacen el seguimiento, MercadoPago, Webpay y Stripe (GAP-11).
     List<Order> findByCustomerIdOrderByCreatedAtDesc(Long customerId);
 
     // PROD-13b: findPendingPosNotification (G2) se quitó con el reintento que la usaba. Solo veía órdenes con

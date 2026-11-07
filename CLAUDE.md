@@ -68,14 +68,17 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
   keys issued by a payment gateway, and three scheduled jobs that deliberately walk every store. (The outbox
   dispatcher's queries walk every store too, but `OutboxMessage` has no `store` field — it inherits the
   tenant through its order — so the test doesn't scan that repository.) Adding a
-  global query is possible; it just has to be written down. Three of those are flagged in the test as
-  *not store-checked by their caller* (`UserRepository.findByPasswordResetToken` and Stripe's two
-  `findByStripe…Id`) — a known gap, not an endorsement. For Stripe, it is wider than the repository:
-  `PaymentServiceImpl.handleWebhook` verifies the signature with the *tenant's* webhook secret but never
-  compares the found order's store with the request's, and `orderFromIntent` resolves the order with a
-  plain `findById` from the event's `order_id` metadata (not covered by this test — it is an inherited
-  method). Whether an event signed by one store's Stripe account can name another store's order id was
-  **not tested**; the Webpay, MercadoPago and tracking paths do compare the store. The test skips synthetic methods (JaCoCo's
+  global query is possible; it just has to be written down. One of those is flagged in the test as
+  *not store-checked by its caller* (`UserRepository.findByPasswordResetToken`) — a known gap, not an
+  endorsement. **The Stripe lookups do compare the store (GAP-11):** `PaymentServiceImpl` sends every order
+  it finds through `ownedByStore`, including the plain `findById` of `orderFromIntent` (an inherited method
+  this test can't see). The webhook signature doesn't replace that check: it is verified with the secret of
+  the `Host`'s store, which that store's admin chooses, so store A could sign an event naming an order of B
+  and mark it paid. A foreign order is treated as a missing one: `verifyPayment` answers 404 and the webhook
+  200 with a `warn` log. `multitenancy/StripeCrossTenantTest` signs real events to prove it. The consequence:
+  with one Stripe account shared by several stores (the platform's fallback keys) each store needs its own
+  webhook endpoint, because an event reaching another store's host is ignored and the order waits for the
+  browser return or the reconciliation. The test skips synthetic methods (JaCoCo's
   `$jacocoInit`, and the bridge `findById(Object)` javac generates when a repository redeclares
   `findById(Long)`).
 - New stores are created via `/api/platform/**` (`PlatformApiKeyAuthFilter`, shared secret in the `X-Platform-Key` header, **reachable only from the private network** since POS-6) — called by the UvoPOS backend when a company activates the module, or by the operator tool (`/plataforma/nueva-tienda` in the frontend); not public self-service signup. Either way the owner gets an **invitation** and chooses their own password, then self-manages everything from their own admin panel. See "POS-6" below.
