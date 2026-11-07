@@ -1412,8 +1412,8 @@ three `io.jsonwebtoken:*` artifacts are one group with every update type so they
 high/critical advisory; pinned `@v5.0.0` because that action publishes no floating `v4`/`v5` tag, so
 `@v5` would not resolve) and `CODEOWNERS` (one owner today; the sensitive paths are the build and workflow
 files, the migrations, `security/`, `config/`, `service/security/`, `controller/auth/` and the payment,
-platform and POS packages). `ci.yml` and `release.yml` run with `contents: read`; only the job that
-creates the GitHub Release holds `contents: write`. Dependabot reads its file from the default branch only.
+platform and POS packages). `ci.yml`, `release.yml` and the reusable `e2e.yml` they both call run with
+`contents: read`; only the job that creates the GitHub Release holds `contents: write`. Dependabot reads its file from the default branch only.
 
 **None of this blocks anything by itself: the rules live in GitHub's settings, which no YAML shows.**
 Read through the public API on 2026-10-18: the repository is public, **`main` had no branch protection and
@@ -1422,7 +1422,8 @@ runs — `critical: 0` in `qodana.yaml` can turn the job red, but nothing requir
 protection and Dependabot alerts can't be read without admin rights. What `main` should require, by exact
 job name: `Backend (Maven)`, `Frontend (npm)`, `qodana`, `Dependency review`, via a pull request with no
 approval count while there is a single maintainer (GitHub does not count an author's approval of their own
-pull request). **`Dependency review` needs "Dependency graph" switched on** in Settings → Code security — it
+pull request). The browser E2E is not on that list; if it is added, its check name is
+`E2E / E2E (Playwright)` since GAP-09 made it a reusable workflow. **`Dependency review` needs "Dependency graph" switched on** in Settings → Code security — it
 did not come on by itself here even though the repository is public, and with it off the job fails with
 "Dependency review is not supported on this repository" (it did, on PR #62). Don't add it to the ruleset
 until it has run green once, or it would block every pull request. `CODEOWNERS` only asks for review until "Require review from Code Owners" is turned on, which
@@ -1627,7 +1628,10 @@ This also makes several stores usable by hand in dev.
 - ESLint has its own block for `e2e/**` (Node globals; `rules-of-hooks` off because of Playwright's
   `use`).
 
-**CI.** The `e2e` job in `ci.yml`:
+**CI.** The job lives in `.github/workflows/e2e.yml`, a reusable workflow (`on: workflow_call`, GAP-09).
+`ci.yml` calls it on every push and pull request. `release.yml` also calls it, on the tagged commit, and
+creates no release unless it passes. Its check is named **`E2E / E2E (Playwright)`** (caller job name, then
+the called job's). The job:
 1. packages the jar with `-DskipTests` (the backend job runs the suite);
 2. installs Chromium with `--with-deps`;
 3. runs `npm run e2e` against its own `postgres:18` service.
@@ -1666,7 +1670,8 @@ backend log for 7 days. **#33 is pointing this same harness at staging.**
   under this setup, which is intentional; the Playwright suite of PROD-14a covers them, see "Browser E2E") and **142 frontend tests across 32 files** (Vitest +
   React Testing Library, `npm run test`), both wired into CI (`.github/workflows/ci.yml`) and the
   release workflow (`.github/workflows/release.yml`, triggered by pushing a `vX.Y.Z` tag — builds
-  artifacts and publishes a GitHub Release with auto-generated notes). Most of that growth is the
+  artifacts, runs the browser E2E on the same commit and publishes a GitHub Release with auto-generated
+  notes only if all three pass; GAP-09). Most of that growth is the
   audit rounds: nearly every `C`/`A`/`M`/`B`/`F` finding left a test that fails when its fix is
   undone, so a red suite after a refactor is usually an invariant being removed, not a flaky test.
   Five recurring devices worth knowing before writing a new one:
