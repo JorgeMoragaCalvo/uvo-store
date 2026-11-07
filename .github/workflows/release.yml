@@ -103,9 +103,16 @@ jobs:
           path: frontend-dist-${{ github.ref_name }}.zip
           retention-days: 7
 
+  # GAP-09. The release used to publish without the browser suite, which only ran in ci.yml: a tag on a
+  # commit with a broken E2E, or one CI never saw, went out anyway. It runs here on the tagged commit, in
+  # parallel with the builds, and the release below waits for it.
+  e2e:
+    name: E2E
+    uses: ./.github/workflows/e2e.yml
+
   release:
     name: Create GitHub Release
-    needs: [build-backend, build-frontend]
+    needs: [build-backend, build-frontend, e2e]
     runs-on: ubuntu-latest
     # Creating the release and attaching the files is the one thing here that writes to the repository.
     permissions:
