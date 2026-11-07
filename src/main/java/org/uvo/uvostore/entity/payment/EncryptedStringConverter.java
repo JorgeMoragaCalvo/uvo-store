@@ -11,7 +11,7 @@ import java.security.SecureRandom;
 import java.util.Base64;
 
 // Single-value sibling of EncryptedCredentialsConverter (which is Map<String,String>-typed, for
-// PaymentGatewayConfig.credentials) — same AES-256-GCM scheme, same EncryptionKeyHolder, but for a
+// PaymentGatewayConfig.credentials) — the same AES-256-GCM scheme, the same EncryptionKeyHolder, but for a
 // plain String column such as PosConnection.apiKey/webhookSecret. Not a Spring bean, same reason
 // as EncryptedCredentialsConverter (see its javadoc).
 @Converter

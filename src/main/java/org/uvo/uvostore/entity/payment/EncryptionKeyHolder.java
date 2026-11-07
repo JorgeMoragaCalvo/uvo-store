@@ -27,7 +27,7 @@ public class EncryptionKeyHolder {
         // rotating this key makes every already-encrypted PaymentGatewayConfig.credentials row
         // unreadable, so failing here would brick an existing environment rather than protect it.
         // Rotation with re-encryption is its own task; production must start from a fresh key, and
-        // PROD-08a enforces it: outside development ProductionConfigurationRules turns this into an error.
+        // PROD-08a enforces it: outside development ProductionConfigurationRules turn this into an error.
         if (RequiredSecret.LEGACY_ENCRYPTION_KEY.equals(base64Key)) {
             log.warn("APP_ENCRYPTION_KEY es el valor por defecto que estuvo commiteado en application.properties. " +
                      "Está en el historial de git y es público: aceptable en local, NUNCA en producción. " +
