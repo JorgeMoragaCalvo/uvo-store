@@ -190,6 +190,30 @@ class SecurityHardeningTest extends IntegrationTestSupport {
                 .andExpect(header().string("X-Content-Type-Options", "nosniff"));
     }
 
+    @Test
+    @DisplayName("GAP-13: Referrer-Policy y X-Frame-Options en todas las respuestas")
+    void responsesCarryReferrerAndFramingHeaders() throws Exception {
+        mockMvc.perform(get("/actuator/health"))
+                .andExpect(header().string("Referrer-Policy", "strict-origin-when-cross-origin"))
+                .andExpect(header().string("X-Frame-Options", "DENY"));
+    }
+
+    @Test
+    @DisplayName("GAP-13: la API y /uploads llevan una CSP que no deja ejecutar nada; el resto no")
+    void apiAndUploadsCarryALockedDownCsp() throws Exception {
+        Store store = createStore("csp-api");
+        String csp = "default-src 'none'; frame-ancestors 'none'; sandbox";
+
+        mockMvc.perform(get("/api/v1/products").header("Host", hostHeader(store)))
+                .andExpect(header().string("Content-Security-Policy", csp));
+        // Un archivo subido abierto directamente: aunque se colara uno con script, no corre en el origen de la tienda.
+        mockMvc.perform(get("/uploads/no-existe.png").header("Host", hostHeader(store)))
+                .andExpect(header().string("Content-Security-Policy", csp));
+        // Fuera del matcher a propósito: Swagger, en desarrollo, es una página y esa CSP la rompería.
+        mockMvc.perform(get("/actuator/health"))
+                .andExpect(header().doesNotExist("Content-Security-Policy"));
+    }
+
     private org.springframework.test.web.servlet.request.MockMultipartHttpServletRequestBuilder productCreate(
             Store store, String token) {
         return (org.springframework.test.web.servlet.request.MockMultipartHttpServletRequestBuilder)

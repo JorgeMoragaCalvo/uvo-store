@@ -139,6 +139,9 @@ export const adminApi = {
     // demostrar que controla el buzón y acaba de fijar él mismo la contraseña.
     acceptInvitation: (token: string, password: string): Promise<AdminLoginResponse> =>
       client.post('/auth/accept-invitation', { token, password }),
+    // GAP-13. Revoca el token en el servidor (todas las sesiones de este admin). Con tope corto: «Salir» lo
+    // espera antes de seguir, y un backend que no contesta no puede dejar a nadie sin poder salir.
+    logout: (): Promise<void> => client.post('/auth/logout', null, { timeout: 3000 }),
   },
   products: {
     list: (params: ProductListParams): Promise<Page<ProductDto>> => client.get('/products', { params }),

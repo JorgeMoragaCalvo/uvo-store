@@ -60,6 +60,11 @@ class ProductionConfigurationRulesTest {
                 row("WEBPAY_API_KEY", "webpay.api-key", IntegrationApiKeys.WEBPAY),
                 row("APP_UPLOAD_DIR", "app.upload-dir", "uploads"),
                 Arguments.of("APP_STORAGE_S3_BUCKET", Map.of("app.storage.driver", "s3", "app.storage.s3.bucket", "")),
+                // GAP-13: la CSP de la SPA solo carga imágenes por https.
+                Arguments.of("APP_STORAGE_S3_PUBLIC_BASE_URL", Map.of("app.storage.driver", "s3",
+                        "app.storage.s3.bucket", "imagenes", "app.storage.s3.public-base-url", "http://cdn.tienda.cl")),
+                Arguments.of("APP_STORAGE_S3_ENDPOINT", Map.of("app.storage.driver", "s3",
+                        "app.storage.s3.bucket", "imagenes", "app.storage.s3.endpoint", "http://minio:9000")),
                 row("MAIL_HOST", "spring.mail.host", ""),
                 row("SWAGGER_ENABLED", "app.swagger.enabled", "true"),
                 row("SWAGGER_ENABLED", "app.swagger.enabled", "on"),
@@ -70,6 +75,18 @@ class ProductionConfigurationRulesTest {
                 row("STRIPE_API_BASE", "stripe.api-base", "http://127.0.0.1:18089/stripe"),
                 row("WEBPAY_API_BASE", "webpay.api-base", "http://127.0.0.1:18089/webpay"),
                 row("MERCADOPAGO_API_BASE", "mercadopago.api-base", "http://127.0.0.1:18089/mercadopago"));
+    }
+
+    @Test
+    @DisplayName("GAP-13: con S3, manda la base pública; un endpoint interno por http no importa si ella es https")
+    void theS3PublicBaseWinsOverTheEndpoint() {
+        MockEnvironment properties = production();
+        properties.setProperty("app.storage.driver", "s3");
+        properties.setProperty("app.storage.s3.bucket", "imagenes");
+        properties.setProperty("app.storage.s3.endpoint", "http://minio:9000");
+        properties.setProperty("app.storage.s3.public-base-url", "https://cdn.tienda.cl");
+
+        assertThat(check(AppEnvironment.PRODUCTION, properties, sentry("production"), APP_ROLE).errors()).isEmpty();
     }
 
     @Test

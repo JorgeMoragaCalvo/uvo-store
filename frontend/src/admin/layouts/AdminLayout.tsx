@@ -25,6 +25,7 @@ import { Toaster } from '@/components/ui/sonner'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { hasPermission, useAdminAuthStore } from '@/admin/stores/useAdminAuthStore'
+import { adminApi } from '@/admin/services/adminApi'
 import { cn } from '@/lib/utils'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
@@ -100,7 +101,15 @@ export default function AdminLayout() {
   const required = matches.map((m) => m.handle?.permission).filter(Boolean) as string[]
   const allowed = required.every((permission) => hasPermission(user, permission))
 
-  function handleLogout() {
+  // GAP-13. Primero el servidor invalida el token y después se borra aquí. Se espera la respuesta a
+  // propósito: si el logout llegara después de un login nuevo del mismo admin, revocaría ese token recién
+  // emitido. Si falla o se agota el tope, se sale igual; el token vence solo (8 h).
+  async function handleLogout() {
+    try {
+      await adminApi.auth.logout()
+    } catch {
+      // Sin red o sin respuesta: la sesión local se cierra de todos modos.
+    }
     logout()
     navigate('/admin/login', { replace: true })
   }
