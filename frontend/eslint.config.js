@@ -32,6 +32,35 @@ export default defineConfig([
     },
   },
   {
+    // GAP-13: el token del panel vive en localStorage, en el mismo origen que la tienda. Que hoy no haya ningún
+    // punto por donde inyectar HTML o código es lo que sostiene esa decisión, así que deja de ser costumbre y
+    // pasa a ser regla. Ver docs/decision-sesion-panel.md. Solo src/: los dobles del E2E arman HTML en Node.
+    files: ['src/**/*.{ts,tsx}'],
+    rules: {
+      'no-eval': 'error',
+      'no-implied-eval': 'error',
+      'no-new-func': 'error',
+      'no-restricted-syntax': ['error',
+        {
+          selector: "JSXAttribute[name.name='dangerouslySetInnerHTML']",
+          message: 'GAP-13: no se inserta HTML crudo; React ya escapa el texto. Ver docs/decision-sesion-panel.md.',
+        },
+        {
+          selector: "AssignmentExpression > MemberExpression.left[property.name=/^(innerHTML|outerHTML)$/]",
+          message: 'GAP-13: no se asigna innerHTML/outerHTML; usa textContent o JSX. Ver docs/decision-sesion-panel.md.',
+        },
+        {
+          selector: "CallExpression[callee.property.name='insertAdjacentHTML']",
+          message: 'GAP-13: no se inserta HTML crudo. Ver docs/decision-sesion-panel.md.',
+        },
+        {
+          selector: "CallExpression[callee.object.name='document'][callee.property.name=/^(write|writeln)$/]",
+          message: 'GAP-13: document.write inserta HTML crudo. Ver docs/decision-sesion-panel.md.',
+        },
+      ],
+    },
+  },
+  {
     // shadcn/ui-generated components: several export a *Variants cva() helper alongside the
     // component itself (button.tsx, badge.tsx, tabs.tsx) — the standard, upstream shadcn pattern.
     // Disabling this rule here (not project-wide) keeps fast-refresh strictness everywhere else.

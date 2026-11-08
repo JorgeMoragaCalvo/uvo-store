@@ -162,9 +162,28 @@ public final class ProductionConfigurationRules {
                         + "trabajo del proceso, y en un contenedor las imágenes subidas se pierden con cada despliegue. "
                         + "Pon la ruta absoluta de un volumen persistente, o usa APP_STORAGE_DRIVER=s3.");
             }
-        } else if (driver.equals("s3") && text(properties, "app.storage.s3.bucket", "").isBlank()) {
-            errors.add("APP_STORAGE_S3_BUCKET está vacío con APP_STORAGE_DRIVER=s3: la primera imagen que se suba "
-                    + "fallará. Pon el bucket donde se guardan las imágenes.");
+        } else if (driver.equals("s3")) {
+            if (text(properties, "app.storage.s3.bucket", "").isBlank()) {
+                errors.add("APP_STORAGE_S3_BUCKET está vacío con APP_STORAGE_DRIVER=s3: la primera imagen que se suba "
+                        + "fallará. Pon el bucket donde se guardan las imágenes.");
+            }
+            s3ImagesOverHttps(properties, errors);
+        }
+    }
+
+    /**
+     * GAP-13. La CSP de la SPA (frontend/csp.ts) solo deja cargar imágenes del mismo origen o por https. La URL
+     * pública de una imagen en S3 sale de la base pública, si no del endpoint, y si no de amazonaws (siempre https),
+     * igual que en {@code S3FileStorageServiceImpl.publicUrl}: con http, ninguna imagen de la tienda se vería.
+     */
+    private static void s3ImagesOverHttps(PropertyResolver properties, List<String> errors) {
+        String publicBase = text(properties, "app.storage.s3.public-base-url", "").trim();
+        String endpoint = text(properties, "app.storage.s3.endpoint", "").trim();
+        String envVar = !publicBase.isEmpty() ? "APP_STORAGE_S3_PUBLIC_BASE_URL" : "APP_STORAGE_S3_ENDPOINT";
+        String base = !publicBase.isEmpty() ? publicBase : endpoint;
+        if (!base.isEmpty() && !base.toLowerCase(Locale.ROOT).startsWith("https://")) {
+            errors.add(envVar + " es '" + base + "' y no usa https: las imágenes se publican con esa dirección, y la "
+                    + "política de seguridad de la tienda solo carga imágenes por https. Usa una dirección https.");
         }
     }
 

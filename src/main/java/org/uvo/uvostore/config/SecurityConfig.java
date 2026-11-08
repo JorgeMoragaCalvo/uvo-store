@@ -5,11 +5,17 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.annotation.web.configurers.HeadersConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.header.writers.DelegatingRequestMatcherHeaderWriter;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy;
+import org.springframework.security.web.header.writers.StaticHeadersWriter;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+import org.springframework.security.web.util.matcher.OrRequestMatcher;
 import org.uvo.uvostore.security.ApiSecurityErrorHandlers;
 import org.uvo.uvostore.security.DeferredSurfaceGateFilter;
 import org.uvo.uvostore.security.JwtAuthenticationFilter;
@@ -57,6 +63,9 @@ public class SecurityConfig {
             "/swagger-ui.html"
     };
 
+    /** GAP-13. Lo que sirve Spring son datos (JSON, imágenes), nunca una página: nada que ejecutar ni enmarcar. */
+    static final String API_CONTENT_SECURITY_POLICY = "default-src 'none'; frame-ancestors 'none'; sandbox";
+
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
@@ -94,7 +103,22 @@ public class SecurityConfig {
                 // header that stops a browser from second-guessing the content type of anything
                 // under /uploads/** — public files served from this same origin — and rendering it
                 // as HTML. This chain covers static resources too, so it applies there.
-                .headers(headers -> headers.contentTypeOptions(contentType -> {}))
+                //
+                // GAP-13: el resto. Referrer-Policy porque los enlaces de invitación y de reset llevan el token
+                // en la URL. X-Frame-Options ya salía por defecto; declarado, queda probado. Y una CSP que no
+                // deja ejecutar ni cargar nada, solo en la API y /uploads: un archivo subido que se abriera
+                // directamente no corre en el origen de la tienda, donde está el token del panel. No va en
+                // todas las rutas porque Swagger (solo en desarrollo) es una página y se rompería. La CSP de
+                // la SPA viaja en su index.html (frontend/csp.ts); ver docs/decision-sesion-panel.md.
+                .headers(headers -> headers
+                        .contentTypeOptions(contentType -> {})
+                        .frameOptions(HeadersConfigurer.FrameOptionsConfig::deny)
+                        .referrerPolicy(referrer -> referrer.policy(ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
+                        .addHeaderWriter(new DelegatingRequestMatcherHeaderWriter(
+                                new OrRequestMatcher(
+                                        PathPatternRequestMatcher.pathPattern("/api/**"),
+                                        PathPatternRequestMatcher.pathPattern("/uploads/**")),
+                                new StaticHeadersWriter("Content-Security-Policy", API_CONTENT_SECURITY_POLICY))))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_PATHS).permitAll()
                         // POS webhook/sync routes authenticate themselves via HMAC signature /

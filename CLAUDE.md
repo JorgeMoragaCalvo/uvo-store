@@ -1470,6 +1470,21 @@ consuming this API.
   network (POS-6) — see "Multi-tenancy". An optional `X-Platform-Operator` names the operator for the audit
   log (PROD-18).
 - POS integration (`/api/sync/**`, `/api/webhooks/pos/**`) uses its own HMAC/API-key filters, separate from JWT.
+- **GAP-13: the panel token stays in `localStorage`, on purpose, with mitigations.** The decision, the residual
+  risk and what the platform proxy must add are in `docs/decision-sesion-panel.md`. What it means in code:
+  - `POST /api/admin/auth/logout` bumps `tokenVersion`, which revokes *every* session of that admin. It answers
+    204 with or without a valid token. `AdminLayout` awaits it (3 s cap) before clearing local state: a logout
+    landing after a fresh login would revoke the new token.
+  - `JWT_EXPIRATION_MS` defaults to 8 h.
+  - The SPA's CSP lives in `frontend/csp.ts` and is injected into the **built** `index.html` only. Vite dev
+    needs React's inline refresh preamble, so dev and the E2E run without it. Adding any third-party script,
+    font, image host or form target means adding its exact origin there and re-checking the build in a
+    browser.
+  - `SecurityConfig` sends `Referrer-Policy`, `X-Frame-Options: DENY` and a locked-down CSP on `/api/**` and
+    `/uploads/**`.
+  - `eslint.config.js` forbids `dangerouslySetInnerHTML`, `innerHTML`/`outerHTML`, `insertAdjacentHTML`,
+    `document.write`, `eval` and `new Function` in `src/`. Those rules are what makes the decision hold; rich
+    HTML content would need a sanitizer and a review of the decision.
 
 ### External integrations — all "off until configured"
 Every external integration in this codebase follows the same pattern: a blank/missing env var leaves it inactive (log-and-skip, never throw), so the app runs fully in dev/CI without any of these configured.

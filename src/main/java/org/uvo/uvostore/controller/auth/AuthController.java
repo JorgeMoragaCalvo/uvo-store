@@ -5,6 +5,7 @@ import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -20,6 +21,7 @@ import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.CustomerRepository;
 import org.uvo.uvostore.repository.UserRepository;
 import org.uvo.uvostore.security.AccountAttemptThrottle;
+import org.uvo.uvostore.security.AuthPrincipal;
 import org.uvo.uvostore.security.JwtService;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.security.TokenVersionService;
@@ -364,6 +366,24 @@ public class AuthController {
                 .forStore(user.getStore().getId())
                 .details(AuditDiff.create().with("invitationClosed", invitationClosed)));
         return ResponseEntity.ok().build();
+    }
+
+    /**
+     * GAP-13. Cerrar sesión invalida el token en el servidor, no solo en el navegador. El panel guarda el token
+     * en localStorage, y sin esto un token copiado antes de "Salir" seguía sirviendo hasta vencer.
+     *
+     * <p>Sube {@code tokenVersion}, así que cierra todas las sesiones de ese administrador y no solo esta: el
+     * token no identifica una sesión, y distinguirlas exigiría guardar estado por sesión. Sin un token válido
+     * (vencido, revocado o de otra tienda, que JwtAuthenticationFilter ya descarta) responde 204 igual: no hay
+     * nada que cerrar, y quien llama no aprende nada del token que mandó.
+     */
+    @PostMapping("/api/admin/auth/logout")
+    public ResponseEntity<Void> adminLogout(Authentication authentication) {
+        if (authentication != null && authentication.getPrincipal() instanceof AuthPrincipal principal
+                && TokenVersionService.ADMIN.equals(principal.type())) {
+            tokenVersionService.revokeUserTokens(principal.id());
+        }
+        return ResponseEntity.noContent().build();
     }
 
     private List<String> adminAuthorities(User user) {

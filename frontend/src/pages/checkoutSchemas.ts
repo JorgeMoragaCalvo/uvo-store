@@ -1,5 +1,10 @@
 import { z } from 'zod'
 
+// GAP-13. Sin esto, zod prueba `Function('')` para decidir si compila sus validadores, y la CSP (script-src sin
+// 'unsafe-eval', ver csp.ts) lo bloquea y reporta una violación en cada checkout. Funcionaba igual, porque zod
+// cae solo al modo sin compilar, pero el aviso ensuciaba justo el reporte que dice si alguien intenta inyectar.
+z.config({ jitless: true })
+
 // A7: the checkout used to "validate" with two truthiness booleans — `customer.email &&
 // customer.firstName && ...` — which accepted a single character in every field and any string as
 // an email. It's the most important form in the app and it was the worst validated one. These are
