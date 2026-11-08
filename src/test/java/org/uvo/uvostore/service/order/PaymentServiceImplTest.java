@@ -1,11 +1,13 @@
 package org.uvo.uvostore.service.order;
 
 import com.stripe.model.PaymentIntent;
+import com.stripe.model.checkout.Session;
 import com.stripe.net.RequestOptions;
 import com.stripe.param.checkout.SessionCreateParams;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
 import org.uvo.uvostore.entity.order.Order;
 import org.uvo.uvostore.entity.order.OrderItem;
 import org.uvo.uvostore.entity.payment.EncryptionKeyHolder;
@@ -20,9 +22,16 @@ import org.uvo.uvostore.support.TestPublicUrls;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.NoSuchElementException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 // Unit test (no Spring context, no real Stripe call) for the C1/C2 fixes: PaymentServiceImpl no
@@ -196,5 +205,73 @@ class PaymentServiceImplTest {
         intent.setMetadata(java.util.Map.of("order_id", "no-es-un-numero"));
 
         assertEquals(java.util.Optional.of(paid), paymentService.orderFromIntent(intent));
+    }
+
+    @Test
+    void ignoresAnOrderOfAnotherStoreNamedInTheMetadata() {
+        // GAP-11. La metadata la escribe quien firma el evento, y cada tienda firma con su propio secreto.
+        when(orderRepository.findById(2L)).thenReturn(java.util.Optional.of(orderOfAnotherStore()));
+
+        PaymentIntent intent = new PaymentIntent();
+        intent.setId("pi_ajeno");
+        intent.setMetadata(java.util.Map.of("order_id", "2"));
+
+        assertEquals(java.util.Optional.empty(), paymentService.orderFromIntent(intent));
+    }
+
+    @Test
+    void ignoresAnOrderOfAnotherStoreFoundThroughTheColumn() {
+        when(orderRepository.findByStripePaymentIntentId("pi_ajeno")).thenReturn(java.util.Optional.of(orderOfAnotherStore()));
+
+        PaymentIntent intent = new PaymentIntent();
+        intent.setId("pi_ajeno");
+
+        assertEquals(java.util.Optional.empty(), paymentService.orderFromIntent(intent));
+    }
+
+    @Test
+    void verifyingASessionOfAnotherStoreIsNotFoundAndChangesNothing() {
+        // GAP-11. Con la clave de respaldo de la plataforma, dos tiendas comparten cuenta de Stripe y la sesión de
+        // una se puede recuperar desde el host de la otra.
+        when(orderRepository.findByStripeCheckoutSessionId("cs_ajena")).thenReturn(java.util.Optional.of(orderOfAnotherStore()));
+
+        try (MockedStatic<Session> stripe = mockStatic(Session.class)) {
+            stripe.when(() -> Session.retrieve(eq("cs_ajena"), any(RequestOptions.class))).thenReturn(paidSession("cs_ajena"));
+
+            assertThrows(NoSuchElementException.class, () -> paymentService.verifyPayment("cs_ajena"));
+        }
+
+        verify(orderStatusService, never()).markPaid(any(), any(), any());
+    }
+
+    @Test
+    void verifyingASessionOfTheOwnStoreConfirmsThePayment() {
+        Order own = orderWith(new BigDecimal("10000.00"), BigDecimal.ZERO, new BigDecimal("1900.00"), new BigDecimal("11900.00"));
+        when(orderRepository.findByStripeCheckoutSessionId("cs_propia")).thenReturn(java.util.Optional.of(own));
+        when(orderStatusService.markPaid(1L, "pi_1", BigDecimal.valueOf(11900L))).thenReturn(own);
+
+        try (MockedStatic<Session> stripe = mockStatic(Session.class)) {
+            stripe.when(() -> Session.retrieve(eq("cs_propia"), any(RequestOptions.class))).thenReturn(paidSession("cs_propia"));
+
+            paymentService.verifyPayment("cs_propia");
+        }
+
+        verify(orderStatusService).markPaid(1L, "pi_1", BigDecimal.valueOf(11900L));
+    }
+
+    private Order orderOfAnotherStore() {
+        Order order = orderWith(new BigDecimal("10000.00"), BigDecimal.ZERO, new BigDecimal("1900.00"), new BigDecimal("11900.00"));
+        order.setId(2L);
+        order.setStore(Store.builder().id(2L).name("Otra tienda").slug("otra").status(StoreStatus.ACTIVE).build());
+        return order;
+    }
+
+    private static Session paidSession(String id) {
+        Session session = new Session();
+        session.setId(id);
+        session.setPaymentStatus("paid");
+        session.setPaymentIntent("pi_1");
+        session.setAmountTotal(11900L);
+        return session;
     }
 }
