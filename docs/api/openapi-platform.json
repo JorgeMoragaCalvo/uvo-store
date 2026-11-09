@@ -1,0 +1,883 @@
+{
+  "components" : {
+    "schemas" : {
+      "CloseStoreRequest" : {
+        "properties" : {
+          "confirmSlug" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "reason" : {
+            "enum" : [ "MODULE_DEACTIVATED", "NON_PAYMENT", "MERCHANT_REQUEST", "SECURITY", "OTHER" ],
+            "type" : "string"
+          }
+        },
+        "required" : [ "reason" ],
+        "type" : "object"
+      },
+      "Owner" : {
+        "properties" : {
+          "active" : {
+            "type" : "boolean"
+          },
+          "email" : {
+            "type" : "string"
+          },
+          "invitationPending" : {
+            "type" : "boolean"
+          },
+          "invitationSentAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "userId" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "OwnerAccessRecoveryRequest" : {
+        "properties" : {
+          "email" : {
+            "maxLength" : 255,
+            "minLength" : 0,
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "PagePlatformAuditEventDto" : {
+        "properties" : {
+          "content" : {
+            "items" : {
+              "$ref" : "#/components/schemas/PlatformAuditEventDto"
+            },
+            "type" : "array"
+          },
+          "empty" : {
+            "type" : "boolean"
+          },
+          "first" : {
+            "type" : "boolean"
+          },
+          "last" : {
+            "type" : "boolean"
+          },
+          "number" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "numberOfElements" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "pageable" : {
+            "$ref" : "#/components/schemas/PageableObject"
+          },
+          "size" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "sort" : {
+            "$ref" : "#/components/schemas/SortObject"
+          },
+          "totalElements" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalPages" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "PagePlatformStoreDto" : {
+        "properties" : {
+          "content" : {
+            "items" : {
+              "$ref" : "#/components/schemas/PlatformStoreDto"
+            },
+            "type" : "array"
+          },
+          "empty" : {
+            "type" : "boolean"
+          },
+          "first" : {
+            "type" : "boolean"
+          },
+          "last" : {
+            "type" : "boolean"
+          },
+          "number" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "numberOfElements" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "pageable" : {
+            "$ref" : "#/components/schemas/PageableObject"
+          },
+          "size" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "sort" : {
+            "$ref" : "#/components/schemas/SortObject"
+          },
+          "totalElements" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalPages" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "PageableObject" : {
+        "properties" : {
+          "offset" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "pageNumber" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "pageSize" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "paged" : {
+            "type" : "boolean"
+          },
+          "sort" : {
+            "$ref" : "#/components/schemas/SortObject"
+          },
+          "unpaged" : {
+            "type" : "boolean"
+          }
+        },
+        "type" : "object"
+      },
+      "PlatformAuditEventDto" : {
+        "properties" : {
+          "action" : {
+            "enum" : [ "REFUND_REQUEST", "REFUND_ISSUE", "REFUND_RECORD_EXTERNAL", "REFUND_RESOLVE", "ORDER_CANCEL", "ORDER_PAYMENT_STATUS_UPDATE", "ORDER_STOCK_SHORTAGE_RELEASE", "OUTBOX_RETRY", "OUTBOX_RESOLVE", "PAYMENT_GATEWAY_UPDATE", "SETTINGS_MONEY_UPDATE", "SETTINGS_STRIPE_UPDATE", "POS_CONNECTION_UPDATE", "SHIPPING_METHOD_CREDENTIALS_UPDATE", "USER_CREATE", "USER_UPDATE", "USER_ACTIVATE", "USER_DEACTIVATE", "USER_DELETE", "USER_INVITATION_RESEND", "USER_INVITATION_ACCEPT", "USER_PASSWORD_RESET", "AUTH_LOGIN", "ROLE_CREATE", "ROLE_UPDATE", "ROLE_DELETE", "STORE_CREATE", "STORE_DOMAIN_UPDATE", "STORE_DOMAIN_VERIFY", "STORE_STATUS_UPDATE", "STORE_CLOSE", "STORE_OWNER_ACCESS_RECOVERY", "COUPON_CREATE", "COUPON_UPDATE", "COUPON_DELETE", "COUPON_STATUS_TOGGLE", "SHIPPING_RATE_CREATE", "SHIPPING_RATE_UPDATE", "SHIPPING_RATE_DELETE", "SHIPPING_RATE_STATUS_TOGGLE", "SHIPPING_METHOD_CREATE", "SHIPPING_METHOD_UPDATE", "SHIPPING_METHOD_DELETE", "SHIPPING_METHOD_STATUS_TOGGLE", "PRODUCT_PRICE_UPDATE", "VARIATION_PRICE_UPDATE" ],
+            "type" : "string"
+          },
+          "actorId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "actorLabel" : {
+            "type" : "string"
+          },
+          "actorType" : {
+            "enum" : [ "ADMIN", "PLATFORM", "SYSTEM" ],
+            "type" : "string"
+          },
+          "details" : {
+            "additionalProperties" : {
+              "type" : "object"
+            },
+            "type" : "object"
+          },
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "occurredAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "requestId" : {
+            "type" : "string"
+          },
+          "result" : {
+            "enum" : [ "SUCCESS", "FAILURE" ],
+            "type" : "string"
+          },
+          "storeId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "targetId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "targetType" : {
+            "enum" : [ "STORE", "USER", "ROLE", "ORDER", "PAYMENT_GATEWAY_CONFIG", "POS_CONNECTION", "SHIPPING_METHOD", "SHIPPING_RATE", "COUPON", "PRODUCT", "PRODUCT_VARIATION" ],
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "PlatformStoreDto" : {
+        "properties" : {
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "domain" : {
+            "type" : "string"
+          },
+          "domainVerifiedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "owner" : {
+            "$ref" : "#/components/schemas/Owner"
+          },
+          "posConnections" : {
+            "items" : {
+              "$ref" : "#/components/schemas/PosLink"
+            },
+            "type" : "array"
+          },
+          "slug" : {
+            "type" : "string"
+          },
+          "status" : {
+            "enum" : [ "ACTIVE", "SUSPENDED", "CLOSED" ],
+            "type" : "string"
+          },
+          "statusChangedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "storefrontUrl" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "PosLink" : {
+        "properties" : {
+          "active" : {
+            "type" : "boolean"
+          },
+          "companyId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "companyName" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "PosLinkRequest" : {
+        "properties" : {
+          "apiKey" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "apiUrl" : {
+            "minLength" : 1,
+            "pattern" : "^https?://\\S+$",
+            "type" : "string"
+          },
+          "companyId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "companyName" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "webhookSecret" : {
+            "maxLength" : 2147483647,
+            "minLength" : 32,
+            "type" : "string"
+          }
+        },
+        "required" : [ "companyId" ],
+        "type" : "object"
+      },
+      "SetDomainVerifiedRequest" : {
+        "properties" : {
+          "verified" : {
+            "type" : "boolean"
+          }
+        },
+        "required" : [ "verified" ],
+        "type" : "object"
+      },
+      "SortObject" : {
+        "properties" : {
+          "empty" : {
+            "type" : "boolean"
+          },
+          "sorted" : {
+            "type" : "boolean"
+          },
+          "unsorted" : {
+            "type" : "boolean"
+          }
+        },
+        "type" : "object"
+      },
+      "StoreOnboardingRequest" : {
+        "properties" : {
+          "adminEmail" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "adminName" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "domain" : {
+            "pattern" : "^$|^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$",
+            "type" : "string"
+          },
+          "pos" : {
+            "$ref" : "#/components/schemas/PosLinkRequest"
+          },
+          "slug" : {
+            "minLength" : 1,
+            "pattern" : "^[a-z0-9]([a-z0-9-]{1,61}[a-z0-9])?$",
+            "type" : "string"
+          },
+          "storeName" : {
+            "minLength" : 1,
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "StoreOnboardingResponse" : {
+        "properties" : {
+          "adminEmail" : {
+            "type" : "string"
+          },
+          "adminUrl" : {
+            "type" : "string"
+          },
+          "adminUserId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "created" : {
+            "type" : "boolean"
+          },
+          "domain" : {
+            "type" : "string"
+          },
+          "domainVerifiedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "slug" : {
+            "type" : "string"
+          },
+          "status" : {
+            "enum" : [ "ACTIVE", "SUSPENDED", "CLOSED" ],
+            "type" : "string"
+          },
+          "storeId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "storeName" : {
+            "type" : "string"
+          },
+          "storefrontUrl" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "SuspendStoreRequest" : {
+        "properties" : {
+          "reason" : {
+            "enum" : [ "MODULE_DEACTIVATED", "NON_PAYMENT", "MERCHANT_REQUEST", "SECURITY", "OTHER" ],
+            "type" : "string"
+          }
+        },
+        "required" : [ "reason" ],
+        "type" : "object"
+      },
+      "UpdateStoreDomainRequest" : {
+        "properties" : {
+          "domain" : {
+            "minLength" : 1,
+            "pattern" : "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      }
+    },
+    "securitySchemes" : {
+      "bearerAuth" : {
+        "bearerFormat" : "JWT",
+        "description" : "Token JWT emitido por /api/admin/auth/login o /api/customer/auth/login — compartido por las superficies admin y cliente (JwtAuthenticationFilter).",
+        "scheme" : "bearer",
+        "type" : "http"
+      },
+      "platformApiKey" : {
+        "description" : "Clave compartida del operador de la plataforma, usada solo por /api/platform/** (alta de tiendas). No es una credencial de cliente.",
+        "in" : "header",
+        "name" : "X-Platform-Key",
+        "type" : "apiKey"
+      }
+    }
+  },
+  "info" : {
+    "description" : "API de UvoStore, una plataforma SaaS de e-commerce multi-tenant. Agrupa cinco superficies con distinta autenticación:\n\n- **Pública** (`/api/v1/**`): catálogo, carrito y checkout del storefront, sin autenticación.\n- **Admin** (`/api/admin/**`): panel de administración de cada tienda, JWT bearer con rol ADMIN.\n- **Cliente** (`/api/customer/**`): cuenta y direcciones del comprador, JWT bearer con rol CUSTOMER.\n- **POS** (`/api/webhooks/pos/**`, `/api/sync/**`): integración con UvoPOS, firma HMAC (`X-Signature`/`X-Company-ID`/`X-Timestamp`) o API key — no probable con el botón \"Authorize\" de esta UI, ver la documentación de cada endpoint.\n- **Plataforma** (`/api/platform/**`): alta y ciclo de vida de las tiendas por el equipo operador, header `X-Platform-Key`, solo desde la red privada.\n",
+    "title" : "UvoStore API",
+    "version" : "0.0.1-SNAPSHOT"
+  },
+  "openapi" : "3.1.0",
+  "paths" : {
+    "/api/platform/stores" : {
+      "get" : {
+        "operationId" : "index",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "search",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "status",
+          "required" : false,
+          "schema" : {
+            "enum" : [ "ACTIVE", "SUSPENDED", "CLOSED" ],
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "companyId",
+          "required" : false,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "query",
+          "name" : "sortField",
+          "required" : false,
+          "schema" : {
+            "default" : "createdAt",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "sortDirection",
+          "required" : false,
+          "schema" : {
+            "default" : "desc",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "page",
+          "required" : false,
+          "schema" : {
+            "default" : 1,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PagePlatformStoreDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "platformApiKey" : [ ]
+        } ],
+        "tags" : [ "Operación de tiendas (plataforma)" ]
+      },
+      "post" : {
+        "operationId" : "create",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/StoreOnboardingRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/StoreOnboardingResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "platformApiKey" : [ ]
+        } ],
+        "tags" : [ "Alta de tiendas (plataforma)" ]
+      }
+    },
+    "/api/platform/stores/{id}" : {
+      "get" : {
+        "operationId" : "show",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PlatformStoreDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "platformApiKey" : [ ]
+        } ],
+        "tags" : [ "Operación de tiendas (plataforma)" ]
+      }
+    },
+    "/api/platform/stores/{id}/audit-events" : {
+      "get" : {
+        "operationId" : "auditEvents",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "query",
+          "name" : "action",
+          "required" : false,
+          "schema" : {
+            "enum" : [ "REFUND_REQUEST", "REFUND_ISSUE", "REFUND_RECORD_EXTERNAL", "REFUND_RESOLVE", "ORDER_CANCEL", "ORDER_PAYMENT_STATUS_UPDATE", "ORDER_STOCK_SHORTAGE_RELEASE", "OUTBOX_RETRY", "OUTBOX_RESOLVE", "PAYMENT_GATEWAY_UPDATE", "SETTINGS_MONEY_UPDATE", "SETTINGS_STRIPE_UPDATE", "POS_CONNECTION_UPDATE", "SHIPPING_METHOD_CREDENTIALS_UPDATE", "USER_CREATE", "USER_UPDATE", "USER_ACTIVATE", "USER_DEACTIVATE", "USER_DELETE", "USER_INVITATION_RESEND", "USER_INVITATION_ACCEPT", "USER_PASSWORD_RESET", "AUTH_LOGIN", "ROLE_CREATE", "ROLE_UPDATE", "ROLE_DELETE", "STORE_CREATE", "STORE_DOMAIN_UPDATE", "STORE_DOMAIN_VERIFY", "STORE_STATUS_UPDATE", "STORE_CLOSE", "STORE_OWNER_ACCESS_RECOVERY", "COUPON_CREATE", "COUPON_UPDATE", "COUPON_DELETE", "COUPON_STATUS_TOGGLE", "SHIPPING_RATE_CREATE", "SHIPPING_RATE_UPDATE", "SHIPPING_RATE_DELETE", "SHIPPING_RATE_STATUS_TOGGLE", "SHIPPING_METHOD_CREATE", "SHIPPING_METHOD_UPDATE", "SHIPPING_METHOD_DELETE", "SHIPPING_METHOD_STATUS_TOGGLE", "PRODUCT_PRICE_UPDATE", "VARIATION_PRICE_UPDATE" ],
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "from",
+          "required" : false,
+          "schema" : {
+            "format" : "date-time",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "to",
+          "required" : false,
+          "schema" : {
+            "format" : "date-time",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "page",
+          "required" : false,
+          "schema" : {
+            "default" : 1,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PagePlatformAuditEventDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "platformApiKey" : [ ]
+        } ],
+        "tags" : [ "Operación de tiendas (plataforma)" ]
+      }
+    },
+    "/api/platform/stores/{id}/close" : {
+      "post" : {
+        "operationId" : "close",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CloseStoreRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PlatformStoreDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "platformApiKey" : [ ]
+        } ],
+        "tags" : [ "Operación de tiendas (plataforma)" ]
+      }
+    },
+    "/api/platform/stores/{id}/domain" : {
+      "put" : {
+        "operationId" : "updateDomain",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/UpdateStoreDomainRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/StoreOnboardingResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "platformApiKey" : [ ]
+        } ],
+        "tags" : [ "Alta de tiendas (plataforma)" ]
+      }
+    },
+    "/api/platform/stores/{id}/domain/verified" : {
+      "put" : {
+        "operationId" : "setDomainVerified",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/SetDomainVerifiedRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/StoreOnboardingResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "platformApiKey" : [ ]
+        } ],
+        "tags" : [ "Alta de tiendas (plataforma)" ]
+      }
+    },
+    "/api/platform/stores/{id}/owner/access-recovery" : {
+      "post" : {
+        "operationId" : "recoverOwnerAccess",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/OwnerAccessRecoveryRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PlatformStoreDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "platformApiKey" : [ ]
+        } ],
+        "tags" : [ "Operación de tiendas (plataforma)" ]
+      }
+    },
+    "/api/platform/stores/{id}/reactivate" : {
+      "post" : {
+        "operationId" : "reactivate",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PlatformStoreDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "platformApiKey" : [ ]
+        } ],
+        "tags" : [ "Operación de tiendas (plataforma)" ]
+      }
+    },
+    "/api/platform/stores/{id}/suspend" : {
+      "post" : {
+        "operationId" : "suspend",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/SuspendStoreRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PlatformStoreDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "platformApiKey" : [ ]
+        } ],
+        "tags" : [ "Operación de tiendas (plataforma)" ]
+      }
+    }
+  },
+  "servers" : [ {
+    "description" : "Mismo origen de la tienda",
+    "url" : "/"
+  } ],
+  "tags" : [ {
+    "description" : "Lista, suspensión, cierre, acceso del dueño y auditoría de las tiendas; header X-Platform-Key, solo desde la red privada",
+    "name" : "Operación de tiendas (plataforma)"
+  }, {
+    "description" : "Creación de tiendas nuevas por el equipo operador o por UvoPOS, header X-Platform-Key, solo desde la red privada",
+    "name" : "Alta de tiendas (plataforma)"
+  } ]
+}

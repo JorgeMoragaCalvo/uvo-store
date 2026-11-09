@@ -1,0 +1,1789 @@
+{
+  "components" : {
+    "schemas" : {
+      "AttributeDto" : {
+        "properties" : {
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "slug" : {
+            "type" : "string"
+          },
+          "type" : {
+            "type" : "string"
+          },
+          "values" : {
+            "items" : {
+              "$ref" : "#/components/schemas/AttributeValueDto"
+            },
+            "type" : "array"
+          }
+        },
+        "type" : "object"
+      },
+      "AttributeValueDto" : {
+        "properties" : {
+          "attributeId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "colorHex" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "slug" : {
+            "type" : "string"
+          },
+          "sortOrder" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "value" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "CartCalculateRequest" : {
+        "properties" : {
+          "commune" : {
+            "type" : "string"
+          },
+          "couponCode" : {
+            "type" : "string"
+          },
+          "items" : {
+            "items" : {
+              "$ref" : "#/components/schemas/CartItemRequest"
+            },
+            "minItems" : 1,
+            "type" : "array"
+          },
+          "region" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "CartCalculationResult" : {
+        "properties" : {
+          "couponApplied" : {
+            "type" : "boolean"
+          },
+          "discountAmount" : {
+            "type" : "number"
+          },
+          "freeShippingThreshold" : {
+            "type" : "number"
+          },
+          "pricesIncludeTax" : {
+            "type" : "boolean"
+          },
+          "shippingAvailable" : {
+            "type" : "boolean"
+          },
+          "shippingCost" : {
+            "type" : "number"
+          },
+          "shippingEnabled" : {
+            "type" : "boolean"
+          },
+          "subtotalWithTax" : {
+            "type" : "number"
+          },
+          "subtotalWithoutTax" : {
+            "type" : "number"
+          },
+          "taxAmount" : {
+            "type" : "number"
+          },
+          "taxRate" : {
+            "type" : "number"
+          },
+          "total" : {
+            "type" : "number"
+          }
+        },
+        "type" : "object"
+      },
+      "CartItemRequest" : {
+        "properties" : {
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "quantity" : {
+            "format" : "int32",
+            "minimum" : 1,
+            "type" : "integer"
+          },
+          "type" : {
+            "pattern" : "product|variation",
+            "type" : "string"
+          }
+        },
+        "required" : [ "id", "type" ],
+        "type" : "object"
+      },
+      "CartValidateRequest" : {
+        "properties" : {
+          "items" : {
+            "items" : {
+              "$ref" : "#/components/schemas/CartItemRequest"
+            },
+            "minItems" : 1,
+            "type" : "array"
+          }
+        },
+        "type" : "object"
+      },
+      "CartValidatedItemDto" : {
+        "properties" : {
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "image" : {
+            "type" : "string"
+          },
+          "maxQuantity" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "price" : {
+            "type" : "number"
+          },
+          "stock" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "type" : {
+            "type" : "string"
+          },
+          "variation" : {
+            "additionalProperties" : {
+              "type" : "string"
+            },
+            "type" : "object"
+          }
+        },
+        "type" : "object"
+      },
+      "CartValidationResult" : {
+        "properties" : {
+          "errors" : {
+            "additionalProperties" : {
+              "type" : "string"
+            },
+            "type" : "object"
+          },
+          "items" : {
+            "items" : {
+              "$ref" : "#/components/schemas/CartValidatedItemDto"
+            },
+            "type" : "array"
+          },
+          "valid" : {
+            "type" : "boolean"
+          }
+        },
+        "type" : "object"
+      },
+      "CategoryDto" : {
+        "properties" : {
+          "active" : {
+            "type" : "boolean"
+          },
+          "children" : {
+            "items" : {
+              "$ref" : "#/components/schemas/CategoryRefDto"
+            },
+            "type" : "array"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "image" : {
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "parent" : {
+            "$ref" : "#/components/schemas/CategoryRefDto"
+          },
+          "parentId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "productsCount" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "slug" : {
+            "type" : "string"
+          },
+          "sortOrder" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "CategoryRefDto" : {
+        "properties" : {
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "slug" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "CheckoutAddressRequest" : {
+        "properties" : {
+          "addressLine1" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "addressLine2" : {
+            "type" : "string"
+          },
+          "city" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "country" : {
+            "maxLength" : 2,
+            "minLength" : 0,
+            "type" : "string"
+          },
+          "postalCode" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "state" : {
+            "minLength" : 1,
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "CheckoutConfigDto" : {
+        "properties" : {
+          "allowGuestCheckout" : {
+            "type" : "boolean"
+          },
+          "currency" : {
+            "type" : "string"
+          },
+          "currencySymbol" : {
+            "type" : "string"
+          },
+          "defaultShippingCost" : {
+            "type" : "number"
+          },
+          "freeShippingEnabled" : {
+            "type" : "boolean"
+          },
+          "freeShippingThreshold" : {
+            "type" : "number"
+          },
+          "mercadopagoEnabled" : {
+            "type" : "boolean"
+          },
+          "requirePhone" : {
+            "type" : "boolean"
+          },
+          "shippingEnabled" : {
+            "type" : "boolean"
+          },
+          "stripeEnabled" : {
+            "type" : "boolean"
+          },
+          "stripePublicKey" : {
+            "type" : "string"
+          },
+          "taxRate" : {
+            "type" : "number"
+          },
+          "webpayEnabled" : {
+            "type" : "boolean"
+          }
+        },
+        "type" : "object"
+      },
+      "CheckoutCustomerRequest" : {
+        "properties" : {
+          "email" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "firstName" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "lastName" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "phone" : {
+            "minLength" : 1,
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "CheckoutRequest" : {
+        "properties" : {
+          "commune" : {
+            "type" : "string"
+          },
+          "couponCode" : {
+            "type" : "string"
+          },
+          "customer" : {
+            "$ref" : "#/components/schemas/CheckoutCustomerRequest"
+          },
+          "customerNotes" : {
+            "maxLength" : 1000,
+            "minLength" : 0,
+            "type" : "string"
+          },
+          "expectedTotal" : {
+            "type" : "number"
+          },
+          "items" : {
+            "items" : {
+              "$ref" : "#/components/schemas/CartItemRequest"
+            },
+            "minItems" : 1,
+            "type" : "array"
+          },
+          "paymentMethod" : {
+            "minLength" : 1,
+            "pattern" : "manual|stripe|webpay|mercadopago",
+            "type" : "string"
+          },
+          "region" : {
+            "type" : "string"
+          },
+          "shippingAddress" : {
+            "$ref" : "#/components/schemas/CheckoutAddressRequest"
+          }
+        },
+        "required" : [ "customer", "shippingAddress" ],
+        "type" : "object"
+      },
+      "CheckoutSessionResult" : {
+        "properties" : {
+          "sessionId" : {
+            "type" : "string"
+          },
+          "url" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "Commune" : {
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "CreateCheckoutSessionRequest" : {
+        "properties" : {
+          "orderId" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "required" : [ "orderId" ],
+        "type" : "object"
+      },
+      "HomeBannerDto" : {
+        "properties" : {
+          "active" : {
+            "type" : "boolean"
+          },
+          "ctaLink" : {
+            "type" : "string"
+          },
+          "ctaNewTab" : {
+            "type" : "boolean"
+          },
+          "ctaSecondaryLink" : {
+            "type" : "string"
+          },
+          "ctaSecondaryText" : {
+            "type" : "string"
+          },
+          "ctaText" : {
+            "type" : "string"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "image" : {
+            "type" : "string"
+          },
+          "mobileImage" : {
+            "type" : "string"
+          },
+          "overlayColor" : {
+            "type" : "string"
+          },
+          "overlayOpacity" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "sortOrder" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "subtitle" : {
+            "type" : "string"
+          },
+          "textColor" : {
+            "type" : "string"
+          },
+          "textPosition" : {
+            "type" : "string"
+          },
+          "title" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "MercadoPagoCreateRequest" : {
+        "properties" : {
+          "orderId" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "required" : [ "orderId" ],
+        "type" : "object"
+      },
+      "MercadoPagoPreferenceResult" : {
+        "properties" : {
+          "initPoint" : {
+            "type" : "string"
+          },
+          "preferenceId" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "OrderConfirmation" : {
+        "properties" : {
+          "orderId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "orderNumber" : {
+            "type" : "string"
+          },
+          "total" : {
+            "type" : "number"
+          }
+        },
+        "type" : "object"
+      },
+      "OrderTrackingDto" : {
+        "properties" : {
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "deliveredAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "fulfillmentStatus" : {
+            "type" : "string"
+          },
+          "itemsCount" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "orderNumber" : {
+            "type" : "string"
+          },
+          "paymentStatus" : {
+            "type" : "string"
+          },
+          "shippedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "total" : {
+            "type" : "number"
+          },
+          "trackingNumber" : {
+            "type" : "string"
+          },
+          "trackingUrl" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "PageProductDto" : {
+        "properties" : {
+          "content" : {
+            "items" : {
+              "$ref" : "#/components/schemas/ProductDto"
+            },
+            "type" : "array"
+          },
+          "empty" : {
+            "type" : "boolean"
+          },
+          "first" : {
+            "type" : "boolean"
+          },
+          "last" : {
+            "type" : "boolean"
+          },
+          "number" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "numberOfElements" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "pageable" : {
+            "$ref" : "#/components/schemas/PageableObject"
+          },
+          "size" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "sort" : {
+            "$ref" : "#/components/schemas/SortObject"
+          },
+          "totalElements" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalPages" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "PageableObject" : {
+        "properties" : {
+          "offset" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "pageNumber" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "pageSize" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "paged" : {
+            "type" : "boolean"
+          },
+          "sort" : {
+            "$ref" : "#/components/schemas/SortObject"
+          },
+          "unpaged" : {
+            "type" : "boolean"
+          }
+        },
+        "type" : "object"
+      },
+      "PaymentVerificationResult" : {
+        "properties" : {
+          "orderId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "orderNumber" : {
+            "type" : "string"
+          },
+          "orderPaymentStatus" : {
+            "type" : "string"
+          },
+          "sessionPaymentStatus" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "ProductDto" : {
+        "properties" : {
+          "active" : {
+            "type" : "boolean"
+          },
+          "category" : {
+            "$ref" : "#/components/schemas/CategoryRefDto"
+          },
+          "compareAtPrice" : {
+            "type" : "number"
+          },
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "featured" : {
+            "type" : "boolean"
+          },
+          "featuredImage" : {
+            "type" : "string"
+          },
+          "formattedPrice" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "images" : {
+            "items" : {
+              "$ref" : "#/components/schemas/ProductImageDto"
+            },
+            "type" : "array"
+          },
+          "inStock" : {
+            "type" : "boolean"
+          },
+          "manageStock" : {
+            "type" : "boolean"
+          },
+          "metaDescription" : {
+            "type" : "string"
+          },
+          "metaTitle" : {
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "price" : {
+            "type" : "number"
+          },
+          "productType" : {
+            "type" : "string"
+          },
+          "shortDescription" : {
+            "type" : "string"
+          },
+          "sku" : {
+            "type" : "string"
+          },
+          "slug" : {
+            "type" : "string"
+          },
+          "stock" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "updatedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "variations" : {
+            "items" : {
+              "$ref" : "#/components/schemas/ProductVariationDto"
+            },
+            "type" : "array"
+          },
+          "variationsCount" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "ProductImageDto" : {
+        "properties" : {
+          "alt" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "isFeatured" : {
+            "type" : "boolean"
+          },
+          "thumbnail" : {
+            "type" : "string"
+          },
+          "url" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "ProductVariationDto" : {
+        "properties" : {
+          "active" : {
+            "type" : "boolean"
+          },
+          "attributeIds" : {
+            "additionalProperties" : {
+              "format" : "int64",
+              "type" : "integer"
+            },
+            "type" : "object"
+          },
+          "attributes" : {
+            "additionalProperties" : {
+              "type" : "string"
+            },
+            "type" : "object"
+          },
+          "compareAtPrice" : {
+            "type" : "number"
+          },
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "formattedPrice" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "image" : {
+            "type" : "string"
+          },
+          "inStock" : {
+            "type" : "boolean"
+          },
+          "price" : {
+            "type" : "number"
+          },
+          "productId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "sku" : {
+            "type" : "string"
+          },
+          "stock" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "weight" : {
+            "type" : "number"
+          }
+        },
+        "type" : "object"
+      },
+      "PublicStoreSettingsDto" : {
+        "properties" : {
+          "accentColor" : {
+            "type" : "string"
+          },
+          "benefit1Description" : {
+            "type" : "string"
+          },
+          "benefit1Icon" : {
+            "type" : "string"
+          },
+          "benefit1Title" : {
+            "type" : "string"
+          },
+          "benefit2Description" : {
+            "type" : "string"
+          },
+          "benefit2Icon" : {
+            "type" : "string"
+          },
+          "benefit2Title" : {
+            "type" : "string"
+          },
+          "benefit3Description" : {
+            "type" : "string"
+          },
+          "benefit3Icon" : {
+            "type" : "string"
+          },
+          "benefit3Title" : {
+            "type" : "string"
+          },
+          "benefit4Description" : {
+            "type" : "string"
+          },
+          "benefit4Icon" : {
+            "type" : "string"
+          },
+          "benefit4Title" : {
+            "type" : "string"
+          },
+          "categoriesLimit" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "categoriesTitle" : {
+            "type" : "string"
+          },
+          "contactEmail" : {
+            "type" : "string"
+          },
+          "contactPhone" : {
+            "type" : "string"
+          },
+          "currency" : {
+            "type" : "string"
+          },
+          "currencySymbol" : {
+            "type" : "string"
+          },
+          "darkColor" : {
+            "type" : "string"
+          },
+          "dealsLimit" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "dealsTitle" : {
+            "type" : "string"
+          },
+          "defaultShippingCost" : {
+            "type" : "string"
+          },
+          "facebookUrl" : {
+            "type" : "string"
+          },
+          "featuredProductsLimit" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "featuredProductsTitle" : {
+            "type" : "string"
+          },
+          "freeShippingEnabled" : {
+            "type" : "boolean"
+          },
+          "freeShippingThreshold" : {
+            "type" : "string"
+          },
+          "heroAutoplaySpeed" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "instagramUrl" : {
+            "type" : "string"
+          },
+          "metaDescription" : {
+            "type" : "string"
+          },
+          "metaKeywords" : {
+            "type" : "string"
+          },
+          "metaTitle" : {
+            "type" : "string"
+          },
+          "newProductsDays" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "newProductsLimit" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "newProductsTitle" : {
+            "type" : "string"
+          },
+          "pricesIncludeTax" : {
+            "type" : "boolean"
+          },
+          "primaryColor" : {
+            "type" : "string"
+          },
+          "secondaryColor" : {
+            "type" : "string"
+          },
+          "shippingEnabled" : {
+            "type" : "boolean"
+          },
+          "showBenefits" : {
+            "type" : "boolean"
+          },
+          "showCategories" : {
+            "type" : "boolean"
+          },
+          "showDeals" : {
+            "type" : "boolean"
+          },
+          "showFeaturedProducts" : {
+            "type" : "boolean"
+          },
+          "showHero" : {
+            "type" : "boolean"
+          },
+          "showNewProducts" : {
+            "type" : "boolean"
+          },
+          "storeDescription" : {
+            "type" : "string"
+          },
+          "storeFavicon" : {
+            "type" : "string"
+          },
+          "storeLogo" : {
+            "type" : "string"
+          },
+          "storeName" : {
+            "type" : "string"
+          },
+          "taxRate" : {
+            "type" : "string"
+          },
+          "tiktokUrl" : {
+            "type" : "string"
+          },
+          "twitterUrl" : {
+            "type" : "string"
+          },
+          "whatsappNumber" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "Region" : {
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "communes" : {
+            "items" : {
+              "$ref" : "#/components/schemas/Commune"
+            },
+            "type" : "array"
+          },
+          "name" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "ShippingCoverageDto" : {
+        "properties" : {
+          "communes" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "region" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "SortObject" : {
+        "properties" : {
+          "empty" : {
+            "type" : "boolean"
+          },
+          "sorted" : {
+            "type" : "boolean"
+          },
+          "unsorted" : {
+            "type" : "boolean"
+          }
+        },
+        "type" : "object"
+      },
+      "VerifyPaymentRequest" : {
+        "properties" : {
+          "sessionId" : {
+            "minLength" : 1,
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "WebpayCreateRequest" : {
+        "properties" : {
+          "orderId" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "required" : [ "orderId" ],
+        "type" : "object"
+      },
+      "WebpayCreateResult" : {
+        "properties" : {
+          "token" : {
+            "type" : "string"
+          },
+          "url" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      }
+    },
+    "securitySchemes" : {
+      "bearerAuth" : {
+        "bearerFormat" : "JWT",
+        "description" : "Token JWT emitido por /api/admin/auth/login o /api/customer/auth/login — compartido por las superficies admin y cliente (JwtAuthenticationFilter).",
+        "scheme" : "bearer",
+        "type" : "http"
+      },
+      "platformApiKey" : {
+        "description" : "Clave compartida del operador de la plataforma, usada solo por /api/platform/** (alta de tiendas). No es una credencial de cliente.",
+        "in" : "header",
+        "name" : "X-Platform-Key",
+        "type" : "apiKey"
+      }
+    }
+  },
+  "info" : {
+    "description" : "API de UvoStore, una plataforma SaaS de e-commerce multi-tenant. Agrupa cinco superficies con distinta autenticación:\n\n- **Pública** (`/api/v1/**`): catálogo, carrito y checkout del storefront, sin autenticación.\n- **Admin** (`/api/admin/**`): panel de administración de cada tienda, JWT bearer con rol ADMIN.\n- **Cliente** (`/api/customer/**`): cuenta y direcciones del comprador, JWT bearer con rol CUSTOMER.\n- **POS** (`/api/webhooks/pos/**`, `/api/sync/**`): integración con UvoPOS, firma HMAC (`X-Signature`/`X-Company-ID`/`X-Timestamp`) o API key — no probable con el botón \"Authorize\" de esta UI, ver la documentación de cada endpoint.\n- **Plataforma** (`/api/platform/**`): alta y ciclo de vida de las tiendas por el equipo operador, header `X-Platform-Key`, solo desde la red privada.\n",
+    "title" : "UvoStore API",
+    "version" : "0.0.1-SNAPSHOT"
+  },
+  "openapi" : "3.1.0",
+  "paths" : {
+    "/api/v1/attributes" : {
+      "get" : {
+        "operationId" : "index_2",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/AttributeDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Atributos (público)" ]
+      }
+    },
+    "/api/v1/cart/calculate" : {
+      "post" : {
+        "operationId" : "calculate",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CartCalculateRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CartCalculationResult"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Carrito (público)" ]
+      }
+    },
+    "/api/v1/cart/validate" : {
+      "post" : {
+        "operationId" : "validate",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CartValidateRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CartValidationResult"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Carrito (público)" ]
+      }
+    },
+    "/api/v1/categories" : {
+      "get" : {
+        "operationId" : "index_1",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/CategoryDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Categorías (público)" ]
+      }
+    },
+    "/api/v1/categories/{slug}" : {
+      "get" : {
+        "operationId" : "show_1",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "slug",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CategoryDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Categorías (público)" ]
+      }
+    },
+    "/api/v1/checkout" : {
+      "post" : {
+        "operationId" : "store",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CheckoutRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/OrderConfirmation"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Checkout (público)" ]
+      }
+    },
+    "/api/v1/checkout/config" : {
+      "get" : {
+        "operationId" : "config",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CheckoutConfigDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Checkout (público)" ]
+      }
+    },
+    "/api/v1/create-checkout-session" : {
+      "post" : {
+        "operationId" : "createCheckoutSession",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CreateCheckoutSessionRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CheckoutSessionResult"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Pagos Stripe (público)" ]
+      }
+    },
+    "/api/v1/geo/regions" : {
+      "get" : {
+        "operationId" : "regions",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/Region"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Geografía (público)" ]
+      }
+    },
+    "/api/v1/home-banners" : {
+      "get" : {
+        "operationId" : "homeBanners",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/HomeBannerDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Configuración de tienda (público)" ]
+      }
+    },
+    "/api/v1/mercadopago/create-preference" : {
+      "post" : {
+        "operationId" : "createPreference",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/MercadoPagoCreateRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/MercadoPagoPreferenceResult"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "MercadoPago (público)" ]
+      }
+    },
+    "/api/v1/mercadopago/webhook" : {
+      "post" : {
+        "operationId" : "webhook_1",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "additionalProperties" : {
+                    "type" : "boolean"
+                  },
+                  "type" : "object"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "MercadoPago (público)" ]
+      }
+    },
+    "/api/v1/orders/track" : {
+      "get" : {
+        "operationId" : "track",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "order_number",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/OrderTrackingDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Seguimiento de pedidos (público)" ]
+      }
+    },
+    "/api/v1/products" : {
+      "get" : {
+        "operationId" : "index",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "search",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "category",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "type",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "featured",
+          "required" : false,
+          "schema" : {
+            "default" : false,
+            "type" : "boolean"
+          }
+        }, {
+          "in" : "query",
+          "name" : "in_stock",
+          "required" : false,
+          "schema" : {
+            "default" : false,
+            "type" : "boolean"
+          }
+        }, {
+          "in" : "query",
+          "name" : "is_new",
+          "required" : false,
+          "schema" : {
+            "default" : false,
+            "type" : "boolean"
+          }
+        }, {
+          "in" : "query",
+          "name" : "on_sale",
+          "required" : false,
+          "schema" : {
+            "default" : false,
+            "type" : "boolean"
+          }
+        }, {
+          "in" : "query",
+          "name" : "min_price",
+          "required" : false,
+          "schema" : {
+            "type" : "number"
+          }
+        }, {
+          "in" : "query",
+          "name" : "max_price",
+          "required" : false,
+          "schema" : {
+            "type" : "number"
+          }
+        }, {
+          "in" : "query",
+          "name" : "sort_by",
+          "required" : false,
+          "schema" : {
+            "default" : "createdAt",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "sort_order",
+          "required" : false,
+          "schema" : {
+            "default" : "desc",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "per_page",
+          "required" : false,
+          "schema" : {
+            "default" : 12,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "query",
+          "name" : "page",
+          "required" : false,
+          "schema" : {
+            "default" : 1,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PageProductDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Catálogo (público)" ]
+      }
+    },
+    "/api/v1/products/featured" : {
+      "get" : {
+        "operationId" : "featured",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/ProductDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Catálogo (público)" ]
+      }
+    },
+    "/api/v1/products/{slug}" : {
+      "get" : {
+        "operationId" : "show",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "slug",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProductDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Catálogo (público)" ]
+      }
+    },
+    "/api/v1/products/{slug}/related" : {
+      "get" : {
+        "operationId" : "related",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "slug",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/ProductDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Catálogo (público)" ]
+      }
+    },
+    "/api/v1/shipping/coverage" : {
+      "get" : {
+        "operationId" : "coverage",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/ShippingCoverageDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Envíos (público)" ]
+      }
+    },
+    "/api/v1/store-settings" : {
+      "get" : {
+        "operationId" : "storeSettings",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PublicStoreSettingsDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Configuración de tienda (público)" ]
+      }
+    },
+    "/api/v1/stripe/webhook" : {
+      "post" : {
+        "operationId" : "webhook",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "additionalProperties" : {
+                    "type" : "boolean"
+                  },
+                  "type" : "object"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Pagos Stripe (público)" ]
+      }
+    },
+    "/api/v1/verify-payment" : {
+      "post" : {
+        "operationId" : "verifyPayment",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/VerifyPaymentRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PaymentVerificationResult"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Pagos Stripe (público)" ]
+      }
+    },
+    "/api/v1/webpay/create" : {
+      "post" : {
+        "operationId" : "create",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/WebpayCreateRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/WebpayCreateResult"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Webpay (público)" ]
+      }
+    },
+    "/api/v1/webpay/return" : {
+      "post" : {
+        "operationId" : "handleReturn",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "token_ws",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "TBK_TOKEN",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Webpay (público)" ]
+      }
+    }
+  },
+  "servers" : [ {
+    "description" : "Mismo origen de la tienda",
+    "url" : "/"
+  } ],
+  "tags" : [ {
+    "description" : "Cobertura de envío del storefront, sin autenticación",
+    "name" : "Envíos (público)"
+  }, {
+    "description" : "Checkout Session y verificación de pago con Stripe",
+    "name" : "Pagos Stripe (público)"
+  }, {
+    "description" : "Atributos de producto usados para filtros/variaciones, sin autenticación",
+    "name" : "Atributos (público)"
+  }, {
+    "description" : "Categorías visibles en el storefront, sin autenticación",
+    "name" : "Categorías (público)"
+  }, {
+    "description" : "Validación y cálculo del carrito del storefront, sin autenticación",
+    "name" : "Carrito (público)"
+  }, {
+    "description" : "Branding, banners y ajustes públicos de la tienda",
+    "name" : "Configuración de tienda (público)"
+  }, {
+    "description" : "Productos visibles en el storefront, sin autenticación",
+    "name" : "Catálogo (público)"
+  }, {
+    "description" : "Regiones y comunas de Chile",
+    "name" : "Geografía (público)"
+  }, {
+    "description" : "Creación de preferencias de pago con MercadoPago",
+    "name" : "MercadoPago (público)"
+  }, {
+    "description" : "Creación de órdenes desde el storefront, sin autenticación",
+    "name" : "Checkout (público)"
+  }, {
+    "description" : "Consulta del estado de una orden por número, sin autenticación",
+    "name" : "Seguimiento de pedidos (público)"
+  }, {
+    "description" : "Creación y confirmación de transacciones Webpay Plus",
+    "name" : "Webpay (público)"
+  } ]
+}

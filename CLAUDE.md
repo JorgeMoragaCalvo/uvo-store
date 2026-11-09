@@ -862,7 +862,18 @@ is not safe-by-default; since PROD-08a, `APP_ENVIRONMENT=production`/`staging` r
 turn the 404 into a 401 "log in again" over something that doesn't exist. `/v3/api-docs.yaml` is not in
 that list (the pattern doesn't reach it) so an anonymous caller gets 401 either way; whether an
 *authenticated* caller gets the spec from it was not checked. Pinned by `config/SwaggerDisabledTest` and
-its control `SwaggerEnabledByDefaultTest`. Error tracking is `io.sentry:sentry` (the **core SDK**, not
+its control `SwaggerEnabledByDefaultTest`.
+
+**GAP-17: the spec is versioned in `docs/api/openapi-<group>.json`,** because production has no live spec to
+read. `config/OpenApiSpecTest` generates each group, normalizes it (keys sorted, 2-space indent, `\n`) and
+fails when it differs from the committed file — so **changing an endpoint or an exposed DTO breaks the build
+until you regenerate**: `./mvnw test -Dtest=OpenApiSpecTest -Dopenapi.regenerate=true`, then review the diff.
+Keeping the output stable is why `springdoc.writer-with-order-by-keys` is on and `OpenApiConfig` declares a
+fixed `servers: /` (otherwise springdoc writes the request's host into it); `.gitattributes` pins the files
+to LF. springdoc is still the 2.8.x line (meant for Boot 3; Boot 4's is 3.x): it works today, but a bump will
+likely change the output and need a regenerate.
+
+Error tracking is `io.sentry:sentry` (the **core SDK**, not
 `sentry-spring-boot-starter-jakarta` — that starter's autoconfiguration references a class Spring
 Boot 4 moved/removed and fails to load; see the comment in `pom.xml`). Initialized manually in
 `UvoStoreApplication.main()` from `SENTRY_DSN`; a blank/unset DSN leaves it inactive.

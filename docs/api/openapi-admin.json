@@ -1,0 +1,7255 @@
+{
+  "components" : {
+    "schemas" : {
+      "AcceptInvitationRequest" : {
+        "properties" : {
+          "password" : {
+            "maxLength" : 2147483647,
+            "minLength" : 8,
+            "type" : "string"
+          },
+          "token" : {
+            "minLength" : 1,
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "AddressDto" : {
+        "properties" : {
+          "addressLine1" : {
+            "type" : "string"
+          },
+          "addressLine2" : {
+            "type" : "string"
+          },
+          "city" : {
+            "type" : "string"
+          },
+          "company" : {
+            "type" : "string"
+          },
+          "country" : {
+            "type" : "string"
+          },
+          "firstName" : {
+            "type" : "string"
+          },
+          "lastName" : {
+            "type" : "string"
+          },
+          "phone" : {
+            "type" : "string"
+          },
+          "postalCode" : {
+            "type" : "string"
+          },
+          "state" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "AdminCustomerDetailDto" : {
+        "properties" : {
+          "accountStatus" : {
+            "type" : "string"
+          },
+          "addresses" : {
+            "items" : {
+              "$ref" : "#/components/schemas/ShippingAddressDto"
+            },
+            "type" : "array"
+          },
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "email" : {
+            "type" : "string"
+          },
+          "firstName" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "lastName" : {
+            "type" : "string"
+          },
+          "phone" : {
+            "type" : "string"
+          },
+          "stats" : {
+            "$ref" : "#/components/schemas/AdminCustomerOrderStatsDto"
+          }
+        },
+        "type" : "object"
+      },
+      "AdminCustomerOrderStatsDto" : {
+        "properties" : {
+          "averageOrder" : {
+            "type" : "number"
+          },
+          "completedOrders" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalOrders" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalSpent" : {
+            "type" : "number"
+          }
+        },
+        "type" : "object"
+      },
+      "AdminCustomerStatsDto" : {
+        "properties" : {
+          "newThisMonth" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalCustomers" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "withOrders" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "AdminCustomerSummaryDto" : {
+        "properties" : {
+          "accountStatus" : {
+            "type" : "string"
+          },
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "email" : {
+            "type" : "string"
+          },
+          "firstName" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "lastName" : {
+            "type" : "string"
+          },
+          "ordersCount" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "phone" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "AdminLoginRequest" : {
+        "properties" : {
+          "email" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "password" : {
+            "minLength" : 1,
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "AdminOrderDetailDto" : {
+        "properties" : {
+          "billingAddress" : {
+            "$ref" : "#/components/schemas/AddressDto"
+          },
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "customerEmail" : {
+            "type" : "string"
+          },
+          "customerFirstName" : {
+            "type" : "string"
+          },
+          "customerId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "customerLastName" : {
+            "type" : "string"
+          },
+          "customerNotes" : {
+            "type" : "string"
+          },
+          "customerPhone" : {
+            "type" : "string"
+          },
+          "deliveredAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "discountAmount" : {
+            "type" : "number"
+          },
+          "fulfillmentStatus" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "items" : {
+            "items" : {
+              "$ref" : "#/components/schemas/AdminOrderItemDto"
+            },
+            "type" : "array"
+          },
+          "notes" : {
+            "type" : "string"
+          },
+          "orderNumber" : {
+            "type" : "string"
+          },
+          "paymentMethod" : {
+            "type" : "string"
+          },
+          "paymentStatus" : {
+            "type" : "string"
+          },
+          "refundedAmount" : {
+            "type" : "number"
+          },
+          "refunds" : {
+            "items" : {
+              "$ref" : "#/components/schemas/OrderRefundDto"
+            },
+            "type" : "array"
+          },
+          "shippedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "shippingAddress" : {
+            "$ref" : "#/components/schemas/AddressDto"
+          },
+          "shippingCommune" : {
+            "type" : "string"
+          },
+          "shippingCost" : {
+            "type" : "number"
+          },
+          "shippingPostalCode" : {
+            "type" : "string"
+          },
+          "shippingRegion" : {
+            "type" : "string"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "stockShortage" : {
+            "type" : "boolean"
+          },
+          "subtotal" : {
+            "type" : "number"
+          },
+          "taxAmount" : {
+            "type" : "number"
+          },
+          "taxIncluded" : {
+            "type" : "boolean"
+          },
+          "total" : {
+            "type" : "number"
+          },
+          "trackingNumber" : {
+            "type" : "string"
+          },
+          "trackingUrl" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "AdminOrderItemDto" : {
+        "properties" : {
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "price" : {
+            "type" : "number"
+          },
+          "productId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "productName" : {
+            "type" : "string"
+          },
+          "productSku" : {
+            "type" : "string"
+          },
+          "quantity" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "stockMissing" : {
+            "type" : "boolean"
+          },
+          "subtotal" : {
+            "type" : "number"
+          },
+          "variationId" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "AdminOrderStatsDto" : {
+        "properties" : {
+          "all" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "cancelled" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "outboxFailed" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "paid" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "pending" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "processing" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "shipped" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "stockShortage" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "AdminOrderSummaryDto" : {
+        "properties" : {
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "customerEmail" : {
+            "type" : "string"
+          },
+          "customerFirstName" : {
+            "type" : "string"
+          },
+          "customerLastName" : {
+            "type" : "string"
+          },
+          "fulfillmentStatus" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "itemsCount" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "orderNumber" : {
+            "type" : "string"
+          },
+          "paymentStatus" : {
+            "type" : "string"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "stockShortage" : {
+            "type" : "boolean"
+          },
+          "total" : {
+            "type" : "number"
+          }
+        },
+        "type" : "object"
+      },
+      "AdminProductStatsDto" : {
+        "properties" : {
+          "active" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "lowStock" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "outOfStock" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "total" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "AttributeDto" : {
+        "properties" : {
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "slug" : {
+            "type" : "string"
+          },
+          "type" : {
+            "type" : "string"
+          },
+          "values" : {
+            "items" : {
+              "$ref" : "#/components/schemas/AttributeValueDto"
+            },
+            "type" : "array"
+          }
+        },
+        "type" : "object"
+      },
+      "AttributeRequest" : {
+        "properties" : {
+          "name" : {
+            "type" : "string"
+          },
+          "slug" : {
+            "type" : "string"
+          },
+          "type" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "AttributeValueDto" : {
+        "properties" : {
+          "attributeId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "colorHex" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "slug" : {
+            "type" : "string"
+          },
+          "sortOrder" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "value" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "AttributeValueRequest" : {
+        "properties" : {
+          "colorHex" : {
+            "type" : "string"
+          },
+          "slug" : {
+            "type" : "string"
+          },
+          "sortOrder" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "value" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "AuthResponse" : {
+        "properties" : {
+          "email" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "permissions" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "token" : {
+            "type" : "string"
+          },
+          "type" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "CategoryDto" : {
+        "properties" : {
+          "active" : {
+            "type" : "boolean"
+          },
+          "children" : {
+            "items" : {
+              "$ref" : "#/components/schemas/CategoryRefDto"
+            },
+            "type" : "array"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "image" : {
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "parent" : {
+            "$ref" : "#/components/schemas/CategoryRefDto"
+          },
+          "parentId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "productsCount" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "slug" : {
+            "type" : "string"
+          },
+          "sortOrder" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "CategoryRefDto" : {
+        "properties" : {
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "slug" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "CategoryRequest" : {
+        "properties" : {
+          "active" : {
+            "type" : "boolean"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "icon" : {
+            "type" : "string"
+          },
+          "image" : {
+            "format" : "binary",
+            "type" : "string"
+          },
+          "isFeatured" : {
+            "type" : "boolean"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "parentId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "sortOrder" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "CategoryRevenueDto" : {
+        "properties" : {
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "productsCount" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalQuantity" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalRevenue" : {
+            "type" : "number"
+          }
+        },
+        "type" : "object"
+      },
+      "CouponDto" : {
+        "properties" : {
+          "active" : {
+            "type" : "boolean"
+          },
+          "code" : {
+            "type" : "string"
+          },
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "expiresAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "maximumDiscount" : {
+            "type" : "number"
+          },
+          "minimumPurchase" : {
+            "type" : "number"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "startsAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "timesUsed" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "type" : {
+            "type" : "string"
+          },
+          "usageLimit" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "usageLimitPerCustomer" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "value" : {
+            "type" : "number"
+          }
+        },
+        "type" : "object"
+      },
+      "CouponRequest" : {
+        "properties" : {
+          "active" : {
+            "type" : "boolean"
+          },
+          "code" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "expiresAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "maximumDiscount" : {
+            "type" : "number"
+          },
+          "minimumPurchase" : {
+            "type" : "number"
+          },
+          "name" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "startsAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "type" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "usageLimit" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "usageLimitPerCustomer" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "value" : {
+            "type" : "number"
+          }
+        },
+        "required" : [ "value" ],
+        "type" : "object"
+      },
+      "ForgotPasswordRequest" : {
+        "properties" : {
+          "email" : {
+            "minLength" : 1,
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "GeneralSettingsDto" : {
+        "properties" : {
+          "adminEmail" : {
+            "type" : "string"
+          },
+          "allowGuestCheckout" : {
+            "type" : "boolean"
+          },
+          "currency" : {
+            "type" : "string"
+          },
+          "currencySymbol" : {
+            "type" : "string"
+          },
+          "defaultShippingCost" : {
+            "type" : "string"
+          },
+          "facebookUrl" : {
+            "type" : "string"
+          },
+          "freeShippingEnabled" : {
+            "type" : "boolean"
+          },
+          "freeShippingThreshold" : {
+            "type" : "string"
+          },
+          "instagramUrl" : {
+            "type" : "string"
+          },
+          "metaDescription" : {
+            "type" : "string"
+          },
+          "metaKeywords" : {
+            "type" : "string"
+          },
+          "metaTitle" : {
+            "type" : "string"
+          },
+          "posApiTokenConfigured" : {
+            "type" : "boolean"
+          },
+          "posApiUrl" : {
+            "type" : "string"
+          },
+          "posIntegrationAvailable" : {
+            "type" : "boolean"
+          },
+          "posSyncEnabled" : {
+            "type" : "boolean"
+          },
+          "posWebhookSecretConfigured" : {
+            "type" : "boolean"
+          },
+          "pricesIncludeTax" : {
+            "type" : "boolean"
+          },
+          "requireCompany" : {
+            "type" : "boolean"
+          },
+          "requirePhone" : {
+            "type" : "boolean"
+          },
+          "shippingEnabled" : {
+            "type" : "boolean"
+          },
+          "storeEmail" : {
+            "type" : "string"
+          },
+          "storeName" : {
+            "type" : "string"
+          },
+          "storePhone" : {
+            "type" : "string"
+          },
+          "stripeEnabled" : {
+            "type" : "boolean"
+          },
+          "stripePublicKey" : {
+            "type" : "string"
+          },
+          "stripeSecretKeyConfigured" : {
+            "type" : "boolean"
+          },
+          "taxRate" : {
+            "type" : "string"
+          },
+          "twitterUrl" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "GeneralSettingsUpdateRequest" : {
+        "properties" : {
+          "adminEmail" : {
+            "type" : "string"
+          },
+          "allowGuestCheckout" : {
+            "type" : "boolean"
+          },
+          "currency" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "currencySymbol" : {
+            "maxLength" : 8,
+            "minLength" : 0,
+            "type" : "string"
+          },
+          "defaultShippingCost" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "facebookUrl" : {
+            "type" : "string"
+          },
+          "freeShippingEnabled" : {
+            "type" : "boolean"
+          },
+          "freeShippingThreshold" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "instagramUrl" : {
+            "type" : "string"
+          },
+          "metaDescription" : {
+            "type" : "string"
+          },
+          "metaKeywords" : {
+            "type" : "string"
+          },
+          "metaTitle" : {
+            "type" : "string"
+          },
+          "posApiToken" : {
+            "type" : "string"
+          },
+          "posApiUrl" : {
+            "type" : "string"
+          },
+          "posSyncEnabled" : {
+            "type" : "boolean"
+          },
+          "posWebhookSecret" : {
+            "type" : "string"
+          },
+          "pricesIncludeTax" : {
+            "type" : "boolean"
+          },
+          "requireCompany" : {
+            "type" : "boolean"
+          },
+          "requirePhone" : {
+            "type" : "boolean"
+          },
+          "shippingEnabled" : {
+            "type" : "boolean"
+          },
+          "storeEmail" : {
+            "type" : "string"
+          },
+          "storeName" : {
+            "type" : "string"
+          },
+          "storePhone" : {
+            "type" : "string"
+          },
+          "stripeEnabled" : {
+            "type" : "boolean"
+          },
+          "stripePublicKey" : {
+            "type" : "string"
+          },
+          "stripeSecretKey" : {
+            "type" : "string"
+          },
+          "taxRate" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "twitterUrl" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "HomeBannerDto" : {
+        "properties" : {
+          "active" : {
+            "type" : "boolean"
+          },
+          "ctaLink" : {
+            "type" : "string"
+          },
+          "ctaNewTab" : {
+            "type" : "boolean"
+          },
+          "ctaSecondaryLink" : {
+            "type" : "string"
+          },
+          "ctaSecondaryText" : {
+            "type" : "string"
+          },
+          "ctaText" : {
+            "type" : "string"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "image" : {
+            "type" : "string"
+          },
+          "mobileImage" : {
+            "type" : "string"
+          },
+          "overlayColor" : {
+            "type" : "string"
+          },
+          "overlayOpacity" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "sortOrder" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "subtitle" : {
+            "type" : "string"
+          },
+          "textColor" : {
+            "type" : "string"
+          },
+          "textPosition" : {
+            "type" : "string"
+          },
+          "title" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "HomeBannerRequest" : {
+        "properties" : {
+          "active" : {
+            "type" : "boolean"
+          },
+          "ctaLink" : {
+            "type" : "string"
+          },
+          "ctaNewTab" : {
+            "type" : "boolean"
+          },
+          "ctaSecondaryLink" : {
+            "type" : "string"
+          },
+          "ctaSecondaryText" : {
+            "type" : "string"
+          },
+          "ctaText" : {
+            "type" : "string"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "newImage" : {
+            "format" : "binary",
+            "type" : "string"
+          },
+          "newMobileImage" : {
+            "format" : "binary",
+            "type" : "string"
+          },
+          "overlayColor" : {
+            "type" : "string"
+          },
+          "overlayOpacity" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "sortOrder" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "subtitle" : {
+            "type" : "string"
+          },
+          "textColor" : {
+            "type" : "string"
+          },
+          "textPosition" : {
+            "type" : "string"
+          },
+          "title" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "OrderRefundDto" : {
+        "properties" : {
+          "amount" : {
+            "type" : "number"
+          },
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "gatewayReference" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "reason" : {
+            "type" : "string"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "type" : {
+            "type" : "string"
+          },
+          "userName" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "OutboxFailureDto" : {
+        "properties" : {
+          "attempts" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "channel" : {
+            "enum" : [ "POS", "MAIL" ],
+            "type" : "string"
+          },
+          "companyId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "lastError" : {
+            "type" : "string"
+          },
+          "legacy" : {
+            "type" : "boolean"
+          },
+          "orderId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "orderNumber" : {
+            "type" : "string"
+          },
+          "type" : {
+            "enum" : [ "POS_ORDER", "ORDER_PLACED_EMAIL", "ORDER_CONFIRMATION_EMAIL", "CUSTOMER_INVITATION_EMAIL" ],
+            "type" : "string"
+          },
+          "uncertain" : {
+            "type" : "boolean"
+          },
+          "updatedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "OutboxResolveRequest" : {
+        "properties" : {
+          "note" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "OutboxRetryRequest" : {
+        "properties" : {
+          "note" : {
+            "type" : "string"
+          },
+          "posChecked" : {
+            "type" : "boolean"
+          }
+        },
+        "type" : "object"
+      },
+      "PageAdminCustomerSummaryDto" : {
+        "properties" : {
+          "content" : {
+            "items" : {
+              "$ref" : "#/components/schemas/AdminCustomerSummaryDto"
+            },
+            "type" : "array"
+          },
+          "empty" : {
+            "type" : "boolean"
+          },
+          "first" : {
+            "type" : "boolean"
+          },
+          "last" : {
+            "type" : "boolean"
+          },
+          "number" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "numberOfElements" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "pageable" : {
+            "$ref" : "#/components/schemas/PageableObject"
+          },
+          "size" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "sort" : {
+            "$ref" : "#/components/schemas/SortObject"
+          },
+          "totalElements" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalPages" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "PageAdminOrderSummaryDto" : {
+        "properties" : {
+          "content" : {
+            "items" : {
+              "$ref" : "#/components/schemas/AdminOrderSummaryDto"
+            },
+            "type" : "array"
+          },
+          "empty" : {
+            "type" : "boolean"
+          },
+          "first" : {
+            "type" : "boolean"
+          },
+          "last" : {
+            "type" : "boolean"
+          },
+          "number" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "numberOfElements" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "pageable" : {
+            "$ref" : "#/components/schemas/PageableObject"
+          },
+          "size" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "sort" : {
+            "$ref" : "#/components/schemas/SortObject"
+          },
+          "totalElements" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalPages" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "PageCouponDto" : {
+        "properties" : {
+          "content" : {
+            "items" : {
+              "$ref" : "#/components/schemas/CouponDto"
+            },
+            "type" : "array"
+          },
+          "empty" : {
+            "type" : "boolean"
+          },
+          "first" : {
+            "type" : "boolean"
+          },
+          "last" : {
+            "type" : "boolean"
+          },
+          "number" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "numberOfElements" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "pageable" : {
+            "$ref" : "#/components/schemas/PageableObject"
+          },
+          "size" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "sort" : {
+            "$ref" : "#/components/schemas/SortObject"
+          },
+          "totalElements" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalPages" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "PageOutboxFailureDto" : {
+        "properties" : {
+          "content" : {
+            "items" : {
+              "$ref" : "#/components/schemas/OutboxFailureDto"
+            },
+            "type" : "array"
+          },
+          "empty" : {
+            "type" : "boolean"
+          },
+          "first" : {
+            "type" : "boolean"
+          },
+          "last" : {
+            "type" : "boolean"
+          },
+          "number" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "numberOfElements" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "pageable" : {
+            "$ref" : "#/components/schemas/PageableObject"
+          },
+          "size" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "sort" : {
+            "$ref" : "#/components/schemas/SortObject"
+          },
+          "totalElements" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalPages" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "PageProductDto" : {
+        "properties" : {
+          "content" : {
+            "items" : {
+              "$ref" : "#/components/schemas/ProductDto"
+            },
+            "type" : "array"
+          },
+          "empty" : {
+            "type" : "boolean"
+          },
+          "first" : {
+            "type" : "boolean"
+          },
+          "last" : {
+            "type" : "boolean"
+          },
+          "number" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "numberOfElements" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "pageable" : {
+            "$ref" : "#/components/schemas/PageableObject"
+          },
+          "size" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "sort" : {
+            "$ref" : "#/components/schemas/SortObject"
+          },
+          "totalElements" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalPages" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "PageProductReportRowDto" : {
+        "properties" : {
+          "content" : {
+            "items" : {
+              "$ref" : "#/components/schemas/ProductReportRowDto"
+            },
+            "type" : "array"
+          },
+          "empty" : {
+            "type" : "boolean"
+          },
+          "first" : {
+            "type" : "boolean"
+          },
+          "last" : {
+            "type" : "boolean"
+          },
+          "number" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "numberOfElements" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "pageable" : {
+            "$ref" : "#/components/schemas/PageableObject"
+          },
+          "size" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "sort" : {
+            "$ref" : "#/components/schemas/SortObject"
+          },
+          "totalElements" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalPages" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "PageUserDto" : {
+        "properties" : {
+          "content" : {
+            "items" : {
+              "$ref" : "#/components/schemas/UserDto"
+            },
+            "type" : "array"
+          },
+          "empty" : {
+            "type" : "boolean"
+          },
+          "first" : {
+            "type" : "boolean"
+          },
+          "last" : {
+            "type" : "boolean"
+          },
+          "number" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "numberOfElements" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "pageable" : {
+            "$ref" : "#/components/schemas/PageableObject"
+          },
+          "size" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "sort" : {
+            "$ref" : "#/components/schemas/SortObject"
+          },
+          "totalElements" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalPages" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "PageableObject" : {
+        "properties" : {
+          "offset" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "pageNumber" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "pageSize" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "paged" : {
+            "type" : "boolean"
+          },
+          "sort" : {
+            "$ref" : "#/components/schemas/SortObject"
+          },
+          "unpaged" : {
+            "type" : "boolean"
+          }
+        },
+        "type" : "object"
+      },
+      "PaymentGatewayConfigCommand" : {
+        "properties" : {
+          "credentials" : {
+            "additionalProperties" : {
+              "type" : "string"
+            },
+            "type" : "object"
+          },
+          "enabled" : {
+            "type" : "boolean"
+          }
+        },
+        "type" : "object"
+      },
+      "PaymentGatewayConfigDto" : {
+        "properties" : {
+          "credentialsSet" : {
+            "additionalProperties" : {
+              "type" : "boolean"
+            },
+            "type" : "object"
+          },
+          "enabled" : {
+            "type" : "boolean"
+          },
+          "gateway" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "PaymentMethodDetailDto" : {
+        "properties" : {
+          "averageOrderValue" : {
+            "type" : "number"
+          },
+          "failedOrders" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "ordersCount" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "paidOrders" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "paymentMethod" : {
+            "type" : "string"
+          },
+          "pendingOrders" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "successRate" : {
+            "format" : "double",
+            "type" : "number"
+          },
+          "totalRevenue" : {
+            "type" : "number"
+          }
+        },
+        "type" : "object"
+      },
+      "PaymentMethodRevenueDto" : {
+        "properties" : {
+          "ordersCount" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "paymentMethod" : {
+            "type" : "string"
+          },
+          "totalRevenue" : {
+            "type" : "number"
+          }
+        },
+        "type" : "object"
+      },
+      "PaymentMethodsSummaryDto" : {
+        "properties" : {
+          "totalFailed" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalOrders" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalPaid" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalPending" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalRevenue" : {
+            "type" : "number"
+          }
+        },
+        "type" : "object"
+      },
+      "PaymentStatusDistributionDto" : {
+        "properties" : {
+          "count" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "paymentStatus" : {
+            "type" : "string"
+          },
+          "totalAmount" : {
+            "type" : "number"
+          }
+        },
+        "type" : "object"
+      },
+      "PermissionDto" : {
+        "properties" : {
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "name" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "PosOwnershipDto" : {
+        "properties" : {
+          "lockedFields" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          }
+        },
+        "type" : "object"
+      },
+      "PosReconciliationSummary" : {
+        "properties" : {
+          "catalogCorrected" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "changedMeanwhile" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "checked" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "errors" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "failedConnections" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "missingInPos" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "pendingInFlight" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "stockCorrected" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "ProductDto" : {
+        "properties" : {
+          "active" : {
+            "type" : "boolean"
+          },
+          "category" : {
+            "$ref" : "#/components/schemas/CategoryRefDto"
+          },
+          "compareAtPrice" : {
+            "type" : "number"
+          },
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "featured" : {
+            "type" : "boolean"
+          },
+          "featuredImage" : {
+            "type" : "string"
+          },
+          "formattedPrice" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "images" : {
+            "items" : {
+              "$ref" : "#/components/schemas/ProductImageDto"
+            },
+            "type" : "array"
+          },
+          "inStock" : {
+            "type" : "boolean"
+          },
+          "manageStock" : {
+            "type" : "boolean"
+          },
+          "metaDescription" : {
+            "type" : "string"
+          },
+          "metaTitle" : {
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "price" : {
+            "type" : "number"
+          },
+          "productType" : {
+            "type" : "string"
+          },
+          "shortDescription" : {
+            "type" : "string"
+          },
+          "sku" : {
+            "type" : "string"
+          },
+          "slug" : {
+            "type" : "string"
+          },
+          "stock" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "updatedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "variations" : {
+            "items" : {
+              "$ref" : "#/components/schemas/ProductVariationDto"
+            },
+            "type" : "array"
+          },
+          "variationsCount" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "ProductImageDto" : {
+        "properties" : {
+          "alt" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "isFeatured" : {
+            "type" : "boolean"
+          },
+          "thumbnail" : {
+            "type" : "string"
+          },
+          "url" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "ProductReportRowDto" : {
+        "properties" : {
+          "averagePrice" : {
+            "type" : "number"
+          },
+          "categoryName" : {
+            "type" : "string"
+          },
+          "currentPrice" : {
+            "type" : "number"
+          },
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "sku" : {
+            "type" : "string"
+          },
+          "stock" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "totalOrders" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalQuantity" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalRevenue" : {
+            "type" : "number"
+          }
+        },
+        "type" : "object"
+      },
+      "ProductRequest" : {
+        "properties" : {
+          "active" : {
+            "type" : "boolean"
+          },
+          "categoryId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "discountPercentage" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "featuredImage" : {
+            "format" : "binary",
+            "type" : "string"
+          },
+          "images" : {
+            "items" : {
+              "format" : "binary",
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "isFeatured" : {
+            "type" : "boolean"
+          },
+          "isNew" : {
+            "type" : "boolean"
+          },
+          "isOnSale" : {
+            "type" : "boolean"
+          },
+          "manageStock" : {
+            "type" : "boolean"
+          },
+          "metaDescription" : {
+            "type" : "string"
+          },
+          "metaTitle" : {
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "newUntil" : {
+            "format" : "date",
+            "type" : "string"
+          },
+          "posProductId" : {
+            "type" : "string"
+          },
+          "price" : {
+            "type" : "number"
+          },
+          "productType" : {
+            "type" : "string"
+          },
+          "saleEndsAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "salePrice" : {
+            "type" : "number"
+          },
+          "saleStartsAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "shortDescription" : {
+            "type" : "string"
+          },
+          "sku" : {
+            "type" : "string"
+          },
+          "sortOrder" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "stock" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "ProductVariationDto" : {
+        "properties" : {
+          "active" : {
+            "type" : "boolean"
+          },
+          "attributeIds" : {
+            "additionalProperties" : {
+              "format" : "int64",
+              "type" : "integer"
+            },
+            "type" : "object"
+          },
+          "attributes" : {
+            "additionalProperties" : {
+              "type" : "string"
+            },
+            "type" : "object"
+          },
+          "compareAtPrice" : {
+            "type" : "number"
+          },
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "formattedPrice" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "image" : {
+            "type" : "string"
+          },
+          "inStock" : {
+            "type" : "boolean"
+          },
+          "price" : {
+            "type" : "number"
+          },
+          "productId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "sku" : {
+            "type" : "string"
+          },
+          "stock" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "weight" : {
+            "type" : "number"
+          }
+        },
+        "type" : "object"
+      },
+      "ProductsSummaryDto" : {
+        "properties" : {
+          "averagePrice" : {
+            "type" : "number"
+          },
+          "totalQuantity" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalRevenue" : {
+            "type" : "number"
+          },
+          "uniqueProducts" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "RefundRequest" : {
+        "properties" : {
+          "amount" : {
+            "type" : "number"
+          },
+          "reason" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "ReorderRequest" : {
+        "properties" : {
+          "orderedIds" : {
+            "items" : {
+              "format" : "int64",
+              "type" : "integer"
+            },
+            "type" : "array"
+          }
+        },
+        "type" : "object"
+      },
+      "ResetPasswordRequest" : {
+        "properties" : {
+          "password" : {
+            "maxLength" : 2147483647,
+            "minLength" : 8,
+            "type" : "string"
+          },
+          "token" : {
+            "minLength" : 1,
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "ResolveRefundRequest" : {
+        "properties" : {
+          "note" : {
+            "type" : "string"
+          },
+          "outcome" : {
+            "enum" : [ "COMPLETED", "FAILED" ],
+            "type" : "string"
+          },
+          "reference" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "outcome" ],
+        "type" : "object"
+      },
+      "RoleDto" : {
+        "properties" : {
+          "guardName" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "permissions" : {
+            "items" : {
+              "$ref" : "#/components/schemas/PermissionDto"
+            },
+            "type" : "array"
+          }
+        },
+        "type" : "object"
+      },
+      "RoleRefDto" : {
+        "properties" : {
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "name" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "RoleRequest" : {
+        "properties" : {
+          "name" : {
+            "type" : "string"
+          },
+          "permissionIds" : {
+            "items" : {
+              "format" : "int64",
+              "type" : "integer"
+            },
+            "type" : "array",
+            "uniqueItems" : true
+          }
+        },
+        "type" : "object"
+      },
+      "SalesByDayDto" : {
+        "properties" : {
+          "date" : {
+            "type" : "string"
+          },
+          "ordersCount" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "paidOrders" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "revenue" : {
+            "type" : "number"
+          }
+        },
+        "type" : "object"
+      },
+      "SalesSummaryDto" : {
+        "properties" : {
+          "averageOrderValue" : {
+            "type" : "number"
+          },
+          "failedOrders" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "grossRevenue" : {
+            "type" : "number"
+          },
+          "paidOrders" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "pendingOrders" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "refundedAmount" : {
+            "type" : "number"
+          },
+          "totalItems" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalOrders" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalRevenue" : {
+            "type" : "number"
+          }
+        },
+        "type" : "object"
+      },
+      "ShippingAddressDto" : {
+        "properties" : {
+          "addressLine1" : {
+            "type" : "string"
+          },
+          "addressLine2" : {
+            "type" : "string"
+          },
+          "city" : {
+            "type" : "string"
+          },
+          "company" : {
+            "type" : "string"
+          },
+          "country" : {
+            "type" : "string"
+          },
+          "firstName" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "isDefault" : {
+            "type" : "boolean"
+          },
+          "lastName" : {
+            "type" : "string"
+          },
+          "phone" : {
+            "type" : "string"
+          },
+          "postalCode" : {
+            "type" : "string"
+          },
+          "state" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "ShippingMethodDto" : {
+        "properties" : {
+          "active" : {
+            "type" : "boolean"
+          },
+          "carrier" : {
+            "type" : "string"
+          },
+          "code" : {
+            "type" : "string"
+          },
+          "credentialsSet" : {
+            "additionalProperties" : {
+              "type" : "boolean"
+            },
+            "type" : "object"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "hasApiIntegration" : {
+            "type" : "boolean"
+          },
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "maxDeliveryDays" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "minDeliveryDays" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "ratesCount" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "sortOrder" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "type" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "ShippingMethodRequest" : {
+        "properties" : {
+          "active" : {
+            "type" : "boolean"
+          },
+          "carrier" : {
+            "type" : "string"
+          },
+          "code" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "hasApiIntegration" : {
+            "type" : "boolean"
+          },
+          "maxDeliveryDays" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "minDeliveryDays" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "name" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "sortOrder" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "type" : {
+            "minLength" : 1,
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "ShippingRateDto" : {
+        "properties" : {
+          "active" : {
+            "type" : "boolean"
+          },
+          "baseWeightRate" : {
+            "type" : "number"
+          },
+          "flatRate" : {
+            "type" : "number"
+          },
+          "freeShippingThreshold" : {
+            "type" : "number"
+          },
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "maxOrderAmount" : {
+            "type" : "number"
+          },
+          "maxWeight" : {
+            "type" : "number"
+          },
+          "methodId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "methodName" : {
+            "type" : "string"
+          },
+          "minOrderAmount" : {
+            "type" : "number"
+          },
+          "minWeight" : {
+            "type" : "number"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "rateType" : {
+            "type" : "string"
+          },
+          "sortOrder" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "weightRatePerKg" : {
+            "type" : "number"
+          },
+          "zoneId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "zoneName" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "ShippingRateRequest" : {
+        "properties" : {
+          "active" : {
+            "type" : "boolean"
+          },
+          "baseWeightRate" : {
+            "type" : "number"
+          },
+          "flatRate" : {
+            "type" : "number"
+          },
+          "freeShippingThreshold" : {
+            "type" : "number"
+          },
+          "maxOrderAmount" : {
+            "type" : "number"
+          },
+          "maxWeight" : {
+            "type" : "number"
+          },
+          "methodId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "minOrderAmount" : {
+            "type" : "number"
+          },
+          "minWeight" : {
+            "type" : "number"
+          },
+          "name" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "rateType" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "sortOrder" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "weightRatePerKg" : {
+            "type" : "number"
+          },
+          "zoneId" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "required" : [ "methodId", "zoneId" ],
+        "type" : "object"
+      },
+      "ShippingZoneDto" : {
+        "properties" : {
+          "active" : {
+            "type" : "boolean"
+          },
+          "communes" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "regions" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "sortOrder" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "unrecognized" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          }
+        },
+        "type" : "object"
+      },
+      "ShippingZoneRequest" : {
+        "properties" : {
+          "active" : {
+            "type" : "boolean"
+          },
+          "communes" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "name" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "regions" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "sortOrder" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "SortObject" : {
+        "properties" : {
+          "empty" : {
+            "type" : "boolean"
+          },
+          "sorted" : {
+            "type" : "boolean"
+          },
+          "unsorted" : {
+            "type" : "boolean"
+          }
+        },
+        "type" : "object"
+      },
+      "StatusRequest" : {
+        "properties" : {
+          "status" : {
+            "minLength" : 1,
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "StockShortageReleaseRequest" : {
+        "properties" : {
+          "note" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "StoreSettingsDto" : {
+        "properties" : {
+          "accentColor" : {
+            "type" : "string"
+          },
+          "benefit1Description" : {
+            "type" : "string"
+          },
+          "benefit1Icon" : {
+            "type" : "string"
+          },
+          "benefit1Title" : {
+            "type" : "string"
+          },
+          "benefit2Description" : {
+            "type" : "string"
+          },
+          "benefit2Icon" : {
+            "type" : "string"
+          },
+          "benefit2Title" : {
+            "type" : "string"
+          },
+          "benefit3Description" : {
+            "type" : "string"
+          },
+          "benefit3Icon" : {
+            "type" : "string"
+          },
+          "benefit3Title" : {
+            "type" : "string"
+          },
+          "benefit4Description" : {
+            "type" : "string"
+          },
+          "benefit4Icon" : {
+            "type" : "string"
+          },
+          "benefit4Title" : {
+            "type" : "string"
+          },
+          "categoriesLimit" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "categoriesTitle" : {
+            "type" : "string"
+          },
+          "contactEmail" : {
+            "type" : "string"
+          },
+          "contactPhone" : {
+            "type" : "string"
+          },
+          "darkColor" : {
+            "type" : "string"
+          },
+          "dealsLimit" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "dealsTitle" : {
+            "type" : "string"
+          },
+          "facebookUrl" : {
+            "type" : "string"
+          },
+          "featuredProductsLimit" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "featuredProductsTitle" : {
+            "type" : "string"
+          },
+          "heroAutoplaySpeed" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "instagramUrl" : {
+            "type" : "string"
+          },
+          "metaDescription" : {
+            "type" : "string"
+          },
+          "metaKeywords" : {
+            "type" : "string"
+          },
+          "metaTitle" : {
+            "type" : "string"
+          },
+          "newProductsDays" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "newProductsLimit" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "newProductsTitle" : {
+            "type" : "string"
+          },
+          "primaryColor" : {
+            "type" : "string"
+          },
+          "secondaryColor" : {
+            "type" : "string"
+          },
+          "showBenefits" : {
+            "type" : "boolean"
+          },
+          "showCategories" : {
+            "type" : "boolean"
+          },
+          "showDeals" : {
+            "type" : "boolean"
+          },
+          "showFeaturedProducts" : {
+            "type" : "boolean"
+          },
+          "showHero" : {
+            "type" : "boolean"
+          },
+          "showNewProducts" : {
+            "type" : "boolean"
+          },
+          "storeDescription" : {
+            "type" : "string"
+          },
+          "storeFavicon" : {
+            "type" : "string"
+          },
+          "storeLogo" : {
+            "type" : "string"
+          },
+          "storeName" : {
+            "type" : "string"
+          },
+          "tiktokUrl" : {
+            "type" : "string"
+          },
+          "twitterUrl" : {
+            "type" : "string"
+          },
+          "whatsappNumber" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "StoreSettingsUpdateRequest" : {
+        "properties" : {
+          "accentColor" : {
+            "type" : "string"
+          },
+          "benefit1Description" : {
+            "type" : "string"
+          },
+          "benefit1Icon" : {
+            "type" : "string"
+          },
+          "benefit1Title" : {
+            "type" : "string"
+          },
+          "benefit2Description" : {
+            "type" : "string"
+          },
+          "benefit2Icon" : {
+            "type" : "string"
+          },
+          "benefit2Title" : {
+            "type" : "string"
+          },
+          "benefit3Description" : {
+            "type" : "string"
+          },
+          "benefit3Icon" : {
+            "type" : "string"
+          },
+          "benefit3Title" : {
+            "type" : "string"
+          },
+          "benefit4Description" : {
+            "type" : "string"
+          },
+          "benefit4Icon" : {
+            "type" : "string"
+          },
+          "benefit4Title" : {
+            "type" : "string"
+          },
+          "categoriesLimit" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "categoriesTitle" : {
+            "type" : "string"
+          },
+          "contactEmail" : {
+            "type" : "string"
+          },
+          "contactPhone" : {
+            "type" : "string"
+          },
+          "darkColor" : {
+            "type" : "string"
+          },
+          "dealsLimit" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "dealsTitle" : {
+            "type" : "string"
+          },
+          "facebookUrl" : {
+            "type" : "string"
+          },
+          "featuredProductsLimit" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "featuredProductsTitle" : {
+            "type" : "string"
+          },
+          "heroAutoplaySpeed" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "instagramUrl" : {
+            "type" : "string"
+          },
+          "metaDescription" : {
+            "type" : "string"
+          },
+          "metaKeywords" : {
+            "type" : "string"
+          },
+          "metaTitle" : {
+            "type" : "string"
+          },
+          "newFavicon" : {
+            "format" : "binary",
+            "type" : "string"
+          },
+          "newLogo" : {
+            "format" : "binary",
+            "type" : "string"
+          },
+          "newProductsDays" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "newProductsLimit" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "newProductsTitle" : {
+            "type" : "string"
+          },
+          "primaryColor" : {
+            "type" : "string"
+          },
+          "secondaryColor" : {
+            "type" : "string"
+          },
+          "showBenefits" : {
+            "type" : "boolean"
+          },
+          "showCategories" : {
+            "type" : "boolean"
+          },
+          "showDeals" : {
+            "type" : "boolean"
+          },
+          "showFeaturedProducts" : {
+            "type" : "boolean"
+          },
+          "showHero" : {
+            "type" : "boolean"
+          },
+          "showNewProducts" : {
+            "type" : "boolean"
+          },
+          "storeDescription" : {
+            "type" : "string"
+          },
+          "storeName" : {
+            "type" : "string"
+          },
+          "tiktokUrl" : {
+            "type" : "string"
+          },
+          "twitterUrl" : {
+            "type" : "string"
+          },
+          "whatsappNumber" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "TopProductDto" : {
+        "properties" : {
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "ordersCount" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalQuantity" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalRevenue" : {
+            "type" : "number"
+          }
+        },
+        "type" : "object"
+      },
+      "TrackingRequest" : {
+        "properties" : {
+          "trackingNumber" : {
+            "minLength" : 1,
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "UserDto" : {
+        "properties" : {
+          "active" : {
+            "type" : "boolean"
+          },
+          "avatar" : {
+            "type" : "string"
+          },
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "email" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "invitationExpiresAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "invitationPending" : {
+            "type" : "boolean"
+          },
+          "lastLoginAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "notes" : {
+            "type" : "string"
+          },
+          "phone" : {
+            "type" : "string"
+          },
+          "roles" : {
+            "items" : {
+              "$ref" : "#/components/schemas/RoleRefDto"
+            },
+            "type" : "array"
+          }
+        },
+        "type" : "object"
+      },
+      "UserRequest" : {
+        "properties" : {
+          "active" : {
+            "type" : "boolean"
+          },
+          "avatar" : {
+            "format" : "binary",
+            "type" : "string"
+          },
+          "email" : {
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "notes" : {
+            "type" : "string"
+          },
+          "password" : {
+            "maxLength" : 2147483647,
+            "minLength" : 8,
+            "type" : "string"
+          },
+          "phone" : {
+            "type" : "string"
+          },
+          "roleId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "sendInvitation" : {
+            "type" : "boolean"
+          }
+        },
+        "type" : "object"
+      },
+      "VariationRequest" : {
+        "properties" : {
+          "attributeValueIdsByAttributeId" : {
+            "additionalProperties" : {
+              "format" : "int64",
+              "type" : "integer"
+            },
+            "type" : "object"
+          },
+          "price" : {
+            "type" : "number"
+          },
+          "sku" : {
+            "type" : "string"
+          },
+          "stock" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      }
+    },
+    "securitySchemes" : {
+      "bearerAuth" : {
+        "bearerFormat" : "JWT",
+        "description" : "Token JWT emitido por /api/admin/auth/login o /api/customer/auth/login — compartido por las superficies admin y cliente (JwtAuthenticationFilter).",
+        "scheme" : "bearer",
+        "type" : "http"
+      },
+      "platformApiKey" : {
+        "description" : "Clave compartida del operador de la plataforma, usada solo por /api/platform/** (alta de tiendas). No es una credencial de cliente.",
+        "in" : "header",
+        "name" : "X-Platform-Key",
+        "type" : "apiKey"
+      }
+    }
+  },
+  "info" : {
+    "description" : "API de UvoStore, una plataforma SaaS de e-commerce multi-tenant. Agrupa cinco superficies con distinta autenticación:\n\n- **Pública** (`/api/v1/**`): catálogo, carrito y checkout del storefront, sin autenticación.\n- **Admin** (`/api/admin/**`): panel de administración de cada tienda, JWT bearer con rol ADMIN.\n- **Cliente** (`/api/customer/**`): cuenta y direcciones del comprador, JWT bearer con rol CUSTOMER.\n- **POS** (`/api/webhooks/pos/**`, `/api/sync/**`): integración con UvoPOS, firma HMAC (`X-Signature`/`X-Company-ID`/`X-Timestamp`) o API key — no probable con el botón \"Authorize\" de esta UI, ver la documentación de cada endpoint.\n- **Plataforma** (`/api/platform/**`): alta y ciclo de vida de las tiendas por el equipo operador, header `X-Platform-Key`, solo desde la red privada.\n",
+    "title" : "UvoStore API",
+    "version" : "0.0.1-SNAPSHOT"
+  },
+  "openapi" : "3.1.0",
+  "paths" : {
+    "/api/admin/attributes" : {
+      "get" : {
+        "operationId" : "index_9",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/AttributeDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Atributos (admin)" ]
+      },
+      "post" : {
+        "operationId" : "create_9",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/AttributeRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AttributeDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Atributos (admin)" ]
+      }
+    },
+    "/api/admin/attributes/values/{valueId}" : {
+      "delete" : {
+        "operationId" : "deleteValue",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "valueId",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AttributeDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Atributos (admin)" ]
+      },
+      "put" : {
+        "operationId" : "updateValue",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "valueId",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/AttributeValueRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AttributeDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Atributos (admin)" ]
+      }
+    },
+    "/api/admin/attributes/{attributeId}/values" : {
+      "post" : {
+        "operationId" : "createValue",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "attributeId",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/AttributeValueRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AttributeDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Atributos (admin)" ]
+      }
+    },
+    "/api/admin/attributes/{id}" : {
+      "delete" : {
+        "operationId" : "delete_10",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Atributos (admin)" ]
+      },
+      "put" : {
+        "operationId" : "update_13",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/AttributeRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AttributeDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Atributos (admin)" ]
+      }
+    },
+    "/api/admin/auth/accept-invitation" : {
+      "post" : {
+        "operationId" : "adminAcceptInvitation",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/AcceptInvitationRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AuthResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Autenticación" ]
+      }
+    },
+    "/api/admin/auth/forgot-password" : {
+      "post" : {
+        "operationId" : "adminForgotPassword",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ForgotPasswordRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Autenticación" ]
+      }
+    },
+    "/api/admin/auth/login" : {
+      "post" : {
+        "operationId" : "adminLogin",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/AdminLoginRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AuthResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Autenticación" ]
+      }
+    },
+    "/api/admin/auth/logout" : {
+      "post" : {
+        "operationId" : "adminLogout",
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Autenticación" ]
+      }
+    },
+    "/api/admin/auth/reset-password" : {
+      "post" : {
+        "operationId" : "adminResetPassword",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ResetPasswordRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Autenticación" ]
+      }
+    },
+    "/api/admin/categories" : {
+      "get" : {
+        "operationId" : "index_8",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/CategoryDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Categorías (admin)" ]
+      },
+      "post" : {
+        "operationId" : "create_8",
+        "requestBody" : {
+          "content" : {
+            "multipart/form-data" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CategoryRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CategoryDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Categorías (admin)" ]
+      }
+    },
+    "/api/admin/categories/{id}" : {
+      "delete" : {
+        "operationId" : "delete_9",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Categorías (admin)" ]
+      },
+      "get" : {
+        "operationId" : "show_10",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CategoryDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Categorías (admin)" ]
+      },
+      "put" : {
+        "operationId" : "update_12",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "multipart/form-data" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CategoryRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CategoryDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Categorías (admin)" ]
+      }
+    },
+    "/api/admin/categories/{id}/image" : {
+      "delete" : {
+        "operationId" : "removeImage_1",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CategoryDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Categorías (admin)" ]
+      }
+    },
+    "/api/admin/coupons" : {
+      "get" : {
+        "operationId" : "index_7",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "search",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "status",
+          "required" : false,
+          "schema" : {
+            "default" : "all",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "page",
+          "required" : false,
+          "schema" : {
+            "default" : 1,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PageCouponDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Cupones (admin)" ]
+      },
+      "post" : {
+        "operationId" : "create_7",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CouponRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CouponDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Cupones (admin)" ]
+      }
+    },
+    "/api/admin/coupons/{id}" : {
+      "delete" : {
+        "operationId" : "delete_8",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Cupones (admin)" ]
+      },
+      "get" : {
+        "operationId" : "show_9",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CouponDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Cupones (admin)" ]
+      },
+      "put" : {
+        "operationId" : "update_11",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CouponRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CouponDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Cupones (admin)" ]
+      }
+    },
+    "/api/admin/coupons/{id}/toggle-status" : {
+      "post" : {
+        "operationId" : "toggleStatus_4",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CouponDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Cupones (admin)" ]
+      }
+    },
+    "/api/admin/customers" : {
+      "get" : {
+        "operationId" : "index_12",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "search",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "sortField",
+          "required" : false,
+          "schema" : {
+            "default" : "createdAt",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "sortDirection",
+          "required" : false,
+          "schema" : {
+            "default" : "desc",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "page",
+          "required" : false,
+          "schema" : {
+            "default" : 1,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PageAdminCustomerSummaryDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Clientes (admin)" ]
+      }
+    },
+    "/api/admin/customers/stats" : {
+      "get" : {
+        "operationId" : "stats_2",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AdminCustomerStatsDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Clientes (admin)" ]
+      }
+    },
+    "/api/admin/customers/{customerId}/addresses/{addressId}" : {
+      "delete" : {
+        "operationId" : "deleteAddress",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "customerId",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "path",
+          "name" : "addressId",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Clientes (admin)" ]
+      }
+    },
+    "/api/admin/customers/{customerId}/addresses/{addressId}/default" : {
+      "post" : {
+        "operationId" : "setDefaultAddress",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "customerId",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "path",
+          "name" : "addressId",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ShippingAddressDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Clientes (admin)" ]
+      }
+    },
+    "/api/admin/customers/{id}" : {
+      "delete" : {
+        "operationId" : "delete_11",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Clientes (admin)" ]
+      },
+      "get" : {
+        "operationId" : "show_12",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AdminCustomerDetailDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Clientes (admin)" ]
+      }
+    },
+    "/api/admin/customers/{id}/orders" : {
+      "get" : {
+        "operationId" : "orders",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "query",
+          "name" : "page",
+          "required" : false,
+          "schema" : {
+            "default" : 1,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PageAdminOrderSummaryDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Clientes (admin)" ]
+      }
+    },
+    "/api/admin/home/banners" : {
+      "get" : {
+        "operationId" : "index_6",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "search",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/HomeBannerDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Banners (admin)" ]
+      },
+      "post" : {
+        "operationId" : "create_6",
+        "requestBody" : {
+          "content" : {
+            "multipart/form-data" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/HomeBannerRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/HomeBannerDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Banners (admin)" ]
+      }
+    },
+    "/api/admin/home/banners/reorder" : {
+      "post" : {
+        "operationId" : "reorder",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ReorderRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Banners (admin)" ]
+      }
+    },
+    "/api/admin/home/banners/{id}" : {
+      "delete" : {
+        "operationId" : "delete_7",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Banners (admin)" ]
+      },
+      "get" : {
+        "operationId" : "show_8",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/HomeBannerDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Banners (admin)" ]
+      },
+      "put" : {
+        "operationId" : "update_10",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "multipart/form-data" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/HomeBannerRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/HomeBannerDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Banners (admin)" ]
+      }
+    },
+    "/api/admin/home/banners/{id}/toggle" : {
+      "post" : {
+        "operationId" : "toggle",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/HomeBannerDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Banners (admin)" ]
+      }
+    },
+    "/api/admin/orders" : {
+      "get" : {
+        "operationId" : "index_11",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "tab",
+          "required" : false,
+          "schema" : {
+            "default" : "all",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "search",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "paymentStatus",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "sortField",
+          "required" : false,
+          "schema" : {
+            "default" : "createdAt",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "sortDirection",
+          "required" : false,
+          "schema" : {
+            "default" : "desc",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "page",
+          "required" : false,
+          "schema" : {
+            "default" : 1,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PageAdminOrderSummaryDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Órdenes (admin)" ]
+      }
+    },
+    "/api/admin/orders/stats" : {
+      "get" : {
+        "operationId" : "stats_1",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AdminOrderStatsDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Órdenes (admin)" ]
+      }
+    },
+    "/api/admin/orders/{id}" : {
+      "get" : {
+        "operationId" : "show_11",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AdminOrderDetailDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Órdenes (admin)" ]
+      }
+    },
+    "/api/admin/orders/{id}/cancel" : {
+      "post" : {
+        "operationId" : "cancel",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AdminOrderDetailDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Órdenes (admin)" ]
+      }
+    },
+    "/api/admin/orders/{id}/mark-delivered" : {
+      "post" : {
+        "operationId" : "markDelivered",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AdminOrderDetailDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Órdenes (admin)" ]
+      }
+    },
+    "/api/admin/orders/{id}/mark-processing" : {
+      "post" : {
+        "operationId" : "markProcessing",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AdminOrderDetailDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Órdenes (admin)" ]
+      }
+    },
+    "/api/admin/orders/{id}/mark-shipped" : {
+      "post" : {
+        "operationId" : "markShipped",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AdminOrderDetailDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Órdenes (admin)" ]
+      }
+    },
+    "/api/admin/orders/{id}/payment-status" : {
+      "put" : {
+        "operationId" : "updatePaymentStatus",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/StatusRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AdminOrderDetailDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Órdenes (admin)" ]
+      }
+    },
+    "/api/admin/orders/{id}/refund" : {
+      "post" : {
+        "operationId" : "refund",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/RefundRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AdminOrderDetailDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Órdenes (admin)" ]
+      }
+    },
+    "/api/admin/orders/{id}/refund/external" : {
+      "post" : {
+        "operationId" : "recordExternalRefund",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/RefundRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AdminOrderDetailDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Órdenes (admin)" ]
+      }
+    },
+    "/api/admin/orders/{id}/refunds/{refundId}/resolve" : {
+      "post" : {
+        "operationId" : "resolveRefund",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "path",
+          "name" : "refundId",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ResolveRefundRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AdminOrderDetailDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Órdenes (admin)" ]
+      }
+    },
+    "/api/admin/orders/{id}/status" : {
+      "put" : {
+        "operationId" : "updateStatus",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/StatusRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AdminOrderDetailDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Órdenes (admin)" ]
+      }
+    },
+    "/api/admin/orders/{id}/stock-shortage/release" : {
+      "post" : {
+        "operationId" : "releaseStockShortage",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/StockShortageReleaseRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AdminOrderDetailDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Órdenes (admin)" ]
+      }
+    },
+    "/api/admin/orders/{id}/stock-shortage/retry" : {
+      "post" : {
+        "operationId" : "retryStock",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AdminOrderDetailDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Órdenes (admin)" ]
+      }
+    },
+    "/api/admin/orders/{id}/tracking" : {
+      "post" : {
+        "operationId" : "saveTracking",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/TrackingRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AdminOrderDetailDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Órdenes (admin)" ]
+      }
+    },
+    "/api/admin/outbox/failed" : {
+      "get" : {
+        "operationId" : "failed",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "page",
+          "required" : false,
+          "schema" : {
+            "default" : 1,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PageOutboxFailureDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Envíos fallidos (admin)" ]
+      }
+    },
+    "/api/admin/outbox/{id}/resolve" : {
+      "post" : {
+        "operationId" : "resolve",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/OutboxResolveRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Envíos fallidos (admin)" ]
+      }
+    },
+    "/api/admin/outbox/{id}/retry" : {
+      "post" : {
+        "operationId" : "retry",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/OutboxRetryRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Envíos fallidos (admin)" ]
+      }
+    },
+    "/api/admin/payment-gateways" : {
+      "get" : {
+        "operationId" : "index_10",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/PaymentGatewayConfigDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Pasarelas de pago (admin)" ]
+      }
+    },
+    "/api/admin/payment-gateways/{gateway}" : {
+      "put" : {
+        "operationId" : "update_9",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "gateway",
+          "required" : true,
+          "schema" : {
+            "enum" : [ "STRIPE", "WEBPAY", "MERCADOPAGO" ],
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/PaymentGatewayConfigCommand"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PaymentGatewayConfigDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Pasarelas de pago (admin)" ]
+      }
+    },
+    "/api/admin/pos/resync" : {
+      "post" : {
+        "operationId" : "resync",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PosReconciliationSummary"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "UvoPOS (admin)" ]
+      }
+    },
+    "/api/admin/products" : {
+      "get" : {
+        "operationId" : "index_5",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "search",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "type",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "categoryId",
+          "required" : false,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "query",
+          "name" : "active",
+          "required" : false,
+          "schema" : {
+            "type" : "boolean"
+          }
+        }, {
+          "in" : "query",
+          "name" : "featured",
+          "required" : false,
+          "schema" : {
+            "type" : "boolean"
+          }
+        }, {
+          "in" : "query",
+          "name" : "stockStatus",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "priceRange",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "sortField",
+          "required" : false,
+          "schema" : {
+            "default" : "createdAt",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "sortDirection",
+          "required" : false,
+          "schema" : {
+            "default" : "desc",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "perPage",
+          "required" : false,
+          "schema" : {
+            "default" : 15,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "query",
+          "name" : "page",
+          "required" : false,
+          "schema" : {
+            "default" : 1,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PageProductDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Productos (admin)" ]
+      },
+      "post" : {
+        "operationId" : "create_5",
+        "requestBody" : {
+          "content" : {
+            "multipart/form-data" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ProductRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProductDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Productos (admin)" ]
+      }
+    },
+    "/api/admin/products/stats" : {
+      "get" : {
+        "operationId" : "stats",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AdminProductStatsDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Productos (admin)" ]
+      }
+    },
+    "/api/admin/products/{id}" : {
+      "delete" : {
+        "operationId" : "delete_6",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Productos (admin)" ]
+      },
+      "get" : {
+        "operationId" : "show_7",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProductDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Productos (admin)" ]
+      },
+      "put" : {
+        "operationId" : "update_8",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "multipart/form-data" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ProductRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProductDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Productos (admin)" ]
+      }
+    },
+    "/api/admin/products/{id}/images/{imageId}" : {
+      "delete" : {
+        "operationId" : "removeImage",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "path",
+          "name" : "imageId",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProductDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Productos (admin)" ]
+      }
+    },
+    "/api/admin/products/{id}/pos-ownership" : {
+      "get" : {
+        "operationId" : "posOwnership",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PosOwnershipDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Productos (admin)" ]
+      }
+    },
+    "/api/admin/products/{id}/toggle-active" : {
+      "post" : {
+        "operationId" : "toggleActive",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProductDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Productos (admin)" ]
+      }
+    },
+    "/api/admin/products/{id}/toggle-featured" : {
+      "post" : {
+        "operationId" : "toggleFeatured",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProductDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Productos (admin)" ]
+      }
+    },
+    "/api/admin/products/{productId}/variations" : {
+      "post" : {
+        "operationId" : "add",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "productId",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/VariationRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProductDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Variaciones de producto (admin)" ]
+      }
+    },
+    "/api/admin/products/{productId}/variations/{variationId}" : {
+      "delete" : {
+        "operationId" : "delete_5",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "productId",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "path",
+          "name" : "variationId",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Variaciones de producto (admin)" ]
+      },
+      "put" : {
+        "operationId" : "update_7",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "productId",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "path",
+          "name" : "variationId",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/VariationRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProductDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Variaciones de producto (admin)" ]
+      }
+    },
+    "/api/admin/reports/payment-methods" : {
+      "get" : {
+        "operationId" : "byMethod",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "startDate",
+          "required" : true,
+          "schema" : {
+            "format" : "date",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "endDate",
+          "required" : true,
+          "schema" : {
+            "format" : "date",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "paymentStatus",
+          "required" : false,
+          "schema" : {
+            "default" : "paid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/PaymentMethodDetailDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Reportes de métodos de pago (admin)" ]
+      }
+    },
+    "/api/admin/reports/payment-methods/export" : {
+      "get" : {
+        "operationId" : "export_2",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "startDate",
+          "required" : true,
+          "schema" : {
+            "format" : "date",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "endDate",
+          "required" : true,
+          "schema" : {
+            "format" : "date",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "paymentStatus",
+          "required" : false,
+          "schema" : {
+            "default" : "paid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "format" : "byte",
+                  "type" : "string"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Reportes de métodos de pago (admin)" ]
+      }
+    },
+    "/api/admin/reports/payment-methods/status-distribution" : {
+      "get" : {
+        "operationId" : "statusDistribution",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "startDate",
+          "required" : true,
+          "schema" : {
+            "format" : "date",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "endDate",
+          "required" : true,
+          "schema" : {
+            "format" : "date",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/PaymentStatusDistributionDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Reportes de métodos de pago (admin)" ]
+      }
+    },
+    "/api/admin/reports/payment-methods/summary" : {
+      "get" : {
+        "operationId" : "summary_2",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "startDate",
+          "required" : true,
+          "schema" : {
+            "format" : "date",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "endDate",
+          "required" : true,
+          "schema" : {
+            "format" : "date",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "paymentStatus",
+          "required" : false,
+          "schema" : {
+            "default" : "paid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PaymentMethodsSummaryDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Reportes de métodos de pago (admin)" ]
+      }
+    },
+    "/api/admin/reports/products" : {
+      "get" : {
+        "operationId" : "data",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "startDate",
+          "required" : true,
+          "schema" : {
+            "format" : "date",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "endDate",
+          "required" : true,
+          "schema" : {
+            "format" : "date",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "categoryId",
+          "required" : false,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "query",
+          "name" : "search",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "sortBy",
+          "required" : false,
+          "schema" : {
+            "default" : "revenue",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "sortDirection",
+          "required" : false,
+          "schema" : {
+            "default" : "desc",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "page",
+          "required" : false,
+          "schema" : {
+            "default" : 1,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PageProductReportRowDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Reportes de productos (admin)" ]
+      }
+    },
+    "/api/admin/reports/products/by-category" : {
+      "get" : {
+        "operationId" : "byCategory",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "startDate",
+          "required" : true,
+          "schema" : {
+            "format" : "date",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "endDate",
+          "required" : true,
+          "schema" : {
+            "format" : "date",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/CategoryRevenueDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Reportes de productos (admin)" ]
+      }
+    },
+    "/api/admin/reports/products/export" : {
+      "get" : {
+        "operationId" : "export_1",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "startDate",
+          "required" : true,
+          "schema" : {
+            "format" : "date",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "endDate",
+          "required" : true,
+          "schema" : {
+            "format" : "date",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "categoryId",
+          "required" : false,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "query",
+          "name" : "search",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "format" : "byte",
+                  "type" : "string"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Reportes de productos (admin)" ]
+      }
+    },
+    "/api/admin/reports/products/summary" : {
+      "get" : {
+        "operationId" : "summary_1",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "startDate",
+          "required" : true,
+          "schema" : {
+            "format" : "date",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "endDate",
+          "required" : true,
+          "schema" : {
+            "format" : "date",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "categoryId",
+          "required" : false,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "query",
+          "name" : "search",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProductsSummaryDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Reportes de productos (admin)" ]
+      }
+    },
+    "/api/admin/reports/products/top-by-quantity" : {
+      "get" : {
+        "operationId" : "topByQuantity",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "startDate",
+          "required" : true,
+          "schema" : {
+            "format" : "date",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "endDate",
+          "required" : true,
+          "schema" : {
+            "format" : "date",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/ProductReportRowDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Reportes de productos (admin)" ]
+      }
+    },
+    "/api/admin/reports/products/top-by-revenue" : {
+      "get" : {
+        "operationId" : "topByRevenue",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "startDate",
+          "required" : true,
+          "schema" : {
+            "format" : "date",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "endDate",
+          "required" : true,
+          "schema" : {
+            "format" : "date",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/ProductReportRowDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Reportes de productos (admin)" ]
+      }
+    },
+    "/api/admin/reports/sales/by-day" : {
+      "get" : {
+        "operationId" : "byDay",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "startDate",
+          "required" : true,
+          "schema" : {
+            "format" : "date",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "endDate",
+          "required" : true,
+          "schema" : {
+            "format" : "date",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "paymentStatus",
+          "required" : false,
+          "schema" : {
+            "default" : "all",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/SalesByDayDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Reportes de ventas (admin)" ]
+      }
+    },
+    "/api/admin/reports/sales/by-payment-method" : {
+      "get" : {
+        "operationId" : "byPaymentMethod",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "startDate",
+          "required" : true,
+          "schema" : {
+            "format" : "date",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "endDate",
+          "required" : true,
+          "schema" : {
+            "format" : "date",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/PaymentMethodRevenueDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Reportes de ventas (admin)" ]
+      }
+    },
+    "/api/admin/reports/sales/export" : {
+      "get" : {
+        "operationId" : "export",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "startDate",
+          "required" : true,
+          "schema" : {
+            "format" : "date",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "endDate",
+          "required" : true,
+          "schema" : {
+            "format" : "date",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "paymentStatus",
+          "required" : false,
+          "schema" : {
+            "default" : "all",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "format" : "byte",
+                  "type" : "string"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Reportes de ventas (admin)" ]
+      }
+    },
+    "/api/admin/reports/sales/summary" : {
+      "get" : {
+        "operationId" : "summary",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "startDate",
+          "required" : true,
+          "schema" : {
+            "format" : "date",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "endDate",
+          "required" : true,
+          "schema" : {
+            "format" : "date",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "paymentStatus",
+          "required" : false,
+          "schema" : {
+            "default" : "all",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SalesSummaryDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Reportes de ventas (admin)" ]
+      }
+    },
+    "/api/admin/reports/sales/top-products" : {
+      "get" : {
+        "operationId" : "topProducts",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "startDate",
+          "required" : true,
+          "schema" : {
+            "format" : "date",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "endDate",
+          "required" : true,
+          "schema" : {
+            "format" : "date",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/TopProductDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Reportes de ventas (admin)" ]
+      }
+    },
+    "/api/admin/roles" : {
+      "get" : {
+        "operationId" : "index_4",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/RoleDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Roles (admin)" ]
+      },
+      "post" : {
+        "operationId" : "create_4",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/RoleRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RoleDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Roles (admin)" ]
+      }
+    },
+    "/api/admin/roles/permissions" : {
+      "get" : {
+        "operationId" : "permissions",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "additionalProperties" : {
+                    "items" : {
+                      "$ref" : "#/components/schemas/PermissionDto"
+                    },
+                    "type" : "array"
+                  },
+                  "type" : "object"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Roles (admin)" ]
+      }
+    },
+    "/api/admin/roles/{id}" : {
+      "delete" : {
+        "operationId" : "delete_4",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Roles (admin)" ]
+      },
+      "get" : {
+        "operationId" : "show_6",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RoleDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Roles (admin)" ]
+      },
+      "put" : {
+        "operationId" : "update_6",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/RoleRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RoleDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Roles (admin)" ]
+      }
+    },
+    "/api/admin/settings/general" : {
+      "get" : {
+        "operationId" : "show_5",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/GeneralSettingsDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Configuración general (admin)" ]
+      },
+      "put" : {
+        "operationId" : "update_5",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/GeneralSettingsUpdateRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/GeneralSettingsDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Configuración general (admin)" ]
+      }
+    },
+    "/api/admin/settings/store" : {
+      "get" : {
+        "operationId" : "show_4",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/StoreSettingsDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Configuración de tienda (admin)" ]
+      },
+      "put" : {
+        "operationId" : "update_4",
+        "requestBody" : {
+          "content" : {
+            "multipart/form-data" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/StoreSettingsUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/StoreSettingsDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Configuración de tienda (admin)" ]
+      }
+    },
+    "/api/admin/shipping/carriers" : {
+      "get" : {
+        "operationId" : "available",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "type" : "string"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Transportistas (admin)" ]
+      }
+    },
+    "/api/admin/shipping/methods" : {
+      "get" : {
+        "operationId" : "index_3",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/ShippingMethodDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Métodos de envío (admin)" ]
+      },
+      "post" : {
+        "operationId" : "create_3",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ShippingMethodRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ShippingMethodDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Métodos de envío (admin)" ]
+      }
+    },
+    "/api/admin/shipping/methods/{id}" : {
+      "delete" : {
+        "operationId" : "delete_3",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Métodos de envío (admin)" ]
+      },
+      "get" : {
+        "operationId" : "show_3",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ShippingMethodDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Métodos de envío (admin)" ]
+      },
+      "put" : {
+        "operationId" : "update_3",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ShippingMethodRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ShippingMethodDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Métodos de envío (admin)" ]
+      }
+    },
+    "/api/admin/shipping/methods/{id}/credentials" : {
+      "put" : {
+        "operationId" : "updateCredentials",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "additionalProperties" : {
+                  "type" : "string"
+                },
+                "type" : "object"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ShippingMethodDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Métodos de envío (admin)" ]
+      }
+    },
+    "/api/admin/shipping/methods/{id}/toggle-status" : {
+      "post" : {
+        "operationId" : "toggleStatus_3",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ShippingMethodDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Métodos de envío (admin)" ]
+      }
+    },
+    "/api/admin/shipping/rates" : {
+      "get" : {
+        "operationId" : "index_2",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "methodId",
+          "required" : false,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "query",
+          "name" : "zoneId",
+          "required" : false,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/ShippingRateDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Tarifas de envío (admin)" ]
+      },
+      "post" : {
+        "operationId" : "create_2",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ShippingRateRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ShippingRateDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Tarifas de envío (admin)" ]
+      }
+    },
+    "/api/admin/shipping/rates/{id}" : {
+      "delete" : {
+        "operationId" : "delete_2",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Tarifas de envío (admin)" ]
+      },
+      "get" : {
+        "operationId" : "show_2",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ShippingRateDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Tarifas de envío (admin)" ]
+      },
+      "put" : {
+        "operationId" : "update_2",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ShippingRateRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ShippingRateDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Tarifas de envío (admin)" ]
+      }
+    },
+    "/api/admin/shipping/rates/{id}/toggle-status" : {
+      "post" : {
+        "operationId" : "toggleStatus_2",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ShippingRateDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Tarifas de envío (admin)" ]
+      }
+    },
+    "/api/admin/shipping/zones" : {
+      "get" : {
+        "operationId" : "index_1",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "search",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/ShippingZoneDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Zonas de envío (admin)" ]
+      },
+      "post" : {
+        "operationId" : "create_1",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ShippingZoneRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ShippingZoneDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Zonas de envío (admin)" ]
+      }
+    },
+    "/api/admin/shipping/zones/{id}" : {
+      "delete" : {
+        "operationId" : "delete_1",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Zonas de envío (admin)" ]
+      },
+      "get" : {
+        "operationId" : "show_1",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ShippingZoneDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Zonas de envío (admin)" ]
+      },
+      "put" : {
+        "operationId" : "update_1",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ShippingZoneRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ShippingZoneDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Zonas de envío (admin)" ]
+      }
+    },
+    "/api/admin/shipping/zones/{id}/toggle-status" : {
+      "post" : {
+        "operationId" : "toggleStatus_1",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ShippingZoneDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Zonas de envío (admin)" ]
+      }
+    },
+    "/api/admin/users" : {
+      "get" : {
+        "operationId" : "index",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "search",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "roleId",
+          "required" : false,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "query",
+          "name" : "active",
+          "required" : false,
+          "schema" : {
+            "type" : "boolean"
+          }
+        }, {
+          "in" : "query",
+          "name" : "sortField",
+          "required" : false,
+          "schema" : {
+            "default" : "createdAt",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "sortDirection",
+          "required" : false,
+          "schema" : {
+            "default" : "desc",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "page",
+          "required" : false,
+          "schema" : {
+            "default" : 1,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PageUserDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Usuarios (admin)" ]
+      },
+      "post" : {
+        "operationId" : "create",
+        "requestBody" : {
+          "content" : {
+            "multipart/form-data" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/UserRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/UserDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Usuarios (admin)" ]
+      }
+    },
+    "/api/admin/users/{id}" : {
+      "delete" : {
+        "operationId" : "delete",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Usuarios (admin)" ]
+      },
+      "get" : {
+        "operationId" : "show",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/UserDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Usuarios (admin)" ]
+      },
+      "put" : {
+        "operationId" : "update",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "multipart/form-data" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/UserRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/UserDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Usuarios (admin)" ]
+      }
+    },
+    "/api/admin/users/{id}/resend-invitation" : {
+      "post" : {
+        "operationId" : "resendInvitation",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/UserDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Usuarios (admin)" ]
+      }
+    },
+    "/api/admin/users/{id}/toggle-status" : {
+      "post" : {
+        "operationId" : "toggleStatus",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/UserDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Usuarios (admin)" ]
+      }
+    }
+  },
+  "servers" : [ {
+    "description" : "Mismo origen de la tienda",
+    "url" : "/"
+  } ],
+  "tags" : [ {
+    "description" : "CRUD de zonas de cobertura por región/comuna, JWT bearer con rol ADMIN",
+    "name" : "Zonas de envío (admin)"
+  }, {
+    "description" : "Administradores de la tienda, JWT bearer con rol ADMIN",
+    "name" : "Usuarios (admin)"
+  }, {
+    "description" : "CRUD de categorías, JWT bearer con rol ADMIN",
+    "name" : "Categorías (admin)"
+  }, {
+    "description" : "CRUD de productos, JWT bearer con rol ADMIN",
+    "name" : "Productos (admin)"
+  }, {
+    "description" : "CRUD de variaciones de un producto, JWT bearer con rol ADMIN",
+    "name" : "Variaciones de producto (admin)"
+  }, {
+    "description" : "Gestión de órdenes de la tienda, JWT bearer con rol ADMIN",
+    "name" : "Órdenes (admin)"
+  }, {
+    "description" : "Ranking y desgloses de productos vendidos, JWT bearer con rol ADMIN",
+    "name" : "Reportes de productos (admin)"
+  }, {
+    "description" : "Roles y permisos de administradores, JWT bearer con rol ADMIN",
+    "name" : "Roles (admin)"
+  }, {
+    "description" : "Branding, banners home y ajustes visuales, JWT bearer con rol ADMIN",
+    "name" : "Configuración de tienda (admin)"
+  }, {
+    "description" : "Login/registro de admin y cliente, recuperación de contraseña — todo público, emite el JWT bearer usado por las superficies admin y cliente",
+    "name" : "Autenticación"
+  }, {
+    "description" : "Lectura, direcciones y estadísticas de clientes, JWT bearer con rol ADMIN",
+    "name" : "Clientes (admin)"
+  }, {
+    "description" : "CRUD de banners de la portada, JWT bearer con rol ADMIN",
+    "name" : "Banners (admin)"
+  }, {
+    "description" : "CRUD de cupones de descuento, JWT bearer con rol ADMIN",
+    "name" : "Cupones (admin)"
+  }, {
+    "description" : "Transportistas habilitados en esta instalación, JWT bearer con rol ADMIN",
+    "name" : "Transportistas (admin)"
+  }, {
+    "description" : "CRUD de atributos y sus valores, JWT bearer con rol ADMIN",
+    "name" : "Atributos (admin)"
+  }, {
+    "description" : "Entregas del outbox que esperan revisión, JWT bearer con rol ADMIN",
+    "name" : "Envíos fallidos (admin)"
+  }, {
+    "description" : "Resumen, serie diaria y desgloses de ventas, JWT bearer con rol ADMIN",
+    "name" : "Reportes de ventas (admin)"
+  }, {
+    "description" : "Moneda, impuestos, envío y checkout, JWT bearer con rol ADMIN",
+    "name" : "Configuración general (admin)"
+  }, {
+    "description" : "Resincronización con el POS, JWT bearer con rol ADMIN",
+    "name" : "UvoPOS (admin)"
+  }, {
+    "description" : "CRUD de métodos de envío y sus credenciales de transportista, JWT bearer con rol ADMIN",
+    "name" : "Métodos de envío (admin)"
+  }, {
+    "description" : "Desglose de ingresos y éxito por método de pago, JWT bearer con rol ADMIN",
+    "name" : "Reportes de métodos de pago (admin)"
+  }, {
+    "description" : "CRUD de tarifas por método+zona, JWT bearer con rol ADMIN",
+    "name" : "Tarifas de envío (admin)"
+  }, {
+    "description" : "Configuración de Webpay/MercadoPago por tienda, JWT bearer con rol ADMIN",
+    "name" : "Pasarelas de pago (admin)"
+  } ]
+}

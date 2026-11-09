@@ -5,16 +5,22 @@ import io.swagger.v3.oas.annotations.enums.SecuritySchemeIn;
 import io.swagger.v3.oas.annotations.enums.SecuritySchemeType;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Info;
+import io.swagger.v3.oas.models.servers.Server;
 import org.springdoc.core.models.GroupedOpenApi;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-// Swagger UI at /swagger-ui.html, spec at /v3/api-docs — both already public in
+import java.util.List;
+
+// Swagger UI at /swagger-ui.html, spec at /v3/api-docs — both paths are in
 // SecurityConfig.PUBLIC_PATHS. Grouped by the project's five route surfaces (see CLAUDE.md)
 // instead of one flat list of 36+ controllers.
 //
 // PROD-17c: todo esto está detrás de SWAGGER_ENABLED (app.swagger.enabled). Apagado, estos beans se
 // siguen creando pero springdoc no publica nada: ni la UI ni /v3/api-docs ni los grupos.
+//
+// GAP-17: como producción exige apagarlo, el contrato vigente es el exportado en docs/api/, que
+// OpenApiSpecTest regenera y vigila. Cambiar un endpoint o un DTO expuesto obliga a regenerarlo.
 @Configuration
 @SecurityScheme(
         name = "bearerAuth",
@@ -34,9 +40,14 @@ import org.springframework.context.annotation.Configuration;
 )
 public class OpenApiConfig {
 
+    // GAP-17. Sin un servidor declarado, springdoc arma uno con el host de la petición, y la spec
+    // exportada cambiaría según desde dónde se genere. Cada tienda es su propio host: la API va siempre
+    // al mismo origen que la sirve.
     @Bean
     public OpenAPI uvoStoreOpenApi() {
-        return new OpenAPI().info(new Info()
+        return new OpenAPI()
+                .servers(List.of(new Server().url("/").description("Mismo origen de la tienda")))
+                .info(new Info()
                 .title("UvoStore API")
                 .version("0.0.1-SNAPSHOT")
                 .description("""
@@ -49,8 +60,8 @@ public class OpenApiConfig {
                         - **POS** (`/api/webhooks/pos/**`, `/api/sync/**`): integración con UvoPOS, firma HMAC \
                         (`X-Signature`/`X-Company-ID`/`X-Timestamp`) o API key — no probable con el botón \
                         "Authorize" de esta UI, ver la documentación de cada endpoint.
-                        - **Plataforma** (`/api/platform/**`): alta de tiendas nuevas por el equipo operador, \
-                        header `X-Platform-Key`.
+                        - **Plataforma** (`/api/platform/**`): alta y ciclo de vida de las tiendas por el equipo \
+                        operador, header `X-Platform-Key`, solo desde la red privada.
                         """));
     }
 
