@@ -1,0 +1,417 @@
+{
+  "components" : {
+    "schemas" : {
+      "ProductCreatedRequest" : {
+        "properties" : {
+          "companyId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "data" : {
+            "additionalProperties" : {
+              "type" : "object"
+            },
+            "minProperties" : 1,
+            "type" : "object"
+          },
+          "event" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "productId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "sku" : {
+            "minLength" : 1,
+            "type" : "string"
+          }
+        },
+        "required" : [ "companyId", "productId" ],
+        "type" : "object"
+      },
+      "ProductUpdatedRequest" : {
+        "properties" : {
+          "changedFields" : {
+            "items" : {
+              "type" : "string"
+            },
+            "minItems" : 1,
+            "type" : "array"
+          },
+          "companyId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "data" : {
+            "additionalProperties" : {
+              "type" : "object"
+            },
+            "minProperties" : 1,
+            "type" : "object"
+          },
+          "event" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "productId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "sku" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "version" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "required" : [ "companyId", "productId", "version" ],
+        "type" : "object"
+      },
+      "StockAlertRequest" : {
+        "properties" : {
+          "alertType" : {
+            "minLength" : 1,
+            "pattern" : "out_of_stock|low_stock",
+            "type" : "string"
+          },
+          "companyId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "currentStock" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "currentStockWeb" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "event" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "productId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "sku" : {
+            "minLength" : 1,
+            "type" : "string"
+          }
+        },
+        "required" : [ "companyId", "currentStock", "currentStockWeb", "productId" ],
+        "type" : "object"
+      },
+      "StockUpdatedRequest" : {
+        "properties" : {
+          "companyId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "event" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "newStock" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "oldStock" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "productId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "sku" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "stockWeb" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "variantId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "warehouseId" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "required" : [ "companyId", "newStock", "oldStock", "productId", "stockWeb", "warehouseId" ],
+        "type" : "object"
+      },
+      "SyncProductRequest" : {
+        "properties" : {
+          "active" : {
+            "type" : "boolean"
+          },
+          "categoryName" : {
+            "type" : "string"
+          },
+          "companyId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "externalId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "name" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "price" : {
+            "type" : "number"
+          },
+          "sku" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "stock" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "variants" : {
+            "items" : {
+              "$ref" : "#/components/schemas/Variant"
+            },
+            "type" : "array"
+          },
+          "version" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "warehouseId" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "required" : [ "companyId", "externalId", "version" ],
+        "type" : "object"
+      },
+      "Variant" : {
+        "properties" : {
+          "attributes" : {
+            "additionalProperties" : {
+              "type" : "string"
+            },
+            "type" : "object"
+          },
+          "price" : {
+            "type" : "number"
+          },
+          "sku" : {
+            "type" : "string"
+          },
+          "stock" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "variantId" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      }
+    },
+    "securitySchemes" : {
+      "bearerAuth" : {
+        "bearerFormat" : "JWT",
+        "description" : "Token JWT emitido por /api/admin/auth/login o /api/customer/auth/login — compartido por las superficies admin y cliente (JwtAuthenticationFilter).",
+        "scheme" : "bearer",
+        "type" : "http"
+      },
+      "platformApiKey" : {
+        "description" : "Clave compartida del operador de la plataforma, usada solo por /api/platform/** (alta de tiendas). No es una credencial de cliente.",
+        "in" : "header",
+        "name" : "X-Platform-Key",
+        "type" : "apiKey"
+      }
+    }
+  },
+  "info" : {
+    "description" : "API de UvoStore, una plataforma SaaS de e-commerce multi-tenant. Agrupa cinco superficies con distinta autenticación:\n\n- **Pública** (`/api/v1/**`): catálogo, carrito y checkout del storefront, sin autenticación.\n- **Admin** (`/api/admin/**`): panel de administración de cada tienda, JWT bearer con rol ADMIN.\n- **Cliente** (`/api/customer/**`): cuenta y direcciones del comprador, JWT bearer con rol CUSTOMER.\n- **POS** (`/api/webhooks/pos/**`, `/api/sync/**`): integración con UvoPOS, firma HMAC (`X-Signature`/`X-Company-ID`/`X-Timestamp`) o API key — no probable con el botón \"Authorize\" de esta UI, ver la documentación de cada endpoint.\n- **Plataforma** (`/api/platform/**`): alta y ciclo de vida de las tiendas por el equipo operador, header `X-Platform-Key`, solo desde la red privada.\n",
+    "title" : "UvoStore API",
+    "version" : "0.0.1-SNAPSHOT"
+  },
+  "openapi" : "3.1.0",
+  "paths" : {
+    "/api/sync/product" : {
+      "post" : {
+        "operationId" : "syncProduct",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/SyncProductRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "additionalProperties" : {
+                    "type" : "object"
+                  },
+                  "type" : "object"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Sincronización POS" ]
+      }
+    },
+    "/api/webhooks/pos/product-created" : {
+      "post" : {
+        "operationId" : "productCreated",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ProductCreatedRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "additionalProperties" : {
+                    "type" : "object"
+                  },
+                  "type" : "object"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Webhooks POS" ]
+      }
+    },
+    "/api/webhooks/pos/product-updated" : {
+      "post" : {
+        "operationId" : "productUpdated",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ProductUpdatedRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "additionalProperties" : {
+                    "type" : "object"
+                  },
+                  "type" : "object"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Webhooks POS" ]
+      }
+    },
+    "/api/webhooks/pos/stock-alert" : {
+      "post" : {
+        "operationId" : "stockAlert",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/StockAlertRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "additionalProperties" : {
+                    "type" : "object"
+                  },
+                  "type" : "object"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Webhooks POS" ]
+      }
+    },
+    "/api/webhooks/pos/stock-updated" : {
+      "post" : {
+        "operationId" : "stockUpdated",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/StockUpdatedRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "additionalProperties" : {
+                    "type" : "object"
+                  },
+                  "type" : "object"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Webhooks POS" ]
+      }
+    }
+  },
+  "servers" : [ {
+    "description" : "Mismo origen de la tienda",
+    "url" : "/"
+  } ],
+  "tags" : [ {
+    "description" : "Sincronización de productos con UvoPOS — API key (Authorization: Bearer + X-Company-ID)",
+    "name" : "Sincronización POS"
+  }, {
+    "description" : "UvoPOS notifica cambios de stock/producto — firma HMAC (X-Signature/X-Company-ID/X-Timestamp), no probable desde el botón Authorize",
+    "name" : "Webhooks POS"
+  } ]
+}
