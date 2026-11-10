@@ -531,6 +531,25 @@ there would leave a dead row here, which `StoreOnboardingTest` catches by readin
 endpoints. The "UvoStore Admin" title in `AdminLayout.tsx` is the platform's own branding for the panel,
 not a store name, and is deliberately untouched.
 
+**GAP-18 — the legal pages (`frontend/src/pages/legal/*`) carry no store data of their own.** They used to
+hard-code shipping rates, a free-shipping threshold, cookies and data the site never collects, a 3-month
+warranty and no seller identity, identical for every store. Now whatever varies comes from configuration:
+seller legal name, RUT and address (`store_settings.legal_*`, V35, edited in "Config. de tienda →
+Información legal", shown by `LegalLayout` and the footer), the withdrawal right, `pricesIncludeTax`, coverage
+plus `GET /api/v1/shipping/methods` (`ShippingCoverageService.getMethods`: only methods the checkout can
+actually quote — active rate in an active zone, or an available carrier; read through a projection so the
+public page never decrypts carrier credentials) and the active gateways from `/checkout/config`. Rules:
+- **Don't write a store-specific fact into a legal page.** If legal counsel asks for one, it becomes a
+  `store_settings` column, a field in the form and in `PublicStoreSettingsDto`.
+- **Every fixed sentence is listed in `docs/revision-legal-paginas.md`,** pending legal review. Changing or
+  adding legal text means updating that list too; `LegalPages.test.tsx` pins the promises that were removed.
+- **The withdrawal right is stored negated, `withdrawal_right_excluded`,** and the request field is a
+  `Boolean`: the store-settings PUT replaces every field, a missing primitive `boolean` answers 400, and a
+  missing `Boolean` maps to `false` — so a client that doesn't send it leaves the legal default (right in
+  force) instead of switching it off.
+- **RUTs go through `ChileanRut.normalize`** (mod-11 check digit, stored as `12345678-5`, blank → null;
+  the V35 `CHECK` is the backstop) and are shown with `utils/rut.ts`'s `formatRut`.
+
 **A payment is only accepted if the amount matches** (M4). `OrderStatusService.markPaid` takes the
 amount the gateway says arrived and compares it against `order.getTotal()` before anything is marked
 paid — none of Stripe, Webpay, or MercadoPago did that; they each read the payment's *status* while

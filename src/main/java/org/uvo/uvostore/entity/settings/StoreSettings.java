@@ -200,6 +200,23 @@ public class StoreSettings {
     @Column(name = "benefit_4_description", columnDefinition = "text")
     private String benefit4Description;
 
+    // GAP-18. Identidad del vendedor para las páginas legales y el pie (V35).
+    @Column(name = "legal_name")
+    private String legalName;
+
+    // Normalizado por ChileanRut: 12345678-5.
+    @Column(name = "legal_tax_id")
+    private String legalTaxId;
+
+    @Column(name = "legal_address")
+    private String legalAddress;
+
+    // En negativo a propósito, ver V35: el PUT reemplaza todo y, si el campo no llega, se toma como false,
+    // que así deja el retracto vigente.
+    @Column(name = "withdrawal_right_excluded", nullable = false)
+    @Builder.Default
+    private boolean withdrawalRightExcluded = false;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;

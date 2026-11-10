@@ -47,6 +47,10 @@ public record StoreSettingsDto(
         String tiktokUrl,
         String metaTitle,
         String metaDescription,
-        String metaKeywords
+        String metaKeywords,
+        String legalName,
+        String legalTaxId,
+        String legalAddress,
+        boolean withdrawalRightExcluded
 ) {
 }

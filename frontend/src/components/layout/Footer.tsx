@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useStoreSettingsStore } from '../../stores/useStoreSettingsStore'
+import { formatRut } from '../../utils/rut'
 
 export default function Footer() {
   const { settings, categories } = useStoreSettingsStore()
@@ -10,6 +11,10 @@ export default function Footer() {
     { url: settings?.twitterUrl, label: 'Twitter' },
     { url: settings?.tiktokUrl, label: 'TikTok' },
   ].filter((social) => social.url)
+
+  const legalLine = [settings?.legalName, settings?.legalTaxId && `RUT ${formatRut(settings.legalTaxId)}`]
+    .filter(Boolean)
+    .join(' · ')
 
   return (
     <footer className="mt-auto bg-dark text-gray-300">
@@ -85,7 +90,9 @@ export default function Footer() {
       </div>
 
       <div className="border-t border-white/10 py-4 text-center text-xs">
-        © {new Date().getFullYear()} {settings?.storeName ?? 'UvoStore'}. Todos los derechos reservados.
+        <p>© {new Date().getFullYear()} {settings?.storeName ?? 'UvoStore'}. Todos los derechos reservados.</p>
+        {/* GAP-18. Quién vende, en cada página y no solo en las legales; cada dato solo si la tienda lo completó. */}
+        {legalLine && <p className="mt-1">{legalLine}</p>}
       </div>
     </footer>
   )

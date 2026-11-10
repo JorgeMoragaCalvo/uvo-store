@@ -1,6 +1,6 @@
 # Guía de uso de UvoStore
 
-Esta guía describe el panel tal como está hoy en `uvo-store` (actualizada el 8 de noviembre de 2026): las
+Esta guía describe el panel tal como está hoy en `uvo-store` (actualizada el 9 de noviembre de 2026): las
 pantallas de `frontend/src/admin` y lo que hace el backend detrás de ellas. Al final hay una lista de
 limitaciones que conviene conocer antes de abrir una tienda.
 
@@ -44,7 +44,7 @@ panel dice «No tienes permiso para ver esta sección».
 | Paso | Dónde                                        | Para qué                                              |
 |------|----------------------------------------------|-------------------------------------------------------|
 | 1    | Config. general → General, Moneda, Checkout  | Datos de contacto, impuesto y reglas de compra        |
-| 2    | Config. de tienda                            | Logo, colores, secciones del inicio y SEO             |
+| 2    | Config. de tienda                            | Logo, colores, inicio, SEO e **información legal**    |
 | 3    | Categorías                                   | Para poder clasificar los productos                   |
 | 4    | Productos                                    | El catálogo                                           |
 | 5    | Zonas, métodos y tarifas de envío            | **Sin esto no se puede comprar con despacho**         |
@@ -105,7 +105,25 @@ Las claves secretas nunca se muestran. El campo dice «Configurado» o «No conf
 - **Contacto y redes:**
   - correo, teléfono y WhatsApp;
   - Facebook, Instagram, X y TikTok.
+- **Información legal:**
+  - **Razón social**, **RUT** y **Domicilio** del vendedor. Se muestran en las cuatro páginas legales y en el
+    pie de la tienda. **Complétalos antes de publicar:** la ley exige que el comprador pueda identificar al vendedor.
+  - El RUT se puede escribir con o sin puntos; si el dígito verificador no corresponde, no se guarda.
+  - **Excluir el derecho a retracto:** apagado, la política de devoluciones ofrece retracto de 10 días desde que
+    el comprador recibe el producto. Encendido, dice expresamente que la tienda no lo ofrece. Consúltalo con tu
+    asesoría legal antes de cambiarlo.
 - **SEO.**
+
+**Páginas legales.** Términos y condiciones, privacidad, envíos y devoluciones (enlazadas en el pie) toman de la
+configuración lo que cambia entre tiendas:
+- **Todas:** el bloque «Responsable y contacto», con la información legal, el correo y el teléfono de contacto.
+- **Envíos:** las regiones de tus zonas activas; los métodos que el checkout puede ofrecer, con su descripción
+  y sus días hábiles (un método sin tarifas activas no aparece); y el envío gratis, si está encendido en
+  Config. general. Con «Envío habilitado» apagado, solo dice que el envío se coordina con la tienda.
+- **Devoluciones y términos:** el retracto según el interruptor de arriba, y si los precios incluyen IVA.
+- **Privacidad:** las pasarelas de pago que tengas activas.
+
+El resto del texto es igual para todas las tiendas y no se edita desde el panel (ver la sección 14).
 
 **Banners** (`Banners → Nuevo`)
 - **Imagen de escritorio:** obligatoria. La imagen para móvil es opcional.
@@ -453,3 +471,6 @@ revisión del código, no de pruebas en producción.
     cuando cancelas una orden con el pago pendiente y la pasarela confirma el cobro después. La orden sigue
     cancelada, el aviso queda en el historial (que no se ve) y lo recibe el operador. El pago queda en FAILED,
     así que el panel no deja reembolsarlo: la devolución se hace directamente en el panel de la pasarela.
+13. **El texto fijo de las páginas legales espera la revisión de asesoría legal,** y no se puede cambiar desde el
+    panel. Una política propia (cambios por talla, productos que no se aceptan de vuelta, plazos de preparación)
+    hoy no tiene dónde escribirse.

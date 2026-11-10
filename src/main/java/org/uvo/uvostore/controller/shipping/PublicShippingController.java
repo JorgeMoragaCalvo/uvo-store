@@ -4,6 +4,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.uvo.uvostore.service.shipping.ShippingCoverageDto;
+import org.uvo.uvostore.service.shipping.PublicShippingMethodDto;
 import org.uvo.uvostore.service.shipping.ShippingCoverageService;
 
 import java.util.List;
@@ -26,5 +27,11 @@ public class PublicShippingController {
     @GetMapping("/coverage")
     public List<ShippingCoverageDto> coverage() {
         return shippingCoverageService.getCoverage();
+    }
+
+    // GAP-18. Para la política de envíos: qué métodos ofrece la tienda y en qué plazo, en vez de un texto fijo.
+    @GetMapping("/methods")
+    public List<PublicShippingMethodDto> methods() {
+        return shippingCoverageService.getMethods();
     }
 }

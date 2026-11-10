@@ -98,6 +98,10 @@ function StoreSettingsForm({ initial }: { initial: StoreSettingsDto }) {
       append('metaTitle', form.metaTitle)
       append('metaDescription', form.metaDescription)
       append('metaKeywords', form.metaKeywords)
+      append('legalName', form.legalName)
+      append('legalTaxId', form.legalTaxId)
+      append('legalAddress', form.legalAddress)
+      append('withdrawalRightExcluded', form.withdrawalRightExcluded)
       if (logo) data.append('newLogo', logo)
       if (favicon) data.append('newFavicon', favicon)
 
@@ -293,6 +297,48 @@ function StoreSettingsForm({ initial }: { initial: StoreSettingsDto }) {
             <Input placeholder="Instagram" aria-label="Instagram" value={form.instagramUrl ?? ''} onChange={(e) => set('instagramUrl', e.target.value)} />
             <Input placeholder="Twitter / X" aria-label="Twitter / X" value={form.twitterUrl ?? ''} onChange={(e) => set('twitterUrl', e.target.value)} />
             <Input placeholder="TikTok" aria-label="TikTok" value={form.tiktokUrl ?? ''} onChange={(e) => set('tiktokUrl', e.target.value)} />
+          </CardContent>
+        </Card>
+
+        {/* GAP-18. Las páginas legales identifican al vendedor con estos datos, en vez de un texto igual para todas las tiendas. */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Información legal</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <p className="text-sm text-muted-foreground">
+              Se muestran en las páginas legales y en el pie de la tienda. Complétalos antes de publicar: la ley exige
+              que el comprador pueda identificar al vendedor.
+            </p>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="legalName">Razón social</Label>
+                <Input id="legalName" value={form.legalName ?? ''} onChange={(e) => set('legalName', e.target.value)} />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="legalTaxId">RUT</Label>
+                <Input
+                  id="legalTaxId"
+                  placeholder="76.123.456-0"
+                  value={form.legalTaxId ?? ''}
+                  onChange={(e) => set('legalTaxId', e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="legalAddress">Domicilio</Label>
+              <Input id="legalAddress" value={form.legalAddress ?? ''} onChange={(e) => set('legalAddress', e.target.value)} />
+            </div>
+            <Toggle
+              id="withdrawalRightExcluded"
+              label="Excluir el derecho a retracto"
+              checked={form.withdrawalRightExcluded}
+              onChange={(v) => set('withdrawalRightExcluded', v)}
+            />
+            <p className="text-sm text-muted-foreground">
+              Apagado, el comprador puede retractarse dentro de 10 días desde que recibe el producto. Si lo excluyes, la
+              política de devoluciones lo dirá expresamente. Consúltalo con tu asesoría legal antes de cambiarlo.
+            </p>
           </CardContent>
         </Card>
 

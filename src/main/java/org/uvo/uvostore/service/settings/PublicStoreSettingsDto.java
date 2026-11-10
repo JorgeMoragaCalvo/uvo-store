@@ -58,6 +58,11 @@ public record PublicStoreSettingsDto(
         boolean shippingEnabled,
         String defaultShippingCost,
         boolean freeShippingEnabled,
-        String freeShippingThreshold
+        String freeShippingThreshold,
+        // GAP-18. Identidad del vendedor y retracto, para las páginas legales y el pie.
+        String legalName,
+        String legalTaxId,
+        String legalAddress,
+        boolean withdrawalRightExcluded
 ) {
 }

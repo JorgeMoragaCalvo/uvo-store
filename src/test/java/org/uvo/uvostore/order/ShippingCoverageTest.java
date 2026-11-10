@@ -13,6 +13,7 @@ import org.uvo.uvostore.entity.shipping.ShippingMethod;
 import org.uvo.uvostore.entity.shipping.ShippingRate;
 import org.uvo.uvostore.entity.shipping.ShippingZone;
 import org.uvo.uvostore.entity.shipping.enums.RateType;
+import org.uvo.uvostore.entity.shipping.enums.ShippingCarrier;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.CouponRepository;
 import org.uvo.uvostore.repository.OrderRepository;
@@ -100,6 +101,70 @@ class ShippingCoverageTest extends IntegrationTestSupport {
         seedZone(storeA, "Solo de A", List.of("Metropolitana"), null, BigDecimal.TEN);
 
         mockMvc.perform(get("/api/v1/shipping/coverage").header("Host", hostHeader(storeB)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isEmpty());
+    }
+
+    // --- métodos para la política de envíos (GAP-18) ---------------------------------------------
+
+    @Test
+    @DisplayName("GAP-18: la política de envíos lista los métodos con tarifa activa, con su plazo")
+    void methodsListTheOnesTheCheckoutCanOffer() throws Exception {
+        Store store = createStore("methods");
+        ShippingZone zone = seedZone(store, "Zona Centro", List.of("Metropolitana"), null, BigDecimal.valueOf(3990));
+        ShippingMethod express = seedMethod(store, "Express", true, false, null);
+        express.setDescription("Entrega al día siguiente");
+        express.setMinDeliveryDays(1);
+        express.setMaxDeliveryDays(2);
+        express.setSortOrder(-1);
+        methodRepository.save(express);
+        seedRate(store, zone, express, true);
+
+        mockMvc.perform(get("/api/v1/shipping/methods").header("Host", hostHeader(store)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].name").value("Express"))
+                .andExpect(jsonPath("$[0].description").value("Entrega al día siguiente"))
+                .andExpect(jsonPath("$[0].minDeliveryDays").value(1))
+                .andExpect(jsonPath("$[0].maxDeliveryDays").value(2))
+                .andExpect(jsonPath("$[0].code").doesNotExist())
+                .andExpect(jsonPath("$[0].apiCredentials").doesNotExist())
+                .andExpect(jsonPath("$[1].name").value("Despacho a domicilio"));
+    }
+
+    @Test
+    @DisplayName("GAP-18: no se anuncia un método que el checkout nunca ofrece")
+    void methodsOmitTheOnesTheCheckoutNeverOffers() throws Exception {
+        Store store = createStore("methods-omit");
+        ShippingZone zone = seedZone(store, "Zona Centro", List.of("Metropolitana"), null, BigDecimal.valueOf(3990));
+        // Apagado, aunque tenga tarifa.
+        seedRate(store, zone, seedMethod(store, "Apagado", false, false, null), true);
+        // Activo, sin ninguna tarifa.
+        seedMethod(store, "Sin tarifas", true, false, null);
+        // Con tarifa, pero la tarifa está apagada.
+        seedRate(store, zone, seedMethod(store, "Tarifa apagada", true, false, null), false);
+        // Con tarifa activa, pero en una zona apagada.
+        ShippingZone offZone = seedZone(store, "Zona apagada", List.of("Antofagasta"), null, BigDecimal.TEN);
+        offZone.setActive(false);
+        zoneRepository.save(offZone);
+        seedRate(store, offZone, seedMethod(store, "Zona apagada", true, false, null), true);
+        // Transportista sin homologar (SHIPPING_CARRIERS_ENABLED vacío en las pruebas).
+        seedMethod(store, "Chilexpress", true, true, ShippingCarrier.CHILEXPRESS);
+
+        mockMvc.perform(get("/api/v1/shipping/methods").header("Host", hostHeader(store)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].name").value("Despacho a domicilio"));
+    }
+
+    @Test
+    @DisplayName("GAP-18: los métodos de una tienda no se filtran a otra")
+    void methodsAreScopedToTheStore() throws Exception {
+        Store storeA = createStore("methods-a");
+        Store storeB = createStore("methods-b");
+        seedZone(storeA, "Solo de A", List.of("Metropolitana"), null, BigDecimal.TEN);
+
+        mockMvc.perform(get("/api/v1/shipping/methods").header("Host", hostHeader(storeB)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").isEmpty());
     }
@@ -454,6 +519,29 @@ class ShippingCoverageTest extends IntegrationTestSupport {
         rateRepository.save(rate);
 
         return zone;
+    }
+
+    private ShippingMethod seedMethod(Store store, String name, boolean active, boolean apiIntegration, ShippingCarrier carrier) {
+        ShippingMethod method = new ShippingMethod();
+        method.setStore(store);
+        method.setName(name);
+        method.setCode("metodo-" + nextSeq());
+        method.setActive(active);
+        method.setHasApiIntegration(apiIntegration);
+        method.setCarrier(carrier);
+        return methodRepository.save(method);
+    }
+
+    private void seedRate(Store store, ShippingZone zone, ShippingMethod method, boolean active) {
+        ShippingRate rate = new ShippingRate();
+        rate.setStore(store);
+        rate.setZone(zone);
+        rate.setMethod(method);
+        rate.setName("Tarifa plana");
+        rate.setRateType(RateType.FLAT);
+        rate.setFlatRate(BigDecimal.valueOf(5990));
+        rate.setActive(active);
+        rateRepository.save(rate);
     }
 
     private String checkoutBody(Long productId, String region, String commune) {

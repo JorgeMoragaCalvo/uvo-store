@@ -3,9 +3,12 @@ package org.uvo.uvostore.service.shipping;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.uvo.uvostore.entity.shipping.ShippingZone;
+import org.uvo.uvostore.repository.ShippingMethodRepository;
+import org.uvo.uvostore.repository.ShippingRateRepository;
 import org.uvo.uvostore.repository.ShippingZoneRepository;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.geo.GeoCatalog;
+import org.uvo.uvostore.service.shipping.carrier.ShippingCarrierPolicy;
 
 import java.text.Collator;
 import java.util.ArrayList;
@@ -34,12 +37,36 @@ public class ShippingCoverageService {
     private final ShippingZoneRepository zoneRepository;
     private final ZoneGeography zoneGeography;
     private final GeoCatalog geoCatalog;
+    private final ShippingMethodRepository methodRepository;
+    private final ShippingRateRepository rateRepository;
+    private final ShippingCarrierPolicy carrierPolicy;
 
     public ShippingCoverageService(ShippingZoneRepository zoneRepository, ZoneGeography zoneGeography,
-                                   GeoCatalog geoCatalog) {
+                                   GeoCatalog geoCatalog, ShippingMethodRepository methodRepository,
+                                   ShippingRateRepository rateRepository, ShippingCarrierPolicy carrierPolicy) {
         this.zoneRepository = zoneRepository;
         this.zoneGeography = zoneGeography;
         this.geoCatalog = geoCatalog;
+        this.methodRepository = methodRepository;
+        this.rateRepository = rateRepository;
+        this.carrierPolicy = carrierPolicy;
+    }
+
+    /**
+     * GAP-18. Los métodos que la política de envíos puede anunciar: los que el checkout de verdad llega a
+     * ofrecer en alguna dirección. Son los activos con alguna tarifa activa en una zona activa, y los de
+     * transportista que {@code ShippingRateServiceImpl.carrierQuotes} cotizaría. Un método activo sin tarifas
+     * no se cobra nunca, así que anunciarlo sería prometer un envío que no existe.
+     */
+    @Transactional(readOnly = true)
+    public List<PublicShippingMethodDto> getMethods() {
+        Long storeId = TenantContext.requireStoreId();
+        Set<Long> withRates = rateRepository.findMethodIdsWithActiveRateForStore(storeId);
+        return methodRepository.findActiveRowsForStore(storeId).stream()
+                .filter(m -> withRates.contains(m.id())
+                        || (m.hasApiIntegration() && carrierPolicy.isAvailable(m.carrier())))
+                .map(m -> new PublicShippingMethodDto(m.name(), m.description(), m.minDeliveryDays(), m.maxDeliveryDays()))
+                .toList();
     }
 
     @Transactional(readOnly = true)

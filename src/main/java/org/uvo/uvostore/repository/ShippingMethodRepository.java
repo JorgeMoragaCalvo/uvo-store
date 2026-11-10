@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.uvo.uvostore.entity.shipping.ShippingMethod;
+import org.uvo.uvostore.service.shipping.ActiveShippingMethodRow;
 
 import java.util.List;
 import java.util.Optional;
@@ -22,6 +23,13 @@ public interface ShippingMethodRepository extends JpaRepository<ShippingMethod, 
 
     @Query("select m.code from ShippingMethod m where m.store.id = :storeId and m.apiCredentials is not null order by m.code")
     List<String> findCodesWithCredentialsForStore(@Param("storeId") Long storeId);
+
+    // GAP-18. Los métodos activos de la tienda para la política de envíos, sin cargar la entidad (ver
+    // ActiveShippingMethodRow).
+    @Query("select new org.uvo.uvostore.service.shipping.ActiveShippingMethodRow("
+            + "m.id, m.name, m.description, m.minDeliveryDays, m.maxDeliveryDays, m.hasApiIntegration, m.carrier) "
+            + "from ShippingMethod m where m.store.id = :storeId and m.isActive = true order by m.sortOrder, m.id")
+    List<ActiveShippingMethodRow> findActiveRowsForStore(@Param("storeId") Long storeId);
 
     @Modifying(flushAutomatically = true)
     @Query("update ShippingMethod m set m.apiCredentials = null where m.store.id = :storeId and m.apiCredentials is not null")
