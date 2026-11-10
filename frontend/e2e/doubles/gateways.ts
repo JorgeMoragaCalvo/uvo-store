@@ -103,7 +103,18 @@ function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`)
 }
 
-/** Un formulario que el navegador envía solo: así vuelve Transbank al comercio, con un POST. */
+/**
+ * GAP-19. Así vuelve el ambiente de integración real de Transbank al terminar, al rechazar y al anular: un GET con
+ * los datos en la URL. El backend solo aceptaba POST, que era lo que hacía este doble, y el error no se veía.
+ */
+function redirectGet(res: ServerResponse, action: string, fields: Record<string, string>): void {
+  const url = new URL(action)
+  for (const [name, value] of Object.entries(fields)) url.searchParams.set(name, value)
+  res.writeHead(302, { Location: url.toString() })
+  res.end()
+}
+
+/** Un formulario que el navegador envía solo: un retorno con POST (lo usa el vencimiento del formulario). */
 function autoPost(res: ServerResponse, action: string, fields: Record<string, string>): void {
   const inputs = Object.entries(fields)
     .map(([name, value]) => `<input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(value)}">`)
@@ -256,19 +267,21 @@ ${buttonForm(action, { token_ws: token, outcome: 'pay-no-return' }, 'Pagar sin v
   }
 
   // Lo que manda Transbank de vuelta en cada caso: token_ws al terminar (pagado o rechazado), TBK_TOKEN al anular,
-  // y solo la orden y la sesión cuando vence el tiempo en el formulario.
+  // y solo la orden y la sesión cuando vence el tiempo en el formulario. Los tres primeros, por GET como en el
+  // ambiente de integración (GAP-19); el vencimiento no se pudo observar ahí y sigue por POST, así que los dos
+  // métodos quedan cubiertos.
   switch (form.get('outcome')) {
     case 'pay':
       tx.status = 'AUTHORIZED'
-      autoPost(res, tx.returnUrl, { token_ws: token })
+      redirectGet(res, tx.returnUrl, { token_ws: token })
       return
     case 'reject':
       tx.status = 'FAILED'
-      autoPost(res, tx.returnUrl, { token_ws: token })
+      redirectGet(res, tx.returnUrl, { token_ws: token })
       return
     case 'abort':
       tx.status = 'ABORTED'
-      autoPost(res, tx.returnUrl, { TBK_TOKEN: token, TBK_ORDEN_COMPRA: tx.buyOrder, TBK_ID_SESION: tx.sessionId })
+      redirectGet(res, tx.returnUrl, { TBK_TOKEN: token, TBK_ORDEN_COMPRA: tx.buyOrder, TBK_ID_SESION: tx.sessionId })
       return
     case 'expire':
       tx.status = 'ABORTED'

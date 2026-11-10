@@ -9,6 +9,25 @@ import { Switch } from '@/components/ui/switch'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAdminStoreSettingsStore } from '@/admin/stores/useAdminStoreSettingsStore'
 import type { StoreSettingsDto } from '@/admin/types/admin'
+import { MIN_CONTRAST, contrastRatio, formatRatio } from '@/utils/contrast'
+
+type BrandColor = 'primaryColor' | 'secondaryColor' | 'accentColor' | 'darkColor'
+
+// GAP-19. Cómo usa la tienda cada color, y contra qué tiene que contrastar. Es un aviso y no un bloqueo: el
+// comerciante puede guardar su color de marca igual, sabiendo que esos textos no llegan al mínimo de WCAG AA.
+const CONTRAST_USES: Record<BrandColor, { against: (form: StoreSettingsDto) => string; use: string }> = {
+  primaryColor: { against: () => '#ffffff', use: 'el texto blanco de los botones y los enlaces sobre fondo blanco' },
+  secondaryColor: { against: () => '#ffffff', use: 'las descripciones y categorías sobre fondo blanco' },
+  accentColor: { against: (form) => form.darkColor, use: 'la etiqueta «Destacado», con texto en el color oscuro' },
+  darkColor: { against: () => '#ffffff', use: 'los títulos y precios sobre fondo blanco' },
+}
+
+function contrastWarning(key: BrandColor, form: StoreSettingsDto): string | null {
+  const { against, use } = CONTRAST_USES[key]
+  const ratio = contrastRatio(form[key], against(form))
+  if (ratio === null || ratio >= MIN_CONTRAST) return null
+  return `Contraste bajo (${formatRatio(ratio)}; el mínimo es 4,5:1): cuesta leer ${use}.`
+}
 
 function Toggle({ id, label, checked, onChange }: { id: string; label: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -165,12 +184,26 @@ function StoreSettingsForm({ initial }: { initial: StoreSettingsDto }) {
                 ['accentColor', 'Acento'],
                 ['darkColor', 'Oscuro'],
               ] as const
-            ).map(([key, label]) => (
-              <div key={key} className="flex flex-col gap-2">
-                <Label htmlFor={key}>{label}</Label>
-                <Input id={key} type="color" value={form[key]} onChange={(e) => set(key, e.target.value)} />
-              </div>
-            ))}
+            ).map(([key, label]) => {
+              const warning = contrastWarning(key, form)
+              return (
+                <div key={key} className="flex flex-col gap-2">
+                  <Label htmlFor={key}>{label}</Label>
+                  <Input
+                    id={key}
+                    type="color"
+                    value={form[key]}
+                    aria-describedby={warning ? `${key}-contrast` : undefined}
+                    onChange={(e) => set(key, e.target.value)}
+                  />
+                  {warning && (
+                    <p id={`${key}-contrast`} className="text-xs text-amber-800">
+                      {warning}
+                    </p>
+                  )}
+                </div>
+              )
+            })}
           </CardContent>
         </Card>
 

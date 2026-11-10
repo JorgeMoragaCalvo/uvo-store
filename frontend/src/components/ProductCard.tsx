@@ -15,11 +15,18 @@ export default function ProductCard({ product }: { product: Product }) {
 
   return (
     <div className="group relative flex flex-col overflow-hidden rounded-lg border border-gray-400 bg-white">
-      <Link to={`/product/${product.slug}`} className="relative block aspect-square overflow-hidden bg-gray-100">
+      {/* GAP-19. La imagen repite el enlace del nombre: fuera del Tab y del lector de pantalla, que leía el
+          producto dos veces (y sin foto, un enlace sin nombre). Con el mouse se sigue pudiendo hacer clic. */}
+      <Link
+        to={`/product/${product.slug}`}
+        tabIndex={-1}
+        aria-hidden="true"
+        className="relative block aspect-square overflow-hidden bg-gray-100"
+      >
         {product.featuredImage && (
           <img
             src={product.featuredImage}
-            alt={product.name}
+            alt=""
             loading="lazy"
             className="h-full w-full object-cover transition-transform group-hover:scale-105"
           />
@@ -27,7 +34,8 @@ export default function ProductCard({ product }: { product: Product }) {
 
         <div className="absolute left-2 top-2 flex flex-col gap-1">
           {product.featured && (
-            <span className="rounded bg-accent px-2 py-0.5 text-xs font-semibold text-white">Destacado</span>
+            // GAP-19. Texto oscuro: el blanco sobre el acento por defecto (#FFD700) daba 1,4:1.
+            <span className="rounded bg-accent px-2 py-0.5 text-xs font-semibold text-dark">Destacado</span>
           )}
           {!product.inStock && (
             <span className="rounded bg-gray-700 px-2 py-0.5 text-xs font-semibold text-white">Agotado</span>

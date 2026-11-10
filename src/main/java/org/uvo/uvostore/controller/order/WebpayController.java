@@ -9,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.uvo.uvostore.entity.tenant.Store;
@@ -47,14 +48,18 @@ public class WebpayController {
         return webpayService.createTransaction(request.orderId());
     }
 
-    // Transbank POSTs the customer's browser directly to this URL after they finish paying —
-    // form-encoded, not JSON, and there's no frontend route that could receive a raw redirect
-    // POST like this. We commit the transaction here and 302 the browser to the SPA's result page.
+    // Transbank devuelve el navegador del comprador directo a esta URL al terminar de pagar. No hay ruta del
+    // frontend que pueda recibir esa vuelta, así que aquí se confirma la transacción y se redirige (302) a la
+    // página de resultado de la SPA.
+    //
+    // GAP-19. Por GET y por POST. El ambiente de integración real de Transbank vuelve por GET
+    // (`?token_ws=…`); solo se aceptaba POST, que es lo que hacía el doble del E2E, y todo pago real terminaba
+    // en un 500 sin llegar a la página de éxito. POST se mantiene para los retornos que llegan con formulario.
     //
     // PROD-04: a la SPA de SU tienda. Antes salía de la URL global, así que el comprador de cualquier
     // tienda terminaba en el storefront de una sola — y es el único de los tres caminos de retorno que el
     // cliente no podía sobreescribir, así que no había forma de que fuera correcto.
-    @PostMapping("/return")
+    @RequestMapping(value = "/return", method = {RequestMethod.GET, RequestMethod.POST})
     public ResponseEntity<Void> handleReturn(
             @RequestParam(name = "token_ws", required = false) String tokenWs,
             @RequestParam(name = "TBK_TOKEN", required = false) String tbkToken) {

@@ -178,7 +178,7 @@ Los responsables son roles sugeridos, pendientes de asignarse a personas. Una so
 | PROD-21 | Capacidad, cuotas y aislamiento de consumo entre tiendas | **Pendiente, fuera del módulo** (GAP-10): exige el entorno real | Backend + operaciones | Carga objetivo sostenida; una tienda no agota conexiones, archivos o reportes de las demás; límites medidos |
 | PROD-22 | Reforzar cadena de suministro y reglas de repositorio | **Parcial:** Dependabot, dependency-review y `CODEOWNERS` (PR #62); la release exige el E2E (GAP-09). Falta en GitHub: protección de rama, checks obligatorios y secret scanning | Líder técnico | CI obligatorio, revisión de cambios sensibles, análisis de dependencias/secretos, artefactos trazables y actualización periódica |
 | PROD-23 | Completar operación de plataforma | **Cerrada por API** (PR #87, V29): `PlatformStoreController` lista, cambia dominio, suspende, reactiva, recupera acceso y cierra, con auditoría. No hay consola: el cliente previsto es el backoffice del POS | Backend + soporte | Listar tiendas, cambiar dominio, suspender/reactivar, recuperar acceso y cerrar una tienda mediante procedimientos auditados |
-| PROD-24 | Experiencia, accesibilidad y contenido por tienda | **Parcial:** 24a, nombre real de la tienda (PR #62); 24b, accesibilidad, mensajes y errores del comprador (PR #99). Páginas legales por tienda cerradas en código (GAP-18), pendientes de la revisión legal de `docs/revision-legal-paginas.md`. Faltan las pruebas manuales (GAP-19) | Frontend + producto | Flujo usable en móvil y teclado; mensajes claros; branding inicial correcto; contenido comercial y legal coherente |
+| PROD-24 | Experiencia, accesibilidad y contenido por tienda | **Parcial:** 24a, nombre real de la tienda (PR #62); 24b, accesibilidad, mensajes y errores del comprador (PR #99). Páginas legales por tienda cerradas en código (GAP-18), pendientes de la revisión legal de `docs/revision-legal-paginas.md`. Pruebas manuales (GAP-19, `docs/pruebas-manuales-gap-19.md`): teclado y Webpay integración hechos y corregidos; faltan NVDA y MercadoPago sandbox | Frontend + producto | Flujo usable en móvil y teclado; mensajes claros; branding inicial correcto; contenido comercial y legal coherente |
 | PROD-25 | Medir y mantener calidad del código | **Parcial:** 25a, cobertura medida con umbral del 76 % (PR #62); contrato de API versionado en `docs/api/` y vigilado por `OpenApiSpecTest` (GAP-17). Falta priorizar la deuda | Ingeniería | Cobertura actual medida, pruebas de invariantes críticas, deuda priorizada y contrato de API documentado |
 
 ### 5.3 Mejoras posteriores o condicionadas
@@ -553,6 +553,19 @@ Validar móvil y escritorio, navegación por teclado, foco, etiquetas de formula
 Cada tienda debe mostrar su identidad, contacto, condiciones de envío, devoluciones y precios de forma coherente con lo que realmente ofrece. Las páginas legales actuales son textos compartidos y no acreditan esa revisión. Revisar también promesas de cookies, cuentas y comunicaciones que no correspondan a la implementación efectiva.
 
 > **Estado al 9-nov-2026 (GAP-18).** Las páginas legales ya no tienen datos de tienda fijos: la identidad del vendedor, el retracto, el IVA, los envíos y las pasarelas salen de la configuración de cada tienda. Se quitaron las promesas que la plataforma no cumple: tarifas fijas, cookies analíticas, recolección del RUT del comprador, RMA y un correo de seguimiento. La garantía legal pasó a 6 meses. El texto que queda fijo espera la revisión de `docs/revision-legal-paginas.md`.
+
+> **Estado al 10-nov-2026 (GAP-19).**
+> - **Recorrido con teclado y Webpay en el ambiente de integración real**, registrados en `docs/pruebas-manuales-gap-19.md`.
+>   - El hallazgo grave fue que Transbank vuelve al comercio por GET. El retorno solo aceptaba POST, así que todo pago real terminaba en un 500.
+>   - Ahora acepta los dos métodos, y el doble del E2E vuelve por GET.
+> - **Accesibilidad corregida:**
+>   - el contraste del color primario por defecto (nuevo default `#D81B60`, y un aviso en el panel para cualquier color que no llegue a 4,5:1);
+>   - la etiqueta «Destacado» y el estado del seguimiento;
+>   - el enlace duplicado de la tarjeta;
+>   - un indicador de foco visible;
+>   - el foco al `<main>` en cada cambio de ruta.
+> - **Spec E2E `accesibilidad.spec.ts`:** pasa axe en las páginas del comprador.
+> - **Faltan:** el recorrido con NVDA, los casos de MercadoPago sandbox y el vencimiento del formulario de Webpay.
 
 Inventariar datos recogidos y terceros que los reciben; acordar finalidades, acceso, retención, exportación, rectificación y eliminación con los responsables correspondientes. Someter los textos y procesos comerciales a revisión jurídica para el país y fecha de lanzamiento. Este plan prescribe una revisión; no certifica cumplimiento normativo ni sustituye ese análisis.
 

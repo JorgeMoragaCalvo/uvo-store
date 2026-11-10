@@ -33,11 +33,13 @@ public class TenantResolutionFilter extends OncePerRequestFilter {
     /**
      * PROD-23. Por donde vuelve un pago ya hecho: el retorno del navegador desde Transbank y los avisos de
      * MercadoPago y Stripe. Pasan aunque la tienda esté suspendida, para que un comprador que pagó justo antes de
-     * la suspensión no se quede con el cargo y sin la orden. Solo POST y solo estas rutas exactas: crear un pago
-     * nuevo ({@code /webpay/create}, {@code /create-preference}...) sigue bloqueado.
+     * la suspensión no se quede con el cargo y sin la orden. Solo POST (y GET en el retorno de Webpay) y solo
+     * estas rutas exactas: crear un pago nuevo ({@code /webpay/create}, {@code /create-preference}...) sigue
+     * bloqueado.
      */
+    private static final String WEBPAY_RETURN = "/api/v1/webpay/return";
     private static final Set<String> PAYMENT_CALLBACKS = Set.of(
-            "/api/v1/webpay/return",
+            WEBPAY_RETURN,
             "/api/v1/mercadopago/webhook",
             "/api/v1/stripe/webhook");
 
@@ -77,7 +79,12 @@ public class TenantResolutionFilter extends OncePerRequestFilter {
     // PROD-23. Una tienda cerrada no recibe ni esto: ya no tiene credenciales de pasarela con las que
     // confirmar nada, y el cierre exige que no quede ningún pago pendiente.
     private static boolean isPaymentCallback(HttpServletRequest request) {
-        return "POST".equals(request.getMethod()) && PAYMENT_CALLBACKS.contains(request.getRequestURI());
+        String uri = request.getRequestURI();
+        if ("POST".equals(request.getMethod())) {
+            return PAYMENT_CALLBACKS.contains(uri);
+        }
+        // GAP-19. El retorno de Webpay también llega por GET: es como vuelve el ambiente real de Transbank.
+        return "GET".equals(request.getMethod()) && WEBPAY_RETURN.equals(uri);
     }
 
     private static void reject(HttpServletResponse response, Store store) throws IOException {

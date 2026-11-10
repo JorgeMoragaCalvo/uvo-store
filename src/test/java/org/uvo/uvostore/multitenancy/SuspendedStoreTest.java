@@ -115,6 +115,15 @@ class SuspendedStoreTest extends IntegrationTestSupport {
                         .header("Host", hostHeader(store))
                         .param("TBK_TOKEN", "abandonado"))
                 .andExpect(notTheSuspendedRejection());
+        // GAP-19. Transbank vuelve por GET: ese retorno también pasa (y solo ese; los avisos siguen siendo POST).
+        mockMvc.perform(get("/api/v1/webpay/return")
+                        .header("Host", hostHeader(store))
+                        .param("TBK_TOKEN", "abandonado"))
+                .andExpect(notTheSuspendedRejection());
+        mockMvc.perform(get("/api/v1/mercadopago/webhook")
+                        .header("Host", hostHeader(store)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("Esta tienda está suspendida"));
         mockMvc.perform(post("/api/v1/mercadopago/webhook")
                         .header("Host", hostHeader(store))
                         .contentType("application/json")

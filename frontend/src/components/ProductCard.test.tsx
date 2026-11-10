@@ -84,6 +84,17 @@ describe('ProductCard', () => {
     expect(screen.queryByRole('button', { name: /agregar/i })).not.toBeInTheDocument()
   })
 
+  it('exposes a single named link to the product: the image link is out of the tab order and hidden', () => {
+    renderCard({ ...baseProduct, featuredImage: '/uploads/producto.png' })
+
+    const links = screen.getAllByRole('link')
+    expect(links).toHaveLength(1)
+    expect(links[0]).toHaveAccessibleName(baseProduct.name)
+    const imageLink = document.querySelector('a[aria-hidden="true"]')
+    expect(imageLink).toHaveAttribute('tabindex', '-1')
+    expect(imageLink).toHaveAttribute('href', '/product/producto-simple')
+  })
+
   it('shows "Sin stock" and no add-to-cart action when out of stock', () => {
     renderCard({ ...baseProduct, inStock: false })
 

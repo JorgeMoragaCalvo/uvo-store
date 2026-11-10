@@ -550,6 +550,38 @@ public page never decrypts carrier credentials) and the active gateways from `/c
 - **RUTs go through `ChileanRut.normalize`** (mod-11 check digit, stored as `12345678-5`, blank → null;
   the V35 `CHECK` is the backstop) and are shown with `utils/rut.ts`'s `formatRut`.
 
+**GAP-19 — manual checks of PROD-24b, recorded in `docs/pruebas-manuales-gap-19.md`.**
+
+The keyboard walkthrough and Webpay's real integration environment were done; NVDA and the MercadoPago sandbox
+are still pending. What they turned up:
+
+- **Transbank returns the browser by GET (`?token_ws=`, `?TBK_TOKEN=`), not POST.**
+  - `/api/v1/webpay/return` takes both methods, and `TenantResolutionFilter` lets the GET through for a suspended
+    store (only that route; the webhooks stay POST-only).
+  - It used to be POST-only, so every real payment ended in a 500. The E2E double returned by POST, which is why
+    nobody saw it.
+  - The double now returns by GET on pay, reject and abort. Expiry stays POST because it wasn't observed, so both
+    methods stay covered.
+  - **Don't trust a double for how a third party calls back; check it against the real sandbox.**
+- **Brand colors are the merchant's, and the storefront puts white text on the primary color and uses the primary
+  as link text on white.**
+  - The old default `#E91E63` gave 4.34:1. New stores now get `#D81B60` (4.95:1); existing stores keep theirs, with
+    no migration.
+  - `StoreSettingsPage` warns under any brand color below 4.5:1 against what it is drawn with
+    (`utils/contrast.ts`): primary, secondary and dark against white; accent against dark.
+  - New text on a brand color needs the same check. That is why the «Destacado» badge and the tracking status pill
+    use `text-dark`, not white or primary on a primary tint.
+- **Focus.**
+  - Keyboard focus is a two-tone ring (`:focus-visible` in `index.css`, `--color-dark` outline plus a white band).
+    Components that draw their own ring (`outline-none` + `ring-*`) override it.
+  - On every pathname change (not query-only changes), `useFocusOnRouteChange` moves focus to `<main>`.
+  - In `ProductCard`, the image link is `tabIndex={-1}`/`aria-hidden`, so each product has one named link.
+- **`e2e/tests/accesibilidad.spec.ts` runs axe (WCAG 2.1 A/AA) over the buyer pages.**
+  - It fails on `serious`/`critical` violations and attaches the full result as `axe-<page>.json`.
+  - Its setup is a `beforeAll` that skips if the store exists, so one page's violations don't stop the others
+    (soft assertions).
+  - A new buyer page should get a scan there.
+
 **A payment is only accepted if the amount matches** (M4). `OrderStatusService.markPaid` takes the
 amount the gateway says arrived and compares it against `order.getTotal()` before anything is marked
 paid — none of Stripe, Webpay, or MercadoPago did that; they each read the payment's *status* while

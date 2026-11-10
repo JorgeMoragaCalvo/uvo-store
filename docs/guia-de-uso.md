@@ -90,7 +90,9 @@ Las claves secretas nunca se muestran. El campo dice «Configurado» o «No conf
 - **Identidad:**
   - nombre y descripción;
   - **logo** y **favicon:** se sube un archivo nuevo para reemplazarlos.
-- **Colores de marca:** primario, secundario, acento y oscuro.
+- **Colores de marca:** primario, secundario, acento y oscuro. Si aparece «Contraste bajo» bajo un color, hay
+  textos de la tienda que cuestan leer con él, por ejemplo el texto blanco de los botones sobre el primario.
+  Puedes guardarlo igual, pero conviene un tono más oscuro hasta que el aviso desaparezca.
 - **Secciones del inicio:** cada una se enciende o apaga, con título y límite de productos:
   - **Banner principal:** muestra los banners activos.
   - **Categorías.**

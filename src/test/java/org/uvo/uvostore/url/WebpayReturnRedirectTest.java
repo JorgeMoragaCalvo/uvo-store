@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.support.IntegrationTestSupport;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -45,6 +46,28 @@ class WebpayReturnRedirectTest extends IntegrationTestSupport {
         Store store = createStore("wp-ret-err");
 
         mockMvc.perform(post("/api/v1/webpay/return")
+                        .header("Host", hostHeader(store))
+                        .param("token_ws", "token-que-no-existe"))
+                .andExpect(status().isFound())
+                .andExpect(header().string("Location", "http://" + hostHeader(store) + "/checkout?error=webpay"));
+    }
+
+    @Test
+    @DisplayName("GAP-19: Transbank vuelve por GET, con los datos en la URL, y se atiende igual que el POST")
+    void theReturnAlsoArrivesByGet() throws Exception {
+        Store store = createStore("wp-ret-get");
+
+        // Así volvió el ambiente de integración real al anular: TBK_TOKEN, orden y sesión en la query.
+        mockMvc.perform(get("/api/v1/webpay/return")
+                        .header("Host", hostHeader(store))
+                        .param("TBK_TOKEN", "anulado")
+                        .param("TBK_ORDEN_COMPRA", "ORD-X")
+                        .param("TBK_ID_SESION", "sesion"))
+                .andExpect(status().isFound())
+                .andExpect(header().string("Location", "http://" + hostHeader(store) + "/checkout?canceled=1"));
+
+        // Y al pagar o rechazar, token_ws en la query. Antes de GAP-19 esto era un 405 convertido en 500.
+        mockMvc.perform(get("/api/v1/webpay/return")
                         .header("Host", hostHeader(store))
                         .param("token_ws", "token-que-no-existe"))
                 .andExpect(status().isFound())

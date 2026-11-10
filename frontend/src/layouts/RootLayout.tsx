@@ -1,13 +1,16 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { Outlet } from 'react-router-dom'
 import Header from '../components/layout/Header'
 import Footer from '../components/layout/Footer'
 import CartSidebar from '../components/cart/CartSidebar'
 import Toast from '../components/Toast'
+import { useFocusOnRouteChange } from '../hooks/useFocusOnRouteChange'
 import { useStoreSettingsStore } from '../stores/useStoreSettingsStore'
 
 export default function RootLayout() {
   const fetchAll = useStoreSettingsStore((state) => state.fetchAll)
+  const main = useRef<HTMLElement>(null)
+  useFocusOnRouteChange(main)
 
   useEffect(() => {
     fetchAll()
@@ -23,7 +26,7 @@ export default function RootLayout() {
         Saltar al contenido
       </a>
       <Header />
-      <main id="main-content" tabIndex={-1} className="flex-1 outline-none">
+      <main ref={main} id="main-content" tabIndex={-1} className="flex-1 outline-none">
         <Outlet />
       </main>
       <Footer />
