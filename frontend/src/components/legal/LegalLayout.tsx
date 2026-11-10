@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { useStoreSettingsStore } from '../../stores/useStoreSettingsStore'
 import { useStoreTitle } from '../../hooks/useDocumentTitle'
+import { formatRut } from '../../utils/rut'
 
 export interface LegalSection {
   title: string
@@ -20,6 +21,16 @@ export default function LegalLayout({
   const storeName = settings?.storeName ?? 'UvoStore'
   useStoreTitle(title)
 
+  // GAP-18. Quién vende, con los datos de la configuración de la tienda: cada página legal identifica al
+  // proveedor. Cada línea aparece solo si la tienda la completó; la razón social cae al nombre de la tienda.
+  const responsible = settings && {
+    name: settings.legalName ?? storeName,
+    taxId: settings.legalTaxId ? formatRut(settings.legalTaxId) : null,
+    address: settings.legalAddress,
+    email: settings.contactEmail,
+    phone: settings.contactPhone,
+  }
+
   return (
     <div className="bg-gray-50 py-10">
       <div className="mx-auto max-w-3xl px-4">
@@ -37,12 +48,27 @@ export default function LegalLayout({
             </section>
           ))}
 
-          {settings?.contactEmail && (
+          {responsible && (
             <section>
-              <h2 className="mb-2 border-b border-gray-400 pb-1.5 text-lg font-semibold text-dark">Contacto</h2>
-              <p className="text-sm text-secondary">
-                Email: <a href={`mailto:${settings.contactEmail}`} className="text-primary underline">{settings.contactEmail}</a>
-              </p>
+              <h2 className="mb-2 border-b border-gray-400 pb-1.5 text-lg font-semibold text-dark">Responsable y contacto</h2>
+              <ul className="space-y-1 text-sm text-secondary">
+                <li>{responsible.name}</li>
+                {responsible.taxId && <li>RUT: {responsible.taxId}</li>}
+                {responsible.address && <li>Domicilio: {responsible.address}</li>}
+                {responsible.email && (
+                  <li>
+                    Email: <a href={`mailto:${responsible.email}`} className="text-primary underline">{responsible.email}</a>
+                  </li>
+                )}
+                {responsible.phone && (
+                  <li>
+                    Teléfono:{' '}
+                    <a href={`tel:${responsible.phone.replace(/[^\d+]/g, '')}`} className="text-primary underline">
+                      {responsible.phone}
+                    </a>
+                  </li>
+                )}
+              </ul>
             </section>
           )}
         </div>

@@ -6,6 +6,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.uvo.uvostore.entity.settings.StoreSettings;
 import org.uvo.uvostore.repository.StoreSettingsRepository;
 import org.uvo.uvostore.security.TenantContext;
+import org.uvo.uvostore.service.BusinessException;
 import org.uvo.uvostore.service.catalog.FileStorageService;
 
 @Service
@@ -74,6 +75,11 @@ public class StoreSettingsServiceImpl implements StoreSettingsService {
         settings.setMetaTitle(command.metaTitle());
         settings.setMetaDescription(command.metaDescription());
         settings.setMetaKeywords(command.metaKeywords());
+        // GAP-18. Lo que publican las páginas legales: en blanco es «sin configurar», no un texto vacío.
+        settings.setLegalName(legalText(command.legalName(), "La razón social", 255));
+        settings.setLegalTaxId(ChileanRut.normalize(command.legalTaxId()));
+        settings.setLegalAddress(legalText(command.legalAddress(), "El domicilio", 500));
+        settings.setWithdrawalRightExcluded(command.withdrawalRightExcluded());
 
         if (newLogo != null && !newLogo.isEmpty()) {
             if (settings.getStoreLogo() != null) {
@@ -114,7 +120,18 @@ public class StoreSettingsServiceImpl implements StoreSettingsService {
                 s.getBenefit4Icon(), s.getBenefit4Title(), s.getBenefit4Description(),
                 s.getContactEmail(), s.getContactPhone(), s.getWhatsappNumber(),
                 s.getFacebookUrl(), s.getInstagramUrl(), s.getTwitterUrl(), s.getTiktokUrl(),
-                s.getMetaTitle(), s.getMetaDescription(), s.getMetaKeywords()
+                s.getMetaTitle(), s.getMetaDescription(), s.getMetaKeywords(),
+                s.getLegalName(), s.getLegalTaxId(), s.getLegalAddress(), s.isWithdrawalRightExcluded()
         );
+    }
+
+    // El largo se comprueba aquí y no en la base: pasado el varchar de V35 la base respondería un 500.
+    private static String legalText(String value, String label, int maxLength) {
+        if (value == null || value.isBlank()) return null;
+        String trimmed = value.trim();
+        if (trimmed.length() > maxLength) {
+            throw new BusinessException(label + " no puede superar los " + maxLength + " caracteres.");
+        }
+        return trimmed;
     }
 }

@@ -47,6 +47,13 @@ public record StoreSettingsUpdateRequest(
         String metaTitle,
         String metaDescription,
         String metaKeywords,
+        String legalName,
+        String legalTaxId,
+        String legalAddress,
+        // GAP-18. Boolean y no boolean: un primitivo que no llega responde 400 (el binding no lo puede convertir
+        // desde null), y este campo es nuevo, así que lo omitiría cualquier cliente anterior. Sin él, el retracto
+        // queda vigente, que es el defecto que fija la ley.
+        Boolean withdrawalRightExcluded,
         MultipartFile newLogo,
         MultipartFile newFavicon
 ) {

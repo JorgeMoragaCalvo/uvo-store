@@ -820,6 +820,25 @@
         },
         "type" : "object"
       },
+      "PublicShippingMethodDto" : {
+        "properties" : {
+          "description" : {
+            "type" : "string"
+          },
+          "maxDeliveryDays" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "minDeliveryDays" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "name" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "PublicStoreSettingsDto" : {
         "properties" : {
           "accentColor" : {
@@ -916,6 +935,15 @@
           "instagramUrl" : {
             "type" : "string"
           },
+          "legalAddress" : {
+            "type" : "string"
+          },
+          "legalName" : {
+            "type" : "string"
+          },
+          "legalTaxId" : {
+            "type" : "string"
+          },
           "metaDescription" : {
             "type" : "string"
           },
@@ -989,6 +1017,9 @@
           },
           "whatsappNumber" : {
             "type" : "string"
+          },
+          "withdrawalRightExcluded" : {
+            "type" : "boolean"
           }
         },
         "type" : "object"
@@ -1612,6 +1643,27 @@
                 "schema" : {
                   "items" : {
                     "$ref" : "#/components/schemas/ShippingCoverageDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Envíos (público)" ]
+      }
+    },
+    "/api/v1/shipping/methods" : {
+      "get" : {
+        "operationId" : "methods",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/PublicShippingMethodDto"
                   },
                   "type" : "array"
                 }

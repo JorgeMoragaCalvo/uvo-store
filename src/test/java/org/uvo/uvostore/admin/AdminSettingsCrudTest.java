@@ -136,6 +136,84 @@ class AdminSettingsCrudTest extends IntegrationTestSupport {
                 .andExpect(jsonPath("$.storeName").value("Mi Tienda"));
     }
 
+    // --- GAP-18: identidad legal del vendedor ----------------------------------------------------
+
+    @Test
+    void legalInfoIsSavedNormalizedAndPublishedToTheStorefront() throws Exception {
+        Store store = createStore("legal-info");
+        User admin = createAdmin(store, "legal-info");
+        String token = loginAdmin(store, admin);
+
+        mockMvc.perform(storeSettingsPut(store, token)
+                        .param("legalName", "  Comercial Mi Tienda SpA  ")
+                        .param("legalTaxId", "76.123.456-0")
+                        .param("legalAddress", "Av. Siempre Viva 123, Santiago")
+                        .param("withdrawalRightExcluded", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.legalName").value("Comercial Mi Tienda SpA"))
+                .andExpect(jsonPath("$.legalTaxId").value("76123456-0"))
+                .andExpect(jsonPath("$.withdrawalRightExcluded").value(true));
+
+        mockMvc.perform(get("/api/v1/store-settings").header("Host", hostHeader(store)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.legalName").value("Comercial Mi Tienda SpA"))
+                .andExpect(jsonPath("$.legalTaxId").value("76123456-0"))
+                .andExpect(jsonPath("$.legalAddress").value("Av. Siempre Viva 123, Santiago"))
+                .andExpect(jsonPath("$.withdrawalRightExcluded").value(true));
+    }
+
+    @Test
+    void aRutWithTheWrongCheckDigitIsRejected() throws Exception {
+        Store store = createStore("legal-bad-rut");
+        User admin = createAdmin(store, "legal-bad-rut");
+        String token = loginAdmin(store, admin);
+
+        mockMvc.perform(storeSettingsPut(store, token).param("legalTaxId", "76.123.456-7"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("dígito verificador")));
+    }
+
+    @Test
+    void withoutTheWithdrawalParameterTheRightStaysInForce() throws Exception {
+        // El PUT reemplaza todo: un cliente que no mande el campo no puede apagar el retracto en silencio.
+        Store store = createStore("legal-default");
+        User admin = createAdmin(store, "legal-default");
+        String token = loginAdmin(store, admin);
+
+        mockMvc.perform(storeSettingsPut(store, token).param("legalTaxId", ""))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.withdrawalRightExcluded").value(false))
+                .andExpect(jsonPath("$.legalTaxId").doesNotExist())
+                .andExpect(jsonPath("$.legalName").doesNotExist());
+    }
+
+    private org.springframework.test.web.servlet.request.MockMultipartHttpServletRequestBuilder storeSettingsPut(Store store, String token) {
+        return multipart("/api/admin/settings/store")
+                .with(req -> {
+                    req.setMethod("PUT");
+                    return req;
+                })
+                .header("Host", hostHeader(store))
+                .header("Authorization", "Bearer " + token)
+                .param("storeName", "Mi Tienda")
+                .param("primaryColor", "#123456")
+                .param("secondaryColor", "#654321")
+                .param("accentColor", "#abcdef")
+                .param("darkColor", "#111111")
+                .param("showHero", "true")
+                .param("heroAutoplaySpeed", "5000")
+                .param("showCategories", "true")
+                .param("categoriesLimit", "6")
+                .param("showNewProducts", "true")
+                .param("newProductsLimit", "12")
+                .param("newProductsDays", "30")
+                .param("showFeaturedProducts", "true")
+                .param("featuredProductsLimit", "12")
+                .param("showDeals", "true")
+                .param("dealsLimit", "12")
+                .param("showBenefits", "true");
+    }
+
     @Test
     void bannerCanBeCreatedToggledAndDeleted() throws Exception {
         Store store = createStore("banner-crud");

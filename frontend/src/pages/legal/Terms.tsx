@@ -1,6 +1,21 @@
+import { Link } from 'react-router-dom'
 import LegalLayout from '../../components/legal/LegalLayout'
+import { useStoreSettingsStore } from '../../stores/useStoreSettingsStore'
 
+// GAP-18. El IVA y el retracto salen de la configuración de la tienda: el texto fijo decía «incluyen IVA cuando
+// corresponda» y daba el retracto por hecho, aunque cada tienda decide ambas cosas. Los textos fijos están
+// listados en docs/revision-legal-paginas.md para la revisión legal.
 export default function Terms() {
+  const settings = useStoreSettingsStore((state) => state.settings)
+  const withdrawalExcluded = settings?.withdrawalRightExcluded ?? false
+  // Sin la configuración cargada todavía no se afirma ninguna de las dos formas.
+  const taxSentence =
+    settings == null
+      ? 'El checkout muestra el IVA antes de finalizar la compra.'
+      : settings.pricesIncludeTax
+        ? 'Los precios publicados incluyen IVA.'
+        : 'Los precios publicados no incluyen IVA: el IVA se suma en el checkout, antes de finalizar la compra.'
+
   return (
     <LegalLayout
       title="Términos y Condiciones"
@@ -48,21 +63,28 @@ export default function Terms() {
           title: '5. Precios y Pagos',
           body: (
             <>
-              <p>Todos los precios están expresados en pesos chilenos (CLP) e incluyen IVA cuando corresponda, y están sujetos a cambio sin previo aviso.</p>
+              <p>Todos los precios están expresados en pesos chilenos (CLP) y están sujetos a cambio sin previo aviso. {taxSentence}</p>
               <p>Utilizamos tecnología de encriptación SSL para proteger su información de pago; no almacenamos datos completos de tarjetas en nuestros servidores.</p>
             </>
           ),
         },
         {
           title: '6. Envíos y Entregas',
-          body: <p>Los tiempos de entrega pueden variar según la ubicación. El costo exacto de envío se muestra antes de finalizar la compra. No nos responsabilizamos por retrasos causados por el servicio de mensajería.</p>,
+          body: (
+            <p>
+              Los plazos de entrega dependen del método de envío y de la dirección. El costo exacto de envío se muestra antes de finalizar la compra. Ver la{' '}
+              <Link to="/politica-de-envios" className="text-primary underline">Política de Envíos</Link>.
+            </p>
+          ),
         },
         {
           title: '7. Devoluciones y Reembolsos',
           body: (
             <p>
-              De acuerdo con la Ley del Consumidor chilena (Ley 19.496), usted tiene derecho a retractarse de su compra dentro de 10 días corridos desde la recepción del producto, siempre que no haya sido usado y conserve su embalaje original. Ver la{' '}
-              <a href="/politica-de-devoluciones" className="text-primary underline">Política de Devoluciones</a> para más detalle.
+              {withdrawalExcluded
+                ? 'Esta tienda no ofrece derecho a retracto en las compras realizadas en este sitio, conforme al artículo 3 bis, letra b), de la Ley N° 19.496. Sus productos mantienen la garantía legal.'
+                : 'De acuerdo con la Ley N° 19.496, usted tiene derecho a retractarse de su compra dentro de 10 días corridos desde la recepción del producto, siempre que no haya sido usado y conserve sus elementos originales.'}{' '}
+              Ver la <Link to="/politica-de-devoluciones" className="text-primary underline">Política de Devoluciones</Link> para más detalle.
             </p>
           ),
         },
@@ -79,7 +101,7 @@ export default function Terms() {
           body: (
             <p>
               El tratamiento de sus datos se realiza conforme a la Ley N° 19.628 sobre Protección de la Vida Privada. Ver la{' '}
-              <a href="/politica-de-privacidad" className="text-primary underline">Política de Privacidad</a>.
+              <Link to="/politica-de-privacidad" className="text-primary underline">Política de Privacidad</Link>.
             </p>
           ),
         },

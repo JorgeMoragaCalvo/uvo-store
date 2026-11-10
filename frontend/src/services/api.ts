@@ -17,6 +17,7 @@ import type {
   PaymentVerificationResult,
   Product,
   ProductSearchParams,
+  PublicShippingMethod,
   PublicStoreSettings,
   ShippingCoverage,
   WebpayCreateResult,
@@ -75,6 +76,8 @@ export const api = {
   shipping: {
     // A7: the regions/communes the store actually delivers to, in the catalogue's canonical names.
     coverage: (): Promise<ShippingCoverage[]> => client.get('/shipping/coverage'),
+    // GAP-18: para la política de envíos, en vez de métodos y plazos escritos a mano.
+    methods: (): Promise<PublicShippingMethod[]> => client.get('/shipping/methods'),
   },
   geo: {
     // Lo usa el formulario de zonas del panel: las zonas se arman eligiendo de esta lista.

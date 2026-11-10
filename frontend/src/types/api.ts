@@ -156,6 +156,14 @@ export interface ShippingCoverage {
   communes: string[]
 }
 
+// GAP-18. GET /api/v1/shipping/methods: los métodos que el checkout llega a ofrecer, para la política de envíos.
+export interface PublicShippingMethod {
+  name: string
+  description: string | null
+  minDeliveryDays: number | null
+  maxDeliveryDays: number | null
+}
+
 // Catálogo de regiones y comunas de Chile (GET /api/v1/geo/regions), de norte a sur.
 export interface GeoCommune {
   code: string
@@ -313,6 +321,12 @@ export interface PublicStoreSettings {
   defaultShippingCost: string
   freeShippingEnabled: boolean
   freeShippingThreshold: string
+  // GAP-18. Identidad del vendedor para las páginas legales y el pie; null mientras no se configure.
+  legalName: string | null
+  // Sin puntos y con guion (12345678-5): se muestra con formatRut.
+  legalTaxId: string | null
+  legalAddress: string | null
+  withdrawalRightExcluded: boolean
 }
 
 export interface HomeBanner {

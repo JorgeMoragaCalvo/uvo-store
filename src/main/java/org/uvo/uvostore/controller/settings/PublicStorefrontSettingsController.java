@@ -55,7 +55,8 @@ public class PublicStorefrontSettingsController {
                 s.facebookUrl(), s.instagramUrl(), s.twitterUrl(), s.tiktokUrl(),
                 s.metaTitle(), s.metaDescription(), s.metaKeywords(),
                 g.currency(), g.currencySymbol(), g.taxRate(), g.pricesIncludeTax(),
-                g.shippingEnabled(), g.defaultShippingCost(), g.freeShippingEnabled(), g.freeShippingThreshold()
+                g.shippingEnabled(), g.defaultShippingCost(), g.freeShippingEnabled(), g.freeShippingThreshold(),
+                s.legalName(), s.legalTaxId(), s.legalAddress(), s.withdrawalRightExcluded()
         );
     }
 

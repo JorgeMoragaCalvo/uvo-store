@@ -630,4 +630,9 @@ export interface StoreSettingsDto {
   metaTitle: string | null
   metaDescription: string | null
   metaKeywords: string | null
+  // GAP-18. Se publican en las páginas legales y en el pie de la tienda.
+  legalName: string | null
+  legalTaxId: string | null
+  legalAddress: string | null
+  withdrawalRightExcluded: boolean
 }

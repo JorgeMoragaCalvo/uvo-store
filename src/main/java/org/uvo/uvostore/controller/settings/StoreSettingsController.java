@@ -43,7 +43,9 @@ public class StoreSettingsController {
                 request.benefit4Icon(), request.benefit4Title(), request.benefit4Description(),
                 request.contactEmail(), request.contactPhone(), request.whatsappNumber(),
                 request.facebookUrl(), request.instagramUrl(), request.twitterUrl(), request.tiktokUrl(),
-                request.metaTitle(), request.metaDescription(), request.metaKeywords()
+                request.metaTitle(), request.metaDescription(), request.metaKeywords(),
+                request.legalName(), request.legalTaxId(), request.legalAddress(),
+                Boolean.TRUE.equals(request.withdrawalRightExcluded())
         );
         return storeSettingsService.update(command, request.newLogo(), request.newFavicon());
     }

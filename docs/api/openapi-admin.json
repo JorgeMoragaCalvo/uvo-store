@@ -2602,6 +2602,15 @@
           "instagramUrl" : {
             "type" : "string"
           },
+          "legalAddress" : {
+            "type" : "string"
+          },
+          "legalName" : {
+            "type" : "string"
+          },
+          "legalTaxId" : {
+            "type" : "string"
+          },
           "metaDescription" : {
             "type" : "string"
           },
@@ -2666,6 +2675,9 @@
           },
           "whatsappNumber" : {
             "type" : "string"
+          },
+          "withdrawalRightExcluded" : {
+            "type" : "boolean"
           }
         },
         "type" : "object"
@@ -2751,6 +2763,15 @@
           "instagramUrl" : {
             "type" : "string"
           },
+          "legalAddress" : {
+            "type" : "string"
+          },
+          "legalName" : {
+            "type" : "string"
+          },
+          "legalTaxId" : {
+            "type" : "string"
+          },
           "metaDescription" : {
             "type" : "string"
           },
@@ -2817,6 +2838,9 @@
           },
           "whatsappNumber" : {
             "type" : "string"
+          },
+          "withdrawalRightExcluded" : {
+            "type" : "boolean"
           }
         },
         "type" : "object"
