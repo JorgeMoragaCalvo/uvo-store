@@ -89,7 +89,9 @@ export default function TrackOrder() {
         <div className="rounded-lg border border-gray-400 p-5">
           <div className="mb-4 flex items-center justify-between">
             <span className="font-semibold text-dark">{result.orderNumber}</span>
-            <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+            {/* GAP-19. Texto oscuro: el primario sobre su propio tinte al 10 % no llega a 4,5:1 ni con un primario que
+                sí lo cumple sobre blanco. */}
+            <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-dark">
               {STATUS_LABELS[result.status] ?? result.status}
             </span>
           </div>

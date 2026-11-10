@@ -1771,8 +1771,32 @@
       }
     },
     "/api/v1/webpay/return" : {
-      "post" : {
+      "get" : {
         "operationId" : "handleReturn",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "token_ws",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "TBK_TOKEN",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Webpay (público)" ]
+      },
+      "post" : {
+        "operationId" : "handleReturn_1",
         "parameters" : [ {
           "in" : "query",
           "name" : "token_ws",

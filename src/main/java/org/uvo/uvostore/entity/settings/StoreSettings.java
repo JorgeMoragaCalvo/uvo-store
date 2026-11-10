@@ -58,9 +58,12 @@ public class StoreSettings {
     @Column(name = "store_description", columnDefinition = "text")
     private String storeDescription;
 
+    // GAP-19. Antes #E91E63, que contra el blanco da 4,34:1 y no llega al 4,5:1 de WCAG AA: el storefront pone
+    // texto blanco sobre el primario y lo usa como color de los enlaces sobre blanco. Solo cambia para las
+    // tiendas nuevas; las existentes conservan su color, y el panel avisa cuando uno no alcanza el mínimo.
     @Column(name = "primary_color", nullable = false)
     @Builder.Default
-    private String primaryColor = "#E91E63";
+    private String primaryColor = "#D81B60";
 
     @Column(name = "secondary_color", nullable = false)
     @Builder.Default

@@ -147,4 +147,14 @@ body {
   html {
     @apply font-sans;
   }
+  /* GAP-19. El foco de teclado del navegador quedaba en un gris de 1 px al 50 % (outline-ring/50): sobre blanco
+     daba ~1,4:1, y WCAG 1.4.11 pide 3:1. Dos tonos, el color oscuro de la tienda por fuera y una banda blanca en
+     el hueco, para que se vea sobre blanco, sobre el pie oscuro y sobre la foto de un banner. Los componentes del
+     panel que dibujan su propio anillo (outline-none + ring-*) siguen igual: sus utilidades ganan a esta capa.
+     Lo que recibe foco por programa (tabindex=-1: <main>, el título del paso del checkout) no lleva anillo. */
+  :focus-visible:not([tabindex='-1']) {
+    outline: 2px solid var(--color-dark);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 2px #fff;
+  }
 }

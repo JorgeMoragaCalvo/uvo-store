@@ -86,6 +86,8 @@ export interface PanelProduct {
   sku: string
   price: number
   stock: number
+  /** GAP-19. Marca «Destacado»: la tarjeta del storefront muestra la etiqueta sobre el color de acento. */
+  featured?: boolean
 }
 
 export async function createProduct(page: Page, slug: string, product: PanelProduct): Promise<void> {
@@ -95,6 +97,7 @@ export async function createProduct(page: Page, slug: string, product: PanelProd
   await page.getByLabel('Precio', { exact: true }).fill(String(product.price))
   // Exacto: «Gestionar stock» también contiene «Stock».
   await page.getByLabel('Stock', { exact: true }).fill(String(product.stock))
+  if (product.featured) await page.getByRole('switch', { name: 'Destacado', exact: true }).click()
   await page.getByRole('button', { name: 'Guardar' }).click()
   await expect(page.getByText('Producto creado')).toBeVisible()
   await expect(page).toHaveURL(/\/admin\/products$/)
