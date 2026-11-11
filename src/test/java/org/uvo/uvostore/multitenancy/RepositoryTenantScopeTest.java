@@ -56,7 +56,7 @@ class RepositoryTenantScopeTest {
             Map.entry("UserRepository.findByInvitationToken",
                     "token aleatorio UNIQUE; AuthController.adminAcceptInvitation compara la tienda con la del host"),
             Map.entry("UserRepository.findByPasswordResetToken",
-                    "token aleatorio UNIQUE enviado por correo; hoy NO se compara con la tienda del host (anotado)"),
+                    "token aleatorio UNIQUE enviado por correo; AuthController.adminResetPassword compara la tienda con la del host (IMP-01)"),
             Map.entry("OrderRepository.findByOrderNumber",
                     "número de orden aleatorio; OrderTrackingServiceImpl y MercadoPagoServiceImpl filtran por tienda"),
             Map.entry("OrderRepository.findByPaymentId",

@@ -80,8 +80,9 @@ class AuthAuditTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("Un restablecimiento sin Host queda en la tienda del usuario, a su nombre")
-    void aResetWithoutHostIsRecordedInTheUsersStore() throws Exception {
+    // IMP-01: antes se hacía sin Host, porque el reset no lo miraba. Ahora lo exige, y la tienda del Host es la del usuario.
+    @DisplayName("Un restablecimiento queda en la tienda del usuario, a su nombre")
+    void aResetIsRecordedInTheUsersStore() throws Exception {
         Store store = createStore("audit-reset");
         User admin = createAdmin(store, "audit-reset");
         String resetToken = "reset-" + nextSeq();
@@ -90,6 +91,7 @@ class AuthAuditTest extends IntegrationTestSupport {
         userRepository.save(admin);
 
         mockMvc.perform(post("/api/admin/auth/reset-password")
+                        .header("Host", hostHeader(store))
                         .contentType("application/json")
                         .content("{\"token\":\"" + resetToken + "\",\"password\":\"" + NEW_PASSWORD + "\"}"))
                 .andExpect(status().isOk());
