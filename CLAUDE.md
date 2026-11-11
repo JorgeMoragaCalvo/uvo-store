@@ -1578,8 +1578,18 @@ react-hook-form are used — through React Router 7's own `lazy` property (not `
 storefront stays eagerly imported: it's the hot path and its pages are small. `vite.config.ts` pulls
 React and the router into a `react-vendor` chunk so a returning visitor reuses it across deployments —
 note this project builds with **Vite 8 / rolldown**, so it's `build.rolldownOptions.output
-.advancedChunks`, not rollup's `manualChunks`. Adding a heavy dependency to a storefront page
+.codeSplitting`, not rollup's `manualChunks` nor rolldown's older `advancedChunks` (same shape, but
+deprecated: it printed a warning on every build, GAP-20). Adding a heavy dependency to a storefront page
 undoes this, so check the chunk sizes after (`npm run build` prints them).
+
+**Every lazy route needs a static `HydrateFallback`** (GAP-20). On a first load that lands on a `lazy`
+route, React Router can't finish initialising until the chunk arrives, and meanwhile it renders the
+deepest `HydrateFallback` in the match. With none, the page was blank and the dev console warned «No
+`HydrateFallback` element provided to render during initial hydration» on every direct visit to
+`/checkout`, `/admin/*` or `/plataforma`. Now the storefront's pathless route has `ContentLoading` (inside
+the layout, so the header stays) and each top-level lazy route has `PageLoading`, both in
+`components/RouteLoading.tsx`. It goes on the route object, not in what `lazy` returns, which comes too
+late. A new top-level lazy route needs its own; `router.test.tsx` checks `/checkout` and `/admin/login`.
 
 **Checkout validation is zod + react-hook-form** (`pages/checkoutSchemas.ts`), the only place in the app using them — every other form validates with native `required` attributes. It replaced two truthiness booleans that accepted a single character in every field and any string as an email.
 
@@ -1613,6 +1623,12 @@ used because V8 seeds it with no admin, and the platform API can't create it.
 cd frontend && npx playwright install chromium   # once
 cd frontend && npm run e2e                    # ~1-2 min; npm run e2e:report opens the last HTML report
 ```
+
+**Console output** (GAP-20). Vite forwards the browser's `console.warn`/`console.error` into the run's
+output as `[vite] (client) [console.warn] …`, so app warnings show up there; a clean run has none. The one
+expected line is Node's `Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set`,
+which appears only when the shell that launches the run has `NO_COLOR` set (Playwright sets `FORCE_COLOR`
+on its children). It comes from the environment, not the project, and is harmless.
 
 **What runs.** `playwright.config.ts` starts three `webServer`s on their own ports, so the suite
 runs alongside the normal dev setup on 8080/5173:

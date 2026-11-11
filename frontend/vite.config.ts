@@ -32,9 +32,11 @@ export default defineConfig(({ mode }) => {
       // apart lets a returning visitor reuse them from cache while the app code churns.
       // Deliberately one group only — aggressive manual grouping buys little and risks
       // module-initialisation order problems.
+      // GAP-20: rolldown 1.x renamed `advancedChunks` to `codeSplitting` (same shape); the old name
+      // still worked but printed a deprecation warning on every build.
       rolldownOptions: {
         output: {
-          advancedChunks: {
+          codeSplitting: {
             groups: [
               { name: 'react-vendor', test: /node_modules[\\/](react|react-dom|react-router|react-router-dom)[\\/]/ },
             ],
