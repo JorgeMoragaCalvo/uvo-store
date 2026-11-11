@@ -13,6 +13,7 @@ import ShippingPolicy from './pages/legal/ShippingPolicy'
 import ReturnsPolicy from './pages/legal/ReturnsPolicy'
 import NotFound from './pages/NotFound'
 import RouteError from './components/RouteError'
+import { ContentLoading, PageLoading } from './components/RouteLoading'
 
 // A6: the whole app used to be one 1.14 MB chunk — someone landing on the storefront downloaded the
 // entire admin panel, recharts and the store-onboarding page before seeing a product.
@@ -24,6 +25,12 @@ import RouteError from './components/RouteError'
 // so no React.lazy or Suspense wrappers are needed).
 const lazyRoute = (load: () => Promise<{ default: React.ComponentType }>) =>
   async () => ({ Component: (await load()).default })
+
+// GAP-20. Al entrar directo a una ruta `lazy`, el router no termina de iniciarse hasta que baja su chunk, y
+// mientras tanto pinta el `HydrateFallback` más profundo del match. Sin ninguno la página quedaba en blanco
+// y React Router avisaba en la consola («No `HydrateFallback` element provided...»). Va estático en la ruta,
+// no dentro de `lazy`: lo que devuelve `lazy` llega tarde para la carga inicial. Toda ruta `lazy` nueva de
+// primer nivel necesita el suyo (components/RouteLoading.tsx).
 
 // Exportadas aparte para poder montarlas en un router de memoria en las pruebas.
 export const routes: RouteObject[] = [
@@ -37,6 +44,7 @@ export const routes: RouteObject[] = [
         // PROD-24b. Ruta sin path para que un error en una página se muestre DENTRO del layout, con el
         // header y el footer, y no reemplace la tienda entera.
         errorElement: <RouteError />,
+        HydrateFallback: ContentLoading,
         children: [
           { index: true, element: <Home /> },
           { path: 'shop', element: <Shop /> },
@@ -58,14 +66,14 @@ export const routes: RouteObject[] = [
       },
     ],
   },
-  { path: '/admin/login', errorElement: <RouteError home="/admin" />, lazy: lazyRoute(() => import('./admin/pages/Login')) },
-  { path: '/admin/forgot-password', errorElement: <RouteError home="/admin" />, lazy: lazyRoute(() => import('./admin/pages/ForgotPassword')) },
-  { path: '/admin/reset-password', errorElement: <RouteError home="/admin" />, lazy: lazyRoute(() => import('./admin/pages/ResetPassword')) },
+  { path: '/admin/login', errorElement: <RouteError home="/admin" />, HydrateFallback: PageLoading, lazy: lazyRoute(() => import('./admin/pages/Login')) },
+  { path: '/admin/forgot-password', errorElement: <RouteError home="/admin" />, HydrateFallback: PageLoading, lazy: lazyRoute(() => import('./admin/pages/ForgotPassword')) },
+  { path: '/admin/reset-password', errorElement: <RouteError home="/admin" />, HydrateFallback: PageLoading, lazy: lazyRoute(() => import('./admin/pages/ResetPassword')) },
   // PROD-06. Pública y fuera del AdminLayout, como las otras tres: quien llega aquí todavía no tiene
   // contraseña, así que no puede tener sesión. El correo de la invitación enlaza exactamente a esta ruta
   // (AdminInvitationMailer.body), que hasta ahora respondía 404.
-  { path: '/admin/aceptar-invitacion', errorElement: <RouteError home="/admin" />, lazy: lazyRoute(() => import('./admin/pages/AcceptInvitation')) },
-  { path: '/plataforma/nueva-tienda', errorElement: <RouteError />, lazy: lazyRoute(() => import('./platform/pages/NewStore')) },
+  { path: '/admin/aceptar-invitacion', errorElement: <RouteError home="/admin" />, HydrateFallback: PageLoading, lazy: lazyRoute(() => import('./admin/pages/AcceptInvitation')) },
+  { path: '/plataforma/nueva-tienda', errorElement: <RouteError />, HydrateFallback: PageLoading, lazy: lazyRoute(() => import('./platform/pages/NewStore')) },
   {
     path: '/admin',
     // The guarded shell itself is lazy too, so the storefront never pulls in AdminLayout, its nav,
@@ -84,6 +92,7 @@ export const routes: RouteObject[] = [
       }
     },
     errorElement: <RouteError home="/admin" />,
+    HydrateFallback: PageLoading,
     children: [
       {
         // Igual que en la tienda: el error de una sección queda dentro del panel, con su menú.
