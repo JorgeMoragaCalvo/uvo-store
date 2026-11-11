@@ -68,9 +68,12 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
   keys issued by a payment gateway, and three scheduled jobs that deliberately walk every store. (The outbox
   dispatcher's queries walk every store too, but `OutboxMessage` has no `store` field — it inherits the
   tenant through its order — so the test doesn't scan that repository.) Adding a
-  global query is possible; it just has to be written down. One of those is flagged in the test as
-  *not store-checked by its caller* (`UserRepository.findByPasswordResetToken`) — a known gap, not an
-  endorsement. **The Stripe lookups do compare the store (GAP-11):** `PaymentServiceImpl` sends every order
+  global query is possible; it just has to be written down. The callers of the three token lookups
+  compare the row's store with the `Host`'s and answer a foreign token exactly like an unknown one:
+  both invitation acceptances, and since IMP-01 (C06) `AuthController.adminResetPassword` too. Before
+  that, a valid reset token of store A redeemed through B's host changed A's admin password, consumed the
+  token and revoked the sessions; `PasswordResetTest` now proves B leaves all of it untouched and the token
+  still works once in A. **The Stripe lookups do compare the store (GAP-11):** `PaymentServiceImpl` sends every order
   it finds through `ownedByStore`, including the plain `findById` of `orderFromIntent` (an inherited method
   this test can't see). The webhook signature doesn't replace that check: it is verified with the secret of
   the `Host`'s store, which that store's admin chooses, so store A could sign an event naming an order of B
@@ -1188,8 +1191,9 @@ are in V28's `REVISIÓN MANUAL` block; the store panel doesn't read it.
   platform: `PlatformApiKeyAuthFilter` now puts `AuthPrincipal(null, operator, "PLATFORM", null)` after the key
   check) and the store is `TenantContext`'s; nothing authenticated is `SYSTEM`. Two exceptions are explicit
   (`AuditEntry.by` / `forStore`): login, invitation acceptance and password reset name the account itself as actor
-  (the panel sends its stored Bearer to those routes too, and it may be another admin's), and the reset uses the
-  user's store (the token is looked up without the Host). Platform actions **must** name their store —
+  (the panel sends its stored Bearer to those routes too, and it may be another admin's), and the reset names its
+  store explicitly (since IMP-01 the reset rejects a token from another store, so the `Host`'s store and the
+  user's are the same; a reset with no resolvable `Host` is a 400). Platform actions **must** name their store —
   `TenantResolutionFilter` resolves the Host on `/api/platform/**` too, and that's not the store being created.
 - **Operator of the POS (#39):** optional `X-Platform-Operator` on `/api/platform/**`
   (`[A-Za-z0-9][A-Za-z0-9._:@-]{0,63}`, one value; malformed ⇒ 400 `ApiError`, checked after network ⇒ 404 and key

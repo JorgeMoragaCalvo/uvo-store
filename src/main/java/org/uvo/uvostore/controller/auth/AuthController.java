@@ -335,9 +335,16 @@ public class AuthController {
     @PostMapping("/api/admin/auth/reset-password")
     @Transactional
     public ResponseEntity<Void> adminResetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        Store store = TenantContext.requireCurrent();
         User user = userRepository.findByPasswordResetToken(request.token())
+                // IMP-01 (C06). El token se busca sin tienda porque es único, y por eso hay que comparar la de la
+                // fila con la del Host, como en las dos aceptaciones de invitación. Antes no se comparaba: un token
+                // vigente de A canjeado por el host de B cambiaba la contraseña del admin de A, consumía el token y
+                // le cerraba las sesiones. Se rechaza aquí, antes de tocar ningún campo.
+                .filter(candidate -> candidate.getStore().getId().equals(store.getId()))
                 .filter(candidate -> candidate.getPasswordResetExpiresAt() != null
                         && candidate.getPasswordResetExpiresAt().isAfter(Instant.now()))
+                // Inexistente, vencido, ya usado o de otra tienda dicen lo mismo.
                 .orElseThrow(() -> new BadCredentialsException("El enlace no es válido o ha expirado"));
 
         user.setPassword(passwordEncoder.encode(request.password()));
@@ -360,10 +367,11 @@ public class AuthController {
         user.setTokenVersion(user.getTokenVersion() + 1);
         userRepository.save(user);
         tokenVersionService.evict(TokenVersionService.ADMIN, user.getId());
-        // PROD-18. En la tienda del usuario y no en la del Host: el token se busca sin mirar el Host.
+        // PROD-18. Con forStore explícito, como el login y la aceptación de invitación. Desde IMP-01 la tienda del Host
+        // y la del usuario son la misma, porque el filtro de arriba las compara.
         auditTrail.record(AuditEntry.of(AuditAction.USER_PASSWORD_RESET, AuditTargetType.USER, user.getId())
                 .by(AuditActor.admin(user))
-                .forStore(user.getStore().getId())
+                .forStore(store.getId())
                 .details(AuditDiff.create().with("invitationClosed", invitationClosed)));
         return ResponseEntity.ok().build();
     }

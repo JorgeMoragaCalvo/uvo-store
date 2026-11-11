@@ -180,6 +180,7 @@ class AuditSecretSweepTest extends IntegrationTestSupport {
         String resetToken = userRepository.findById(admin.getId()).orElseThrow().getPasswordResetToken();
         markers.add(resetToken);
         mockMvc.perform(post("/api/admin/auth/reset-password")
+                        .header("Host", hostHeader(store))
                         .contentType("application/json")
                         .content("{\"token\":\"%s\",\"password\":\"%s\"}".formatted(resetToken, marker())))
                 .andExpect(status().isOk());
