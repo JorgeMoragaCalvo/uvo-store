@@ -13,6 +13,7 @@ import org.uvo.uvostore.repository.PaymentGatewayConfigRepository;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.support.TestPublicUrls;
 import org.uvo.uvostore.service.order.OrderStatusService;
+import org.uvo.uvostore.service.payment.WebpayPlatformPolicy;
 import org.uvo.uvostore.service.payment.WebpayServiceImpl;
 
 import java.math.BigDecimal;
@@ -43,8 +44,10 @@ class WebpayReconcileTest {
     private final OrderStatusService orderStatusService = mock(OrderStatusService.class);
     private final WebpayPlus.MallTransaction transbank = mock(WebpayPlus.MallTransaction.class);
 
+    // IMP-02: con Webpay APAGADO en la plataforma, a propósito. Lo ya iniciado (conciliar, reembolsar) no mira el
+    // interruptor: un pago que Transbank ya cobró tiene que poder confirmarse o devolverse igual.
     private final WebpayServiceImpl service = new WebpayServiceImpl(
-            orderRepository, configRepository, orderStatusService,
+            orderRepository, configRepository, orderStatusService, WebpayPlatformPolicy.of(false),
             "597055555535", "api-key", "integration", TestPublicUrls.resolver(), 20000) {
         @Override
         protected WebpayPlus.MallTransaction transaction() {

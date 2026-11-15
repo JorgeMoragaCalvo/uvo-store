@@ -35,6 +35,7 @@ public class WebpayServiceImpl implements WebpayService {
     private final OrderRepository orderRepository;
     private final PaymentGatewayConfigRepository configRepository;
     private final OrderStatusService orderStatusService;
+    private final WebpayPlatformPolicy platformPolicy;
     private final String parentCommerceCode;
     private final String apiKey;
     private final boolean production;
@@ -45,6 +46,7 @@ public class WebpayServiceImpl implements WebpayService {
             OrderRepository orderRepository,
             PaymentGatewayConfigRepository configRepository,
             OrderStatusService orderStatusService,
+            WebpayPlatformPolicy platformPolicy,
             @Value("${webpay.parent-commerce-code}") String parentCommerceCode,
             @Value("${webpay.api-key}") String apiKey,
             @Value("${webpay.environment}") String environment,
@@ -54,6 +56,7 @@ public class WebpayServiceImpl implements WebpayService {
         this.orderRepository = orderRepository;
         this.configRepository = configRepository;
         this.orderStatusService = orderStatusService;
+        this.platformPolicy = platformPolicy;
         this.parentCommerceCode = parentCommerceCode;
         this.apiKey = apiKey;
         this.production = "production".equalsIgnoreCase(environment);
@@ -63,6 +66,10 @@ public class WebpayServiceImpl implements WebpayService {
     @Override
     @Transactional
     public WebpayCreateResult createTransaction(Long orderId) {
+        // IMP-02. Solo el inicio mira el interruptor de plataforma. commitTransaction, reconcile y refund no: un
+        // pago que Transbank ya cobró tiene que poder confirmarse o devolverse aunque la plataforma deje de
+        // ofrecer Webpay.
+        platformPolicy.requireEnabled();
         Long storeId = TenantContext.requireStoreId();
         Order order = orderRepository.findById(orderId)
                 .filter(o -> o.getStore().getId().equals(storeId))

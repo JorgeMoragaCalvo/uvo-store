@@ -26,6 +26,7 @@ import org.uvo.uvostore.repository.ShippingRateRepository;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.customer.CustomerService;
 import org.uvo.uvostore.service.geo.GeoCatalog;
+import org.uvo.uvostore.service.payment.WebpayPlatformPolicy;
 import org.uvo.uvostore.service.outbox.OutboxService;
 import org.uvo.uvostore.service.pos.PosSaleCoverage;
 import org.uvo.uvostore.service.settings.SettingValues;
@@ -67,6 +68,7 @@ public class CheckoutServiceImpl implements CheckoutService {
     private final GeoCatalog geoCatalog;
     private final PosSaleCoverage posSaleCoverage;
     private final OrderStatusService orderStatusService;
+    private final WebpayPlatformPolicy webpayPolicy;
     private final int retryWindowMinutes;
 
     public CheckoutServiceImpl(
@@ -85,6 +87,7 @@ public class CheckoutServiceImpl implements CheckoutService {
             GeoCatalog geoCatalog,
             PosSaleCoverage posSaleCoverage,
             OrderStatusService orderStatusService,
+            WebpayPlatformPolicy webpayPolicy,
             @org.springframework.beans.factory.annotation.Value("${app.abandoned-orders.retry-window-minutes:60}") int retryWindowMinutes) {
         this.cartPricingService = cartPricingService;
         this.cartService = cartService;
@@ -101,6 +104,7 @@ public class CheckoutServiceImpl implements CheckoutService {
         this.geoCatalog = geoCatalog;
         this.posSaleCoverage = posSaleCoverage;
         this.orderStatusService = orderStatusService;
+        this.webpayPolicy = webpayPolicy;
         this.retryWindowMinutes = retryWindowMinutes;
     }
 
@@ -109,6 +113,12 @@ public class CheckoutServiceImpl implements CheckoutService {
     public OrderConfirmation checkout(CheckoutCommand command) {
         if (command.lines() == null || command.lines().isEmpty()) {
             throw new IllegalArgumentException("El carrito no puede estar vacío");
+        }
+        // IMP-02. Con Webpay apagado en la plataforma el checkout no lo ofrece, pero una llamada directa a la API
+        // podía crear la orden igual y dejarla esperando un pago que nunca se puede iniciar. Solo la regla de
+        // plataforma: si la tienda tiene Webpay activado lo sigue comprobando WebpayServiceImpl al iniciar el pago.
+        if ("webpay".equalsIgnoreCase(command.paymentMethod())) {
+            webpayPolicy.requireEnabled();
         }
 
         // C5: the checkout used to create the order without looking at stock at all — the only
@@ -282,7 +292,9 @@ public class CheckoutServiceImpl implements CheckoutService {
         return new CheckoutConfigDto(
                 stringSetting("stripe_public_key", ""),
                 boolSetting("stripe_enabled", false),
-                paymentGatewayConfigRepository.findByStoreIdAndGateway(storeId, PaymentGatewayType.WEBPAY)
+                // IMP-02: una tienda que lo dejó activado antes de que la plataforma lo apagara no lo ofrece.
+                webpayPolicy.isEnabled() && paymentGatewayConfigRepository
+                        .findByStoreIdAndGateway(storeId, PaymentGatewayType.WEBPAY)
                         .map(PaymentGatewayConfig::isEnabled).orElse(false),
                 paymentGatewayConfigRepository.findByStoreIdAndGateway(storeId, PaymentGatewayType.MERCADOPAGO)
                         .map(PaymentGatewayConfig::isEnabled).orElse(false),

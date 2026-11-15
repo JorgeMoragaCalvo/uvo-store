@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+import org.uvo.uvostore.service.payment.WebpayPlatformPolicy;
 
 import java.util.function.UnaryOperator;
 
@@ -20,6 +21,9 @@ import java.util.function.UnaryOperator;
  *
  * <p>En {@code development} no se consulta la base ni se comprueba nada, así que la suite de tests y el
  * desarrollo local arrancan igual que antes.
+ *
+ * <p>IMP-02. La línea INFO del final es la que se comprueba antes de admitir tráfico: dice el ambiente efectivo y
+ * si la plataforma ofrece Webpay (ver {@code docs/configuracion-ambientes.md}).
  */
 @Component
 public class ProductionConfigurationCheck {
@@ -44,11 +48,13 @@ public class ProductionConfigurationCheck {
                     + " (" + findings.errors().size() + " problemas):\n  - "
                     + String.join("\n  - ", findings.errors()));
         }
+        String webpay = WebpayPlatformPolicy.resolve(springEnvironment.getProperty("webpay.enabled"), environment)
+                ? "activado" : "desactivado";
         if (environment.isStrict()) {
-            log.info("APP_ENVIRONMENT={}: configuración de producción verificada, {} advertencias.",
-                    environment.label(), findings.warnings().size());
+            log.info("APP_ENVIRONMENT={}: configuración de producción verificada, {} advertencias. Webpay {}.",
+                    environment.label(), findings.warnings().size(), webpay);
         } else {
-            log.info("APP_ENVIRONMENT=development: las comprobaciones de producción no se aplican.");
+            log.info("APP_ENVIRONMENT=development: las comprobaciones de producción no se aplican. Webpay {}.", webpay);
         }
     }
 }

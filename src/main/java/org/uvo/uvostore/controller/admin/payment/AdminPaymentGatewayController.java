@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.uvo.uvostore.entity.payment.enums.PaymentGatewayType;
 import org.uvo.uvostore.service.payment.AdminPaymentGatewayService;
+import org.uvo.uvostore.service.payment.PaymentGatewayAvailabilityDto;
 import org.uvo.uvostore.service.payment.PaymentGatewayConfigCommand;
 import org.uvo.uvostore.service.payment.PaymentGatewayConfigDto;
 
@@ -31,6 +32,13 @@ public class AdminPaymentGatewayController {
     @PreAuthorize("hasAuthority('payments.view')")
     public List<PaymentGatewayConfigDto> index() {
         return service.list();
+    }
+
+    // IMP-02. Qué pasarelas deja activar la plataforma (hoy, Webpay según WEBPAY_ENABLED).
+    @GetMapping("/availability")
+    @PreAuthorize("hasAuthority('payments.view')")
+    public List<PaymentGatewayAvailabilityDto> availability() {
+        return service.availability();
     }
 
     @PutMapping("/{gateway}")

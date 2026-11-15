@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAdminPaymentGatewaysStore } from '@/admin/stores/useAdminPaymentGatewaysStore'
-import type { PaymentGateway, PaymentGatewayConfigDto } from '@/admin/types/admin'
+import type { PaymentGateway, PaymentGatewayAvailability, PaymentGatewayConfigDto } from '@/admin/types/admin'
 
 interface CredentialField {
   key: string
@@ -43,9 +43,19 @@ const GATEWAYS: GatewayDefinition[] = [
   },
 ]
 
-function GatewayCard({ definition, config }: { definition: GatewayDefinition; config: PaymentGatewayConfigDto | undefined }) {
+function GatewayCard({
+  definition,
+  config,
+  availability,
+}: {
+  definition: GatewayDefinition
+  config: PaymentGatewayConfigDto | undefined
+  availability: PaymentGatewayAvailability | undefined
+}) {
   const update = useAdminPaymentGatewaysStore((state) => state.update)
   const [enabled, setEnabled] = useState(config?.enabled ?? false)
+  // IMP-02. La plataforma no deja activarla: el interruptor solo sirve para apagar una que quedó activada de antes.
+  const unavailable = availability?.available === false
   const [values, setValues] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
 
@@ -76,11 +86,22 @@ function GatewayCard({ definition, config }: { definition: GatewayDefinition; co
             <Label htmlFor={`${definition.gateway}-enabled`} className="text-sm text-muted-foreground">
               Habilitado
             </Label>
-            <Switch id={`${definition.gateway}-enabled`} checked={enabled} onCheckedChange={setEnabled} />
+            <Switch
+              id={`${definition.gateway}-enabled`}
+              checked={enabled}
+              onCheckedChange={setEnabled}
+              disabled={unavailable && !enabled}
+            />
           </div>
         </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
+        {unavailable && (
+          <p role="note" className="rounded-md border border-border bg-muted p-3 text-sm text-muted-foreground">
+            {availability?.reason}
+            {config?.enabled && ' Aunque figure como habilitado, no se ofrece en el checkout.'}
+          </p>
+        )}
         {definition.fields.map((field) => {
           const isSet = config?.credentialsSet?.[field.key]
           return (
@@ -110,6 +131,7 @@ function GatewayCard({ definition, config }: { definition: GatewayDefinition; co
 
 export default function PaymentGateways() {
   const configs = useAdminPaymentGatewaysStore((state) => state.configs)
+  const availability = useAdminPaymentGatewaysStore((state) => state.availability)
   const loading = useAdminPaymentGatewaysStore((state) => state.loading)
   const fetch = useAdminPaymentGatewaysStore((state) => state.fetch)
 
@@ -135,6 +157,7 @@ export default function PaymentGateways() {
               key={definition.gateway}
               definition={definition}
               config={configs.find((c) => c.gateway === definition.gateway)}
+              availability={availability.find((a) => a.gateway === definition.gateway)}
             />
           ))}
         </div>

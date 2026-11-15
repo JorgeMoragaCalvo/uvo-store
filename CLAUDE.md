@@ -1038,9 +1038,15 @@ store, an id for scheduled jobs, the id on the way to the POS, and Prometheus me
 
 **PROD-08a — production configuration check and a separate Flyway role.** Every default in
 `application.properties` is the *development* value, and until now nothing stopped a deployment from booting
-on them. The signal is explicit: `APP_ENVIRONMENT` → `app.environment`, one of `development` (default),
-`staging`, `production` (`AppEnvironment`). **An unknown value refuses to start**, so `prod` or `produccion`
-can't silently switch the checks off. It is deliberately not a Spring profile (§7.1: a `prod` profile
+on them. The signal is explicit: `APP_ENVIRONMENT` → `app.environment`, one of `development`, `staging`,
+`production` (`AppEnvironment`). **An unknown value refuses to start**, so `prod` or `produccion`
+can't silently switch the checks off, and **since IMP-02 so does a missing one**: there is no default any more
+(`${APP_ENVIRONMENT:}`), so a deployment that forgets the variable no longer boots as development. Local runs
+declare it in `.env` (`.env.example` has it uncommented), the test suite in
+`src/test/resources/config/application.properties` (Spring loads `classpath:/config/` on top of the main file,
+so it only overrides that key), and the E2E in `frontend/e2e/launch/backend.ts`. The per-environment matrix
+(what is required, allowed and forbidden in development / staging / production, and the pre-traffic check) is
+`docs/configuracion-ambientes.md`. It is deliberately not a Spring profile (§7.1: a `prod` profile
 implements nothing by itself). `ProductionConfigurationRules` (pure: properties, the process environment for
 `SENTRY_*`, and the DB role through a `Supplier`) decides; `ProductionConfigurationCheck` applies it in its
 constructor, like the other startup validators. **All errors come out together** in one
@@ -1048,10 +1054,16 @@ constructor, like the other startup validators. **All errors come out together**
 - **Errors, in `production` and `staging`:**
   - `PUBLIC_STOREFRONT_URL` / `PUBLIC_API_URL` not `https`;
   - `PUBLIC_PLATFORM_DOMAIN` that is `localhost`, `*.localhost`, an IPv4 address, or has no dot;
-  - **`production` only**, Webpay: `WEBPAY_ENVIRONMENT` other than `production`, or the parent code / API key
-    equal to the SDK's sandbox constants (`IntegrationCommerceCodes.WEBPAY_PLUS_MALL`,
+  - (IMP-02) `WEBPAY_ENABLED` blank or anything but `true`/`false` (case-insensitive; no `yes`/`on`/`1`):
+    whether the platform offers Webpay is a scope decision and must be written down;
+  - **`production` with `WEBPAY_ENABLED=true` only**, Webpay: `WEBPAY_ENVIRONMENT` other than `production`, or
+    the parent code / API key equal to the SDK's sandbox constants (`IntegrationCommerceCodes.WEBPAY_PLUS_MALL`,
     `IntegrationApiKeys.WEBPAY`). This one closes a real hole: `WebpayServiceImpl` treats *anything* but
-    `production` as integration, so a typo charged in the sandbox and marked orders paid;
+    `production` as integration, so a typo charged in the sandbox and marked orders paid. With
+    `WEBPAY_ENABLED=false` the credentials are not checked — shipping without Webpay no longer needs fake ones;
+  - (IMP-02, C15) `CUSTOMER_ACCOUNTS_ENABLED` true or `SHIPPING_CARRIERS_ENABLED` non-empty: both are outside the
+    go-live scope (no shopper screens; carrier quoting not certified). Enabling them later means changing this
+    rule on purpose;
   - local storage with a relative `APP_UPLOAD_DIR` (it lives in the container and dies with it), or `s3` without
     a bucket;
   - blank `MAIL_HOST` (mail is skipped silently: no invitations, resets or order e-mails);
@@ -1064,9 +1076,25 @@ constructor, like the other startup validators. **All errors come out together**
   - (POS-6) a `/0` entry in `PLATFORM_ALLOWED_NETWORKS`, which would open store creation to the Internet.
 - **Warnings:** `POS_ENABLED=false` (off on purpose until POS-1 confirms the contract; make it an error then),
   blank `RATE_LIMIT_TRUSTED_PROXIES` (the app can't know whether there is a proxy), blank `SENTRY_DSN`.
-- **In `development` nothing is checked and the database is not queried**, so the suite (surefire sets no
-  `app.environment`) and local runs are unchanged. One exception: a `PUBLIC_PLATFORM_DOMAIN` that looks real
-  logs a `WARN` saying `APP_ENVIRONMENT` is missing — the safety net for forgetting the signal.
+- **In `development` nothing is checked and the database is not queried**, so the suite and local runs are
+  unchanged. One exception: a `PUBLIC_PLATFORM_DOMAIN` that looks real logs a `WARN` saying
+  `APP_ENVIRONMENT=development` looks like a deployment.
+- **The startup `INFO` line is the pre-traffic check** (IMP-02): `APP_ENVIRONMENT=production: configuración de
+  producción verificada, N advertencias. Webpay activado|desactivado.` Nothing exposes the environment over HTTP.
+- **Webpay platform switch (IMP-02).** `WEBPAY_ENABLED` → `webpay.enabled`, read only by `WebpayPlatformPolicy`
+  (blank = enabled in development only; a value other than `true`/`false` refuses to start everywhere). Off, it
+  blocks every way *into* Webpay: enabling it in the panel (`AdminPaymentGatewayServiceImpl.upsert`, 400; saving
+  it *disabled* is still allowed), offering it at checkout even if a store's row was enabled before
+  (`CheckoutServiceImpl.getConfig`), creating an order with `paymentMethod=webpay` (`CheckoutServiceImpl.checkout`,
+  400 — before this nothing checked the method at all), and starting a payment (`WebpayServiceImpl.createTransaction`,
+  400). It deliberately does **not** gate the way *out*: return, reconciliation and refund keep working, because a
+  payment Transbank already charged must still be confirmable and refundable. The panel reads
+  `GET /api/admin/payment-gateways/availability` (`payments.view`) and disables the Webpay switch with the reason
+  (`PaymentGateways.tsx`). Tests: `WebpayPlatformPolicyTest`, `WebpayPlatformSwitchTest` (a context with
+  `webpay.enabled=false`), and `WebpayRefundTest`/`WebpayReconcileTest` now build the service with the switch off.
+- **Secrets and rotation:** see `docs/configuracion-ambientes.md`. `APP_ENCRYPTION_KEY` cannot be rotated today —
+  a new key makes the stored gateway credentials unreadable — so its custody is a requirement and rotation with
+  re-encryption is pending; provisioning real secrets and roles belongs to IMP-05.
 - **Flyway role:** `FLYWAY_USER` / `FLYWAY_PASSWORD` → `app.flyway.*`, applied by `FlywayMigrationRole`, a
   `FlywayConfigurationCustomizer` that calls `configuration.dataSource(spring.datasource.url, user, password)`.
   Blank, Flyway keeps using the application pool (local dev, where `uvostore` owns everything). **Not**

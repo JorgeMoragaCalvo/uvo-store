@@ -6,5 +6,6 @@ import java.util.List;
 
 public interface AdminPaymentGatewayService {
     List<PaymentGatewayConfigDto> list();
+    List<PaymentGatewayAvailabilityDto> availability();
     PaymentGatewayConfigDto upsert(PaymentGatewayType gateway, PaymentGatewayConfigCommand command);
 }

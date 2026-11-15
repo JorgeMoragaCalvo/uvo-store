@@ -69,6 +69,7 @@ import org.uvo.uvostore.service.outbox.OutboxHandler;
 import org.uvo.uvostore.service.outbox.OutboxStore;
 import org.uvo.uvostore.service.payment.RefundIntentStore;
 import org.uvo.uvostore.service.payment.WebpayService;
+import org.uvo.uvostore.service.payment.WebpayPlatformPolicy;
 import org.uvo.uvostore.service.payment.WebpayServiceImpl;
 import org.uvo.uvostore.service.pos.PosClient;
 import org.uvo.uvostore.service.url.StorePublicUrlResolver;
@@ -195,7 +196,7 @@ public abstract class InterruptionTestSupport {
                                                     OrderStatusService orderStatusService,
                                                     StorePublicUrlResolver publicUrls) {
             return new WebpayServiceImpl(orderRepository, configRepository, orderStatusService,
-                    "597055555535", "api-key", "integration", publicUrls, 20000) {
+                    WebpayPlatformPolicy.of(true), "597055555535", "api-key", "integration", publicUrls, 20000) {
                 @Override
                 protected WebpayPlus.MallTransaction transaction() {
                     RuntimeException crash = crashBeforeTransbank;

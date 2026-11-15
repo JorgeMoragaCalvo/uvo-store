@@ -55,25 +55,43 @@ class ProductionConfigurationCheckTest {
         assertThatThrownBy(() -> new ProductionConfigurationCheck(properties, name -> null,
                 databaseWith(new DatabaseRole("uvostore", true, true, true))))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageStartingWith("La configuración no sirve para APP_ENVIRONMENT=production (11 problemas):")
+                .hasMessageStartingWith("La configuración no sirve para APP_ENVIRONMENT=production (9 problemas):")
                 .hasMessageContaining("\n  - PUBLIC_STOREFRONT_URL")
-                .hasMessageContaining("\n  - WEBPAY_ENVIRONMENT")
+                .hasMessageContaining("\n  - WEBPAY_ENABLED")
                 .hasMessageContaining("\n  - MAIL_HOST")
                 .hasMessageContaining("superusuario");
     }
 
     @Test
-    @DisplayName("En development arranca sin consultar la base")
-    void developmentStartsWithoutTouchingTheDatabase() throws IOException {
+    @DisplayName("IMP-02: sin APP_ENVIRONMENT no arranca, en vez de caer a development")
+    void withoutAppEnvironmentItDoesNotStart() throws IOException {
         ObjectProvider<JdbcTemplate> database = mock();
 
-        assertThatCode(() -> new ProductionConfigurationCheck(ProductionConfigurationRulesTest.shippedDefaults(),
-                name -> null, database)).doesNotThrowAnyException();
+        assertThatThrownBy(() -> new ProductionConfigurationCheck(ProductionConfigurationRulesTest.shippedDefaults(),
+                name -> null, database))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("APP_ENVIRONMENT no está definido");
+
+        verifyNoInteractions(database);
+    }
+
+    @Test
+    @DisplayName("En development arranca sin consultar la base, y el log dice el ambiente y si hay Webpay")
+    void developmentStartsWithoutTouchingTheDatabase() throws IOException {
+        ObjectProvider<JdbcTemplate> database = mock();
+        MockEnvironment properties = ProductionConfigurationRulesTest.shippedDefaults();
+        properties.setProperty("app.environment", "development");
+
+        assertThatCode(() -> new ProductionConfigurationCheck(properties, name -> null, database))
+                .doesNotThrowAnyException();
 
         verifyNoInteractions(database);
         assertThat(logs.list).singleElement().satisfies(event -> {
             assertThat(event.getLevel()).isEqualTo(Level.INFO);
-            assertThat(event.getFormattedMessage()).contains("no se aplican");
+            assertThat(event.getFormattedMessage()).contains("APP_ENVIRONMENT=development")
+                    .contains("no se aplican")
+                    // WEBPAY_ENABLED vacío vale true solo en development.
+                    .contains("Webpay activado");
         });
     }
 
@@ -95,7 +113,30 @@ class ProductionConfigurationCheckTest {
         assertThat(logs.list).filteredOn(event -> event.getLevel() == Level.INFO)
                 .singleElement().extracting(ILoggingEvent::getFormattedMessage).asString()
                 .contains("APP_ENVIRONMENT=production")
-                .contains("1 advertencias");
+                .contains("1 advertencias")
+                .contains("Webpay activado");
+    }
+
+    @Test
+    @DisplayName("IMP-02: producción sin Webpay arranca con las credenciales del sandbox y lo dice en el log")
+    void productionWithoutWebpayStartsAndSaysSo() throws IOException {
+        MockEnvironment shipped = ProductionConfigurationRulesTest.shippedDefaults();
+        MockEnvironment properties = ProductionConfigurationRulesTest.production();
+        properties.setProperty("app.environment", "production");
+        properties.setProperty("webpay.enabled", "false");
+        for (String key : new String[] {"webpay.environment", "webpay.parent-commerce-code", "webpay.api-key"}) {
+            properties.setProperty(key, shipped.getProperty(key));
+        }
+
+        assertThatCode(() -> new ProductionConfigurationCheck(properties,
+                ProductionConfigurationRulesTest.sentry("production"),
+                databaseWith(new DatabaseRole("uvostore_app", false, false, false))))
+                .doesNotThrowAnyException();
+
+        assertThat(logs.list).filteredOn(event -> event.getLevel() == Level.INFO)
+                .singleElement().extracting(ILoggingEvent::getFormattedMessage).asString()
+                .contains("APP_ENVIRONMENT=production")
+                .contains("Webpay desactivado");
     }
 
     @SuppressWarnings("unchecked")

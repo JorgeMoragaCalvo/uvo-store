@@ -22,6 +22,7 @@ import type {
   HomeBannerDto,
   PaymentGateway,
   OutboxFailure,
+  PaymentGatewayAvailability,
   PaymentGatewayConfigDto,
   PaymentMethodDetailDto,
   PaymentMethodRevenueDto,
@@ -315,6 +316,7 @@ export const adminApi = {
   },
   paymentGateways: {
     list: (): Promise<PaymentGatewayConfigDto[]> => client.get('/payment-gateways'),
+    availability: (): Promise<PaymentGatewayAvailability[]> => client.get('/payment-gateways/availability'),
     update: (gateway: PaymentGateway, enabled: boolean, credentials: Record<string, string>): Promise<PaymentGatewayConfigDto> =>
       client.put(`/payment-gateways/${gateway}`, { enabled, credentials }),
   },

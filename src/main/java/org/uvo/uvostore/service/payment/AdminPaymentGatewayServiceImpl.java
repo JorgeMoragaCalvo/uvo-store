@@ -12,6 +12,7 @@ import org.uvo.uvostore.service.audit.AuditDiff;
 import org.uvo.uvostore.service.audit.AuditEntry;
 import org.uvo.uvostore.service.audit.AuditTrail;
 
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,10 +22,13 @@ public class AdminPaymentGatewayServiceImpl implements AdminPaymentGatewayServic
 
     private final PaymentGatewayConfigRepository repository;
     private final AuditTrail auditTrail;
+    private final WebpayPlatformPolicy webpayPolicy;
 
-    public AdminPaymentGatewayServiceImpl(PaymentGatewayConfigRepository repository, AuditTrail auditTrail) {
+    public AdminPaymentGatewayServiceImpl(PaymentGatewayConfigRepository repository, AuditTrail auditTrail,
+                                          WebpayPlatformPolicy webpayPolicy) {
         this.repository = repository;
         this.auditTrail = auditTrail;
+        this.webpayPolicy = webpayPolicy;
     }
 
     @Override
@@ -34,8 +38,22 @@ public class AdminPaymentGatewayServiceImpl implements AdminPaymentGatewayServic
     }
 
     @Override
+    public List<PaymentGatewayAvailabilityDto> availability() {
+        return Arrays.stream(PaymentGatewayType.values())
+                .map(gateway -> gateway == PaymentGatewayType.WEBPAY && !webpayPolicy.isEnabled()
+                        ? new PaymentGatewayAvailabilityDto(gateway.name(), false, WebpayPlatformPolicy.UNAVAILABLE_REASON)
+                        : new PaymentGatewayAvailabilityDto(gateway.name(), true, null))
+                .toList();
+    }
+
+    @Override
     @Transactional
     public PaymentGatewayConfigDto upsert(PaymentGatewayType gateway, PaymentGatewayConfigCommand command) {
+        // IMP-02. Con Webpay apagado en la plataforma no se puede activar. Sí se puede guardar desactivado: es lo
+        // que hace una tienda que lo tenía activado de antes para dejar de verlo como activo en el panel.
+        if (gateway == PaymentGatewayType.WEBPAY && command.enabled()) {
+            webpayPolicy.requireEnabled();
+        }
         Long storeId = TenantContext.requireStoreId();
         PaymentGatewayConfig config = repository.findByStoreIdAndGateway(storeId, gateway).orElseGet(() -> {
             PaymentGatewayConfig created = new PaymentGatewayConfig();
