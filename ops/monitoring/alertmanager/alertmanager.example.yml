@@ -1,0 +1,68 @@
+# IMP-03. Enrutamiento de las alertas de alerts.yml hacia una persona. Es un EJEMPLO: los receptores reales
+# (correo, chat, sistema de guardia) y las personas de cada rol se definen en C01 y se provisionan en IMP-05.
+# No escribir aquí direcciones ni tokens reales: van en archivos montados desde el gestor de secretos.
+#
+# Reglas:
+#   - severity=critical va a la guardia y al canal de su owner, y se repite cada hora hasta que se resuelva.
+#   - severity=warning va solo al canal de su owner y se repite cada 4 horas. Si se quiere solo en horario hábil,
+#     agregar time_intervals con lo que fije C01.
+#   - UvoStoreSinMetricas inhibe las demás del mismo ambiente: con la monitorización ciega, el resto no dice nada.
+# Comprobar el enrutamiento: amtool config routes test --config.file=alertmanager.example.yml severity=critical owner=equipo-pos
+
+global:
+  resolve_timeout: 5m
+  # El servidor de correo de las alertas: conviene que NO sea el mismo MAIL_HOST de la aplicación, para que una
+  # caída del correo de la tienda no silencie también sus alertas.
+  smtp_smarthost: smtp.example.cl:587
+  smtp_from: alertas@example.cl
+  smtp_auth_username: alertas@example.cl
+  smtp_auth_password_file: /etc/alertmanager/secrets/smtp-password
+
+route:
+  receiver: operaciones-plataforma
+  group_by: [alertname, environment, channel, source]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers: [severity="critical"]
+      receiver: guardia
+      repeat_interval: 1h
+      continue: true          # además de la guardia, al canal del owner
+    - matchers: [owner="operaciones-pagos"]
+      receiver: operaciones-pagos
+    - matchers: [owner="operaciones-tiendas"]
+      receiver: operaciones-tiendas
+    - matchers: [owner="equipo-pos"]
+      receiver: equipo-pos
+    - matchers: [owner="operaciones-plataforma"]
+      receiver: operaciones-plataforma
+
+inhibit_rules:
+  - source_matchers: [alertname="UvoStoreSinMetricas"]
+    target_matchers: [alertname=~"UvoStore.+", alertname!="UvoStoreSinMetricas"]
+    equal: [environment]
+
+receivers:
+  # Sustituir cada receptor por el canal real del rol. Uno sin configuraciones descarta la alerta: Alertmanager no
+  # falla, así que una alerta sin destino real solo se nota en la prueba del paso 6 (docs/observabilidad.md).
+  - name: guardia
+    webhook_configs:
+      - url_file: /etc/alertmanager/secrets/guardia-webhook-url
+        send_resolved: true
+  - name: operaciones-pagos
+    email_configs:
+      - to: operaciones-pagos@example.cl
+        send_resolved: true
+  - name: operaciones-tiendas
+    email_configs:
+      - to: operaciones-tiendas@example.cl
+        send_resolved: true
+  - name: equipo-pos
+    email_configs:
+      - to: equipo-pos@example.cl
+        send_resolved: true
+  - name: operaciones-plataforma
+    email_configs:
+      - to: operaciones-plataforma@example.cl
+        send_resolved: true

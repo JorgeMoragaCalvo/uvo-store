@@ -80,6 +80,31 @@ jobs:
       - name: Build
         run: npm run build
 
+  # IMP-03. Las alertas versionadas en ops/monitoring/: que las reglas compilen, que cada alerta dispare con su
+  # serie y no sin ella (alerts.test.yml), y que la configuración de Alertmanager y el dashboard sean válidos.
+  # Las imágenes van fijadas: un cambio de versión de Prometheus no puede cambiar en silencio lo que se prueba.
+  monitoring:
+    name: Monitoring (promtool)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check and test alert rules
+        run: |
+          docker run --rm -v "$PWD/ops/monitoring:/m:ro" -w /m/prometheus --entrypoint promtool \
+            prom/prometheus:v3.5.0 check rules alerts.yml
+          docker run --rm -v "$PWD/ops/monitoring:/m:ro" -w /m/prometheus --entrypoint promtool \
+            prom/prometheus:v3.5.0 test rules alerts.test.yml
+
+      - name: Check Alertmanager config
+        run: |
+          docker run --rm -v "$PWD/ops/monitoring:/m:ro" --entrypoint amtool \
+            prom/alertmanager:v0.28.1 check-config /m/alertmanager/alertmanager.example.yml
+
+      - name: Check Grafana dashboard JSON
+        run: python3 -m json.tool ops/monitoring/grafana/uvostore-operacion.json > /dev/null
+
   # PROD-14a. Red de navegador: Playwright contra el backend real. GAP-09: el job vive en e2e.yml porque
   # release.yml también lo llama. Su check se llama «E2E / E2E (Playwright)».
   e2e:

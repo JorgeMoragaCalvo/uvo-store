@@ -73,6 +73,23 @@ class SentryBootstrapTest {
     }
 
     @Test
+    @DisplayName("IMP-03: cada evento pasa por el SentryScrubber antes de salir")
+    void everyEventIsScrubbedBeforeSending() {
+        SentryOptions options = new SentryOptions();
+        SentryBootstrap.configure(options, env("SENTRY_DSN", "https://clave@sentry.example/1"));
+
+        io.sentry.SentryEvent event = new io.sentry.SentryEvent();
+        io.sentry.protocol.Message message = new io.sentry.protocol.Message();
+        message.setMessage("reset con token=abc123");
+        event.setMessage(message);
+
+        assertThat(options.getBeforeSend()).isNotNull();
+        io.sentry.SentryEvent sent = options.getBeforeSend().execute(event, new io.sentry.Hint());
+        assertThat(sent).isNotNull();
+        assertThat(sent.getMessage().getMessage()).isEqualTo("reset con token=[Filtered]");
+    }
+
+    @Test
     @DisplayName("Solo hay Sentry si hay DSN: sin él (o en blanco) el SDK no se inicializa")
     void sentryIsOnlyConfiguredWithADsn() {
         assertThat(SentryBootstrap.isConfigured(env())).isFalse();

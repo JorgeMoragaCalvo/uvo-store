@@ -320,6 +320,24 @@ class ProductionConfigurationRulesTest {
     }
 
     @Test
+    @DisplayName("IMP-03: con DSN, sin SENTRY_RELEASE no se puede atribuir un error a una versión")
+    void sentryNeedsTheRelease() {
+        for (String blank : new String[] {null, "", "  "}) {
+            Map<String, String> env = new LinkedHashMap<>();
+            env.put(SentryBootstrap.ENV_DSN, SENTRY_DSN);
+            env.put(SentryBootstrap.ENV_ENVIRONMENT, "staging");
+            env.put(SentryBootstrap.ENV_RELEASE, blank);
+
+            assertThat(check(AppEnvironment.STAGING, production(), env::get, APP_ROLE).errors())
+                    .singleElement().asString().startsWith("SENTRY_RELEASE").contains("tag");
+        }
+        // Sin DSN no se envía nada, así que tampoco hace falta la versión.
+        assertThat(check(AppEnvironment.PRODUCTION, production(), name -> null, APP_ROLE).errors()).isEmpty();
+        // En development nada se revisa.
+        assertThat(check(AppEnvironment.DEVELOPMENT, new MockEnvironment(), name -> null, APP_ROLE).errors()).isEmpty();
+    }
+
+    @Test
     @DisplayName("El rol de la aplicación no puede tener DDL de ninguna de las tres formas")
     void theApplicationRoleHasNoDdl() {
         assertThat(check(AppEnvironment.PRODUCTION, production(), sentry("production"),
@@ -422,6 +440,7 @@ class ProductionConfigurationRulesTest {
         Map<String, String> env = new LinkedHashMap<>();
         env.put(SentryBootstrap.ENV_DSN, SENTRY_DSN);
         env.put(SentryBootstrap.ENV_ENVIRONMENT, environment);
+        env.put(SentryBootstrap.ENV_RELEASE, "v1.0.0");
         return env::get;
     }
 

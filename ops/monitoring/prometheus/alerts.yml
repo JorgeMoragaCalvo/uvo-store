@@ -1,0 +1,138 @@
+# IMP-03 (C17). Alertas de UvoStore sobre las métricas de /actuator/prometheus.
+#
+# Cada alerta lleva:
+#   severity  critical = atender ya (dinero o ventas en juego) · warning = atender en horario.
+#   owner     a quién la enruta Alertmanager (alertmanager.example.yml). Los nombres son roles: la persona y la
+#             guardia de cada rol se fijan en C01.
+#   runbook   el procedimiento, en docs/observabilidad.md.
+#
+# UMBRALES PROVISIONALES: los plazos ("for") y los valores salen de los márgenes que ya usa el código
+# (app.reconciliation.stale-hours, app.stock-recovery.after-minutes) y son un punto de partida. Los definitivos
+# dependen de los objetivos operativos de C01. Si cambian, cambiar también alerts.test.yml.
+#
+# Las métricas son de todo el sistema, sin la tienda como etiqueta (PROD-15b): la alerta dice QUÉ pasa; en qué
+# tienda se ve en el panel o en Sentry. Se agrupa por la etiqueta environment que pone el scrape
+# (scrape.example.yml), para que un Prometheus que recoja staging y producción no mezcle sus alertas.
+#
+# Pruebas: promtool test rules alerts.test.yml (job "monitoring" de .github/workflows/ci.yml).
+
+groups:
+  - name: uvostore-pagos
+    rules:
+      - alert: UvoStorePagosPendientesViejos
+        expr: max by (environment) (uvostore_orders_pending_stale) > 0
+        for: 15m
+        labels:
+          severity: warning
+          owner: operaciones-tiendas
+        annotations:
+          summary: "{{ $value }} órdenes siguen PENDING más allá de app.reconciliation.stale-hours"
+          description: >-
+            La conciliación de pagos ya no las resuelve sola. Puede ser un pago cobrado que nunca se confirmó o una
+            transferencia que nadie marcó.
+          runbook: docs/observabilidad.md#pagos-pendientes-viejos
+
+      - alert: UvoStoreReembolsosInciertos
+        expr: max by (environment) (uvostore_refunds_pending) > 0
+        for: 30m
+        labels:
+          severity: critical
+          owner: operaciones-pagos
+        annotations:
+          summary: "{{ $value }} reembolsos con resultado desconocido desde hace 30 minutos"
+          description: >-
+            La pasarela no confirmó ni rechazó el reembolso. No se puede reintentar sin saber si se devolvió el
+            dinero.
+          runbook: docs/observabilidad.md#reembolsos-inciertos
+
+  - name: uvostore-outbox
+    rules:
+      - alert: UvoStoreOutboxFallido
+        # No baja sola mientras nadie resuelva la fila: se alerta cuando SUBE, no por su valor.
+        expr: sum by (environment, channel) (increase(uvostore_outbox_failed[15m])) > 0
+        labels:
+          severity: critical
+          owner: operaciones-tiendas
+        annotations:
+          summary: "Entregas del outbox fallidas de forma definitiva (canal {{ $labels.channel }})"
+          description: >-
+            Con channel=pos son ventas que el POS no tiene; con channel=mail, correos que no salieron. Quedan en la
+            página «Envíos fallidos» del panel de la tienda.
+          runbook: docs/observabilidad.md#outbox-fallido
+
+      - alert: UvoStorePosNoRecibeVentas
+        expr: max by (environment) (uvostore_outbox_oldest_pending_seconds{channel="pos"}) > 900
+        labels:
+          severity: critical
+          owner: equipo-pos
+        annotations:
+          summary: "La venta más vieja en cola para el POS lleva {{ $value | humanizeDuration }} esperando"
+          description: >-
+            El POS no está aceptando las ventas web. El stock del POS no las descuenta mientras tanto.
+          runbook: docs/observabilidad.md#pos-no-recibe-ventas
+
+  - name: uvostore-stock
+    rules:
+      - alert: UvoStoreVentasSinStock
+        expr: max by (environment) (uvostore_orders_stock_shortage) > 0
+        labels:
+          severity: critical
+          owner: operaciones-tiendas
+        annotations:
+          summary: "{{ $value }} órdenes cobradas sin stock esperan reponer, liberar o reembolsar"
+          description: >-
+            El despacho está bloqueado. No se resuelve sola: la tienda tiene que actuar desde la pestaña «Sin stock».
+          runbook: docs/observabilidad.md#ventas-sin-stock
+
+      - alert: UvoStoreStockSinDescontar
+        expr: max by (environment) (uvostore_orders_paid_without_stock) > 0
+        for: 15m
+        labels:
+          severity: warning
+          owner: operaciones-tiendas
+        annotations:
+          summary: "{{ $value }} órdenes cobradas siguen con el stock sin descontar"
+          description: >-
+            StockRecoveryJob debería recogerlas en minutos. Si persiste, el job no corre o falla en cada intento.
+          runbook: docs/observabilidad.md#stock-sin-descontar
+
+  - name: uvostore-pos
+    rules:
+      - alert: UvoStoreDivergenciasPos
+        expr: sum by (environment, source) (increase(uvostore_pos_stock_divergences_total[1h])) > 0
+        labels:
+          severity: warning
+          owner: equipo-pos
+        annotations:
+          summary: "Divergencias de stock entre la tienda y el POS (origen {{ $labels.source }})"
+          description: >-
+            La conciliación, un webhook o la respuesta a una venta encontraron un stock distinto del esperado.
+          runbook: docs/observabilidad.md#divergencias-pos
+
+  - name: uvostore-monitorizacion
+    rules:
+      - alert: UvoStoreSinMetricas
+        expr: up{job="uvostore"} == 0 or absent(up{job="uvostore"})
+        for: 5m
+        labels:
+          severity: critical
+          owner: operaciones-plataforma
+        annotations:
+          summary: "Prometheus no obtiene las métricas de UvoStore"
+          description: >-
+            El proceso cayó, la red privada no llega o METRICS_TOKEN no coincide. Mientras dure, ninguna otra
+            alerta de este archivo puede dispararse.
+          runbook: docs/observabilidad.md#sin-metricas
+
+      - alert: UvoStorePendientesDesconocidos
+        # NaN != NaN: los gauges dan NaN cuando nunca se pudo leer la base para la foto (OperationalBacklogMetrics).
+        expr: uvostore_refunds_pending != uvostore_refunds_pending
+        for: 10m
+        labels:
+          severity: critical
+          owner: operaciones-plataforma
+        annotations:
+          summary: "Las métricas de pendientes no se pueden calcular: la base no responde a la foto"
+          description: >-
+            Las alertas de pagos, reembolsos, outbox y stock están ciegas mientras dure.
+          runbook: docs/observabilidad.md#sin-metricas

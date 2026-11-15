@@ -1,0 +1,228 @@
+# IMP-03. Pruebas de alerts.yml: cada alerta dispara con la serie que la provoca y no dispara sin ella.
+#   promtool test rules ops/monitoring/prometheus/alerts.test.yml
+# Las series llevan las etiquetas que pone Prometheus al recoger (job, instance) y la común de la aplicación.
+
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  # --- Pagos pendientes: hace falta que dure 15 minutos ---------------------------------------------------------
+  - interval: 1m
+    input_series:
+      - series: 'uvostore_orders_pending_stale{application="uvo-store",job="uvostore",instance="app:8080"}'
+        values: '0 0 2x30'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: UvoStorePagosPendientesViejos
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: UvoStorePagosPendientesViejos
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              owner: operaciones-tiendas
+            exp_annotations:
+              summary: "2 órdenes siguen PENDING más allá de app.reconciliation.stale-hours"
+              description: "La conciliación de pagos ya no las resuelve sola. Puede ser un pago cobrado que nunca se confirmó o una transferencia que nadie marcó."
+              runbook: docs/observabilidad.md#pagos-pendientes-viejos
+
+  # --- Reembolsos inciertos: 30 minutos; uno que se resuelve antes no alerta ------------------------------------
+  - interval: 1m
+    input_series:
+      - series: 'uvostore_refunds_pending{application="uvo-store",job="uvostore",instance="app:8080"}'
+        values: '1x20 0x10 1x40'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: UvoStoreReembolsosInciertos
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: UvoStoreReembolsosInciertos
+        exp_alerts: []
+      - eval_time: 65m
+        alertname: UvoStoreReembolsosInciertos
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              owner: operaciones-pagos
+            exp_annotations:
+              summary: "1 reembolsos con resultado desconocido desde hace 30 minutos"
+              description: "La pasarela no confirmó ni rechazó el reembolso. No se puede reintentar sin saber si se devolvió el dinero."
+              runbook: docs/observabilidad.md#reembolsos-inciertos
+
+  # --- Outbox fallido: alerta cuando sube, por canal; el nivel quieto no alerta ---------------------------------
+  - interval: 1m
+    input_series:
+      - series: 'uvostore_outbox_failed{application="uvo-store",job="uvostore",instance="app:8080",channel="pos"}'
+        values: '3x20 4x40'
+      - series: 'uvostore_outbox_failed{application="uvo-store",job="uvostore",instance="app:8080",channel="mail"}'
+        values: '5x60'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: UvoStoreOutboxFallido
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: UvoStoreOutboxFallido
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              owner: operaciones-tiendas
+              channel: pos
+            exp_annotations:
+              summary: "Entregas del outbox fallidas de forma definitiva (canal pos)"
+              description: "Con channel=pos son ventas que el POS no tiene; con channel=mail, correos que no salieron. Quedan en la página «Envíos fallidos» del panel de la tienda."
+              runbook: docs/observabilidad.md#outbox-fallido
+      - eval_time: 50m
+        alertname: UvoStoreOutboxFallido
+        exp_alerts: []
+
+  # --- POS sin recibir: la venta más vieja pasa de 15 minutos en cola; el correo no cuenta ----------------------
+  - interval: 1m
+    input_series:
+      - series: 'uvostore_outbox_oldest_pending_seconds{application="uvo-store",job="uvostore",instance="app:8080",environment="production",channel="pos"}'
+        values: '0 60 600 960'
+      - series: 'uvostore_outbox_oldest_pending_seconds{application="uvo-store",job="uvostore",instance="app:8080",environment="production",channel="mail"}'
+        values: '5000x3'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: UvoStorePosNoRecibeVentas
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: UvoStorePosNoRecibeVentas
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              owner: equipo-pos
+              environment: production
+            exp_annotations:
+              summary: "La venta más vieja en cola para el POS lleva 16m 0s esperando"
+              description: "El POS no está aceptando las ventas web. El stock del POS no las descuenta mientras tanto."
+              runbook: docs/observabilidad.md#pos-no-recibe-ventas
+
+  # --- Stock: venta sin stock alerta enseguida; stock sin descontar espera al job 15 minutos --------------------
+  - interval: 1m
+    input_series:
+      - series: 'uvostore_orders_stock_shortage{application="uvo-store",job="uvostore",instance="app:8080"}'
+        values: '0 1x5'
+      - series: 'uvostore_orders_paid_without_stock{application="uvo-store",job="uvostore",instance="app:8080"}'
+        values: '1x5 0 1x20'
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: UvoStoreVentasSinStock
+        exp_alerts: []
+      - eval_time: 1m
+        alertname: UvoStoreVentasSinStock
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              owner: operaciones-tiendas
+            exp_annotations:
+              summary: "1 órdenes cobradas sin stock esperan reponer, liberar o reembolsar"
+              description: "El despacho está bloqueado. No se resuelve sola: la tienda tiene que actuar desde la pestaña «Sin stock»."
+              runbook: docs/observabilidad.md#ventas-sin-stock
+      - eval_time: 5m
+        alertname: UvoStoreStockSinDescontar
+        exp_alerts: []
+      - eval_time: 22m
+        alertname: UvoStoreStockSinDescontar
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              owner: operaciones-tiendas
+            exp_annotations:
+              summary: "1 órdenes cobradas siguen con el stock sin descontar"
+              description: "StockRecoveryJob debería recogerlas en minutos. Si persiste, el job no corre o falla en cada intento."
+              runbook: docs/observabilidad.md#stock-sin-descontar
+
+  # --- Divergencias POS: cualquier aumento en la última hora, por origen ----------------------------------------
+  - interval: 1m
+    input_series:
+      - series: 'uvostore_pos_stock_divergences_total{application="uvo-store",job="uvostore",instance="app:8080",source="webhook"}'
+        values: '0x10 1x10'
+      - series: 'uvostore_pos_stock_divergences_total{application="uvo-store",job="uvostore",instance="app:8080",source="reconciliation_stock"}'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: UvoStoreDivergenciasPos
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: UvoStoreDivergenciasPos
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              owner: equipo-pos
+              source: webhook
+            exp_annotations:
+              summary: "Divergencias de stock entre la tienda y el POS (origen webhook)"
+              description: "La conciliación, un webhook o la respuesta a una venta encontraron un stock distinto del esperado."
+              runbook: docs/observabilidad.md#divergencias-pos
+
+  # --- Monitorización ciega: el destino cae -------------------------------------------------------------------
+  - interval: 1m
+    input_series:
+      - series: 'up{job="uvostore",instance="app:8080"}'
+        values: '1x5 0x10'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: UvoStoreSinMetricas
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: UvoStoreSinMetricas
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: UvoStoreSinMetricas
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              owner: operaciones-plataforma
+              job: uvostore
+              instance: app:8080
+            exp_annotations:
+              summary: "Prometheus no obtiene las métricas de UvoStore"
+              description: "El proceso cayó, la red privada no llega o METRICS_TOKEN no coincide. Mientras dure, ninguna otra alerta de este archivo puede dispararse."
+              runbook: docs/observabilidad.md#sin-metricas
+
+  # --- Monitorización ciega: el destino ni siquiera está configurado ------------------------------------------
+  - interval: 1m
+    input_series:
+      - series: 'up{job="otro",instance="x:9100"}'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: UvoStoreSinMetricas
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              owner: operaciones-plataforma
+              job: uvostore
+            exp_annotations:
+              summary: "Prometheus no obtiene las métricas de UvoStore"
+              description: "El proceso cayó, la red privada no llega o METRICS_TOKEN no coincide. Mientras dure, ninguna otra alerta de este archivo puede dispararse."
+              runbook: docs/observabilidad.md#sin-metricas
+
+  # --- Pendientes desconocidos: los gauges en NaN ---------------------------------------------------------------
+  - interval: 1m
+    input_series:
+      - series: 'uvostore_refunds_pending{application="uvo-store",job="uvostore",instance="app:8080"}'
+        values: '0x5 NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: UvoStorePendientesDesconocidos
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: UvoStorePendientesDesconocidos
+        exp_alerts: []
+      - eval_time: 18m
+        alertname: UvoStorePendientesDesconocidos
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              owner: operaciones-plataforma
+              application: uvo-store
+              job: uvostore
+              instance: app:8080
+            exp_annotations:
+              summary: "Las métricas de pendientes no se pueden calcular: la base no responde a la foto"
+              description: "Las alertas de pagos, reembolsos, outbox y stock están ciegas mientras dure."
+              runbook: docs/observabilidad.md#sin-metricas
