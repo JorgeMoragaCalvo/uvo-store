@@ -1510,6 +1510,20 @@
         },
         "type" : "object"
       },
+      "PaymentGatewayAvailabilityDto" : {
+        "properties" : {
+          "available" : {
+            "type" : "boolean"
+          },
+          "gateway" : {
+            "type" : "string"
+          },
+          "reason" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "PaymentGatewayConfigCommand" : {
         "properties" : {
           "credentials" : {
@@ -4802,6 +4816,30 @@
                 "schema" : {
                   "items" : {
                     "$ref" : "#/components/schemas/PaymentGatewayConfigDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Pasarelas de pago (admin)" ]
+      }
+    },
+    "/api/admin/payment-gateways/availability" : {
+      "get" : {
+        "operationId" : "availability",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/PaymentGatewayAvailabilityDto"
                   },
                   "type" : "array"
                 }

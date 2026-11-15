@@ -503,6 +503,13 @@ export interface PaymentGatewayConfigDto {
   credentialsSet: Record<string, boolean>
 }
 
+// IMP-02. Si la plataforma deja activar la pasarela (hoy, Webpay según WEBPAY_ENABLED). `reason` es null si está disponible.
+export interface PaymentGatewayAvailability {
+  gateway: PaymentGateway
+  available: boolean
+  reason: string | null
+}
+
 export interface HomeBannerDto {
   id: number
   title: string | null

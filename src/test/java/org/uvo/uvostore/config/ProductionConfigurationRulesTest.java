@@ -74,7 +74,13 @@ class ProductionConfigurationRulesTest {
                 // GAP-08: los dobles del E2E.
                 row("STRIPE_API_BASE", "stripe.api-base", "http://127.0.0.1:18089/stripe"),
                 row("WEBPAY_API_BASE", "webpay.api-base", "http://127.0.0.1:18089/webpay"),
-                row("MERCADOPAGO_API_BASE", "mercadopago.api-base", "http://127.0.0.1:18089/mercadopago"));
+                row("MERCADOPAGO_API_BASE", "mercadopago.api-base", "http://127.0.0.1:18089/mercadopago"),
+                // IMP-02: la decisión de ofrecer Webpay tiene que estar escrita, y bien escrita.
+                row("WEBPAY_ENABLED", "webpay.enabled", ""),
+                row("WEBPAY_ENABLED", "webpay.enabled", "si"),
+                // IMP-02 (C15): superficies fuera del alcance de la salida.
+                row("CUSTOMER_ACCOUNTS_ENABLED", "app.customer-accounts.enabled", "true"),
+                row("SHIPPING_CARRIERS_ENABLED", "app.shipping.carriers.enabled", "CHILEXPRESS"));
     }
 
     @Test
@@ -99,6 +105,89 @@ class ProductionConfigurationRulesTest {
                 .singleElement().asString().startsWith("WEBPAY_API_BASE");
     }
 
+    @Test
+    @DisplayName("IMP-02: el desvío a los dobles se rechaza también en producción y con Webpay apagado")
+    void aGatewayApiBaseIsRejectedEvenWithWebpayOff() {
+        MockEnvironment properties = production();
+        properties.setProperty("webpay.enabled", "false");
+        properties.setProperty("webpay.api-base", "http://127.0.0.1:18089/webpay");
+        properties.setProperty("stripe.api-base", "http://127.0.0.1:18089/stripe");
+
+        assertThat(check(AppEnvironment.PRODUCTION, properties, sentry("production"), APP_ROLE).errors())
+                .hasSize(2)
+                .anySatisfy(error -> assertThat(error).startsWith("WEBPAY_API_BASE"))
+                .anySatisfy(error -> assertThat(error).startsWith("STRIPE_API_BASE"));
+    }
+
+    @Test
+    @DisplayName("IMP-02: producción sin Webpay no exige sus credenciales, ni hacen falta valores ficticios")
+    void productionWithoutWebpayNeedsNoWebpayCredentials() throws IOException {
+        // Las del sandbox: con Webpay apagado no importan.
+        MockEnvironment properties = production();
+        properties.setProperty("webpay.enabled", "false");
+        properties.setProperty("webpay.environment", "integration");
+        properties.setProperty("webpay.parent-commerce-code", IntegrationCommerceCodes.WEBPAY_PLUS_MALL);
+        properties.setProperty("webpay.api-key", IntegrationApiKeys.WEBPAY);
+
+        assertThat(check(AppEnvironment.PRODUCTION, properties, sentry("production"), APP_ROLE).errors()).isEmpty();
+
+        // Y sin tocar nada de Webpay: los defaults del application.properties de verdad.
+        MockEnvironment shipped = shippedDefaults();
+        MockEnvironment withoutWebpay = production();
+        for (String key : new String[] {"webpay.environment", "webpay.parent-commerce-code", "webpay.api-key"}) {
+            withoutWebpay.setProperty(key, shipped.getProperty(key));
+        }
+        withoutWebpay.setProperty("webpay.enabled", "FALSE");
+        assertThat(check(AppEnvironment.PRODUCTION, withoutWebpay, sentry("production"), APP_ROLE).errors()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("IMP-02: producción con Webpay activado y mal configurado sigue sin arrancar")
+    void productionWithWebpayStillRejectsTheSandbox() {
+        MockEnvironment properties = production();
+        properties.setProperty("webpay.enabled", "true");
+        properties.setProperty("webpay.environment", "integration");
+        properties.setProperty("webpay.parent-commerce-code", IntegrationCommerceCodes.WEBPAY_PLUS_MALL);
+        properties.setProperty("webpay.api-key", IntegrationApiKeys.WEBPAY);
+
+        assertThat(check(AppEnvironment.PRODUCTION, properties, sentry("production"), APP_ROLE).errors())
+                .hasSize(3)
+                .anySatisfy(error -> assertThat(error).startsWith("WEBPAY_ENVIRONMENT"))
+                .anySatisfy(error -> assertThat(error).startsWith("WEBPAY_PARENT_COMMERCE_CODE"))
+                .anySatisfy(error -> assertThat(error).startsWith("WEBPAY_API_KEY"));
+    }
+
+    @Test
+    @DisplayName("IMP-02: staging también exige decidir Webpay, y un valor ambiguo no vale")
+    void stagingAlsoNeedsTheWebpaySwitch() {
+        for (String value : new String[] {"", "  ", "yes", "1", "activado"}) {
+            MockEnvironment properties = production();
+            properties.setProperty("webpay.enabled", value);
+
+            assertThat(check(AppEnvironment.STAGING, properties, sentry("staging"), APP_ROLE).errors())
+                    .as("WEBPAY_ENABLED='%s'", value)
+                    .singleElement().asString().startsWith("WEBPAY_ENABLED").contains("true").contains("false");
+        }
+    }
+
+    @Test
+    @DisplayName("IMP-02 (C15): las cuentas de comprador y los transportistas no se encienden en staging ni en producción")
+    void theDeferredSurfacesStayOffOutsideDevelopment() {
+        MockEnvironment properties = production();
+        properties.setProperty("app.customer-accounts.enabled", "on");
+        properties.setProperty("app.shipping.carriers.enabled", " CHILEXPRESS ");
+
+        assertThat(check(AppEnvironment.STAGING, properties, sentry("staging"), APP_ROLE).errors())
+                .hasSize(2)
+                .anySatisfy(error -> assertThat(error).startsWith("CUSTOMER_ACCOUNTS_ENABLED"))
+                .anySatisfy(error -> assertThat(error).startsWith("SHIPPING_CARRIERS_ENABLED").contains("CHILEXPRESS"));
+
+        // Apagadas explícitamente, o sin escribir, no son errores.
+        properties.setProperty("app.customer-accounts.enabled", "false");
+        properties.setProperty("app.shipping.carriers.enabled", " ");
+        assertThat(check(AppEnvironment.PRODUCTION, properties, sentry("production"), APP_ROLE).errors()).isEmpty();
+    }
+
     @ParameterizedTest(name = "{0}: {1}")
     @MethodSource("developmentDefaults")
     @DisplayName("Cada valor de desarrollo es un error en producción, y el mensaje nombra la variable")
@@ -121,15 +210,15 @@ class ProductionConfigurationRulesTest {
                 .anySatisfy(error -> assertThat(error).startsWith("PUBLIC_STOREFRONT_URL"))
                 .anySatisfy(error -> assertThat(error).startsWith("PUBLIC_API_URL"))
                 .anySatisfy(error -> assertThat(error).startsWith("PUBLIC_PLATFORM_DOMAIN"))
-                .anySatisfy(error -> assertThat(error).startsWith("WEBPAY_ENVIRONMENT"))
-                .anySatisfy(error -> assertThat(error).startsWith("WEBPAY_PARENT_COMMERCE_CODE"))
-                .anySatisfy(error -> assertThat(error).startsWith("WEBPAY_API_KEY"))
+                // IMP-02: sin WEBPAY_ENABLED no se sabe si Webpay va, así que se pide decidirlo en vez de revisar
+                // las credenciales; con WEBPAY_ENABLED=true saldrían los tres errores del sandbox (ver arriba).
+                .anySatisfy(error -> assertThat(error).startsWith("WEBPAY_ENABLED"))
                 .anySatisfy(error -> assertThat(error).startsWith("APP_UPLOAD_DIR"))
                 .anySatisfy(error -> assertThat(error).startsWith("MAIL_HOST"))
                 .anySatisfy(error -> assertThat(error).startsWith("SWAGGER_ENABLED"))
                 .anySatisfy(error -> assertThat(error).startsWith("FLYWAY_USER"))
                 .anySatisfy(error -> assertThat(error).contains("superusuario"))
-                .hasSize(11);
+                .hasSize(9);
     }
 
     @Test
@@ -141,7 +230,12 @@ class ProductionConfigurationRulesTest {
 
         assertThat(defaults.getProperty("webpay.parent-commerce-code")).isEqualTo(IntegrationCommerceCodes.WEBPAY_PLUS_MALL);
         assertThat(defaults.getProperty("webpay.api-key")).isEqualTo(IntegrationApiKeys.WEBPAY);
-        assertThat(defaults.getProperty("app.environment")).isEqualTo("development");
+        // IMP-02: ni el ambiente ni la decisión sobre Webpay tienen valor por defecto.
+        assertThat(defaults.getProperty("app.environment")).isEmpty();
+        assertThat(defaults.getProperty("webpay.enabled")).isEmpty();
+        // C15: lo diferido viene apagado.
+        assertThat(defaults.getProperty("app.customer-accounts.enabled")).isEqualTo("false");
+        assertThat(defaults.getProperty("app.shipping.carriers.enabled")).isEmpty();
     }
 
     @Test
@@ -161,7 +255,7 @@ class ProductionConfigurationRulesTest {
     }
 
     @Test
-    @DisplayName("Un APP_ENVIRONMENT mal escrito impide el arranque, en vez de caer a development")
+    @DisplayName("Un APP_ENVIRONMENT mal escrito o ausente impide el arranque, en vez de caer a development")
     void aTypoInAppEnvironmentFails() {
         assertThatThrownBy(() -> AppEnvironment.parse("prod"))
                 .isInstanceOf(IllegalStateException.class)
@@ -171,8 +265,15 @@ class ProductionConfigurationRulesTest {
 
         assertThat(AppEnvironment.parse(" Production ")).isEqualTo(AppEnvironment.PRODUCTION);
         assertThat(AppEnvironment.parse("staging")).isEqualTo(AppEnvironment.STAGING);
-        assertThat(AppEnvironment.parse("")).isEqualTo(AppEnvironment.DEVELOPMENT);
-        assertThat(AppEnvironment.parse(null)).isEqualTo(AppEnvironment.DEVELOPMENT);
+        assertThat(AppEnvironment.parse("development")).isEqualTo(AppEnvironment.DEVELOPMENT);
+
+        // IMP-02: sin valor ya no se cae a development; el mensaje dice qué poner.
+        for (String missing : new String[] {"", "   ", null}) {
+            assertThatThrownBy(() -> AppEnvironment.parse(missing))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("APP_ENVIRONMENT no está definido")
+                    .hasMessageContaining("APP_ENVIRONMENT=development");
+        }
     }
 
     @Test
@@ -190,14 +291,15 @@ class ProductionConfigurationRulesTest {
     }
 
     @Test
-    @DisplayName("Sin APP_ENVIRONMENT, una configuración con dominio real advierte que falta la señal")
-    void aDeploymentLookingConfigWithoutAppEnvironmentWarns() {
+    @DisplayName("APP_ENVIRONMENT=development con un dominio real advierte que parece un despliegue")
+    void aDeploymentLookingConfigInDevelopmentWarns() {
         Findings findings = check(AppEnvironment.DEVELOPMENT, production(), name -> null, APP_ROLE);
 
         assertThat(findings.errors()).isEmpty();
         assertThat(findings.warnings()).singleElement().asString()
                 .contains("uvostore.cl")
-                .contains("APP_ENVIRONMENT");
+                .contains("APP_ENVIRONMENT=development")
+                .contains("APP_ENVIRONMENT=production");
     }
 
     @Test
@@ -291,6 +393,7 @@ class ProductionConfigurationRulesTest {
                 .withProperty("app.public-url.storefront", "https://{host}")
                 .withProperty("app.public-url.api", "https://{host}")
                 .withProperty("app.public-url.platform-domain", "uvostore.cl")
+                .withProperty("webpay.enabled", "true")
                 .withProperty("webpay.environment", "production")
                 .withProperty("webpay.parent-commerce-code", "597099999999")
                 .withProperty("webpay.api-key", "clave-de-produccion-de-transbank")

@@ -1,9 +1,10 @@
 import { create } from 'zustand'
 import adminApi from '@/admin/services/adminApi'
-import type { PaymentGateway, PaymentGatewayConfigDto } from '@/admin/types/admin'
+import type { PaymentGateway, PaymentGatewayAvailability, PaymentGatewayConfigDto } from '@/admin/types/admin'
 
 interface AdminPaymentGatewaysState {
   configs: PaymentGatewayConfigDto[]
+  availability: PaymentGatewayAvailability[]
   loading: boolean
   fetch: () => Promise<void>
   update: (gateway: PaymentGateway, enabled: boolean, credentials: Record<string, string>) => Promise<void>
@@ -11,12 +12,16 @@ interface AdminPaymentGatewaysState {
 
 export const useAdminPaymentGatewaysStore = create<AdminPaymentGatewaysState>((set, get) => ({
   configs: [],
+  availability: [],
   loading: false,
   fetch: async () => {
     set({ loading: true })
     try {
-      const configs = await adminApi.paymentGateways.list()
-      set({ configs, loading: false })
+      const [configs, availability] = await Promise.all([
+        adminApi.paymentGateways.list(),
+        adminApi.paymentGateways.availability(),
+      ])
+      set({ configs, availability, loading: false })
     } catch (err) {
       set({ loading: false })
       throw err

@@ -100,10 +100,11 @@ you're working on — so each store is reached at `<slug>.localhost:5173`. `VITE
 
 | Variable | Default | What it does |
 |---|---|---|
-| `APP_ENVIRONMENT` | `development` | With `production` or `staging`, startup fails on any development default left in place (`ProductionConfigurationRules`) |
+| `APP_ENVIRONMENT` | none (required) | `development`, `staging` or `production`. Startup fails without it. Outside development, startup fails on any development default left in place (`ProductionConfigurationRules`). Per-environment matrix: `docs/configuracion-ambientes.md` |
+| `WEBPAY_ENABLED` | empty | Whether the platform offers Webpay: `true` or `false`. Empty means `true` in development only; staging and production require it. With `false`, no Webpay credentials are required and no store can enable, offer or start a Webpay payment |
 | `SWAGGER_ENABLED` | `true` | Publishes Swagger UI and `/v3/api-docs`. Production and staging require `false` |
-| `CUSTOMER_ACCOUNTS_ENABLED` | `false` | Shopper accounts. Off, `/api/customer/**` answers 404 and checkout is guest-only |
-| `SHIPPING_CARRIERS_ENABLED` | empty | Carriers allowed to quote. Empty means stores ship with their own rates only |
+| `CUSTOMER_ACCOUNTS_ENABLED` | `false` | Shopper accounts. Off, `/api/customer/**` answers 404 and checkout is guest-only. Staging and production refuse to start with it on (IMP-02) |
+| `SHIPPING_CARRIERS_ENABLED` | empty | Carriers allowed to quote. Empty means stores ship with their own rates only. Staging and production refuse to start with any carrier listed (IMP-02) |
 | `POS_ENABLED` | `false` | The UvoPOS integration: `/api/sync/**`, `/api/webhooks/pos/**` and sending sales to the POS |
 
 Effects that must survive a crash (the sale sent to the POS, order emails) go through a transactional

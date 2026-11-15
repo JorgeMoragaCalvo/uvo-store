@@ -4,12 +4,14 @@ import cl.transbank.common.IntegrationApiKeys;
 import cl.transbank.common.IntegrationCommerceCodes;
 import org.springframework.core.env.PropertyResolver;
 import org.uvo.uvostore.security.IpRanges;
+import org.uvo.uvostore.service.payment.WebpayPlatformPolicy;
 
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 import java.util.regex.Pattern;
@@ -26,6 +28,10 @@ import java.util.regex.Pattern;
  *
  * <p>Las reglas solo se aplican fuera de {@link AppEnvironment#DEVELOPMENT}; {@code staging} tiene las mismas
  * que {@code production} salvo la de Webpay, porque probar contra el sandbox es justo para lo que existe.
+ *
+ * <p>IMP-02. Las credenciales de Webpay solo se exigen si la plataforma lo ofrece ({@code WEBPAY_ENABLED=true}): salir
+ * sin Webpay ya no obliga a rellenarlas con valores ficticios, y el mismo interruptor impide que una tienda lo active
+ * ({@link WebpayPlatformPolicy}). La matriz completa por ambiente está en {@code docs/configuracion-ambientes.md}.
  *
  * <p>Es una función pura a propósito, como {@code SentryBootstrap}: recibe las propiedades, el entorno del
  * proceso (los {@code SENTRY_*} se leen con {@code System.getenv} y Spring no los ve) y la base por un
@@ -56,20 +62,24 @@ public final class ProductionConfigurationRules {
         if (!environment.isStrict()) {
             // La red para el olvido de la señal: un dominio de plataforma de verdad es lo más parecido a un
             // despliegue que se puede ver desde aquí sin adivinar nada más.
+            // IMP-02: el ambiente ya no puede faltar (AppEnvironment.parse), así que esto solo atrapa un
+            // development escrito a propósito en algo que parece un despliegue.
             String domain = text(properties, "app.public-url.platform-domain", "localhost");
             if (!isLocalDomain(domain)) {
                 warnings.add("PUBLIC_PLATFORM_DOMAIN es '" + domain + "', que parece un despliegue, pero "
-                        + "APP_ENVIRONMENT no está definido: las comprobaciones de producción NO se aplican. "
-                        + "Define APP_ENVIRONMENT=production (o staging).");
+                        + "APP_ENVIRONMENT=development: las comprobaciones de producción NO se aplican. "
+                        + "Si esto es un despliegue, pon APP_ENVIRONMENT=production (o staging).");
             }
             return new Findings(errors, warnings);
         }
 
         publicUrls(properties, errors);
-        if (environment == AppEnvironment.PRODUCTION) {
+        boolean webpayEnabled = webpaySwitch(properties, errors);
+        if (environment == AppEnvironment.PRODUCTION && webpayEnabled) {
             webpay(properties, errors);
         }
         gatewayApiBases(properties, errors);
+        deferredSurfaces(properties, errors);
         storage(properties, errors);
         mail(properties, errors);
         swagger(properties, errors);
@@ -107,6 +117,27 @@ public final class ProductionConfigurationRules {
         if (!template.trim().toLowerCase(Locale.ROOT).startsWith("https://")) {
             errors.add(envVar + " es '" + template + "' y no usa https: esa dirección va en correos y en los retornos "
                     + "de las pasarelas de pago. En producción es https://{host}.");
+        }
+    }
+
+    /**
+     * IMP-02. Si la plataforma ofrece Webpay es una decisión de alcance: fuera de development tiene que estar
+     * escrita. Devuelve si está activado; vacío o mal escrito es un error y cuenta como apagado.
+     */
+    private static boolean webpaySwitch(PropertyResolver properties, List<String> errors) {
+        String configured = text(properties, "webpay.enabled", "");
+        try {
+            Optional<Boolean> explicit = WebpayPlatformPolicy.parse(configured);
+            if (explicit.isEmpty()) {
+                errors.add("WEBPAY_ENABLED está vacío: fuera de development hay que decir si la plataforma ofrece "
+                        + "Webpay. Pon WEBPAY_ENABLED=true (y las credenciales de producción de Transbank) o "
+                        + "WEBPAY_ENABLED=false (ninguna tienda podrá activarlo ni cobrar con él).");
+                return false;
+            }
+            return explicit.get();
+        } catch (IllegalArgumentException e) {
+            errors.add(e.getMessage() + " Pon WEBPAY_ENABLED=true o WEBPAY_ENABLED=false.");
+            return false;
         }
     }
 
@@ -150,6 +181,26 @@ public final class ProductionConfigurationRules {
                 errors.add(gateway[1] + " es '" + value + "': manda los cobros, las consultas y las devoluciones de la "
                         + "pasarela a otro servidor. Solo existe para las pruebas E2E; déjala vacía fuera de development.");
             }
+        }
+    }
+
+    /**
+     * IMP-02 (C15). Las cuentas de comprador y los transportistas con API están fuera del alcance de la salida: el
+     * storefront no tiene pantallas de cuenta y los cotizadores no están homologados ({@code CustomerAccountsPolicy},
+     * {@code ShippingCarrierPolicy}). Por defecto ya vienen apagados; esto impide encenderlos por descuido en un
+     * ambiente real. Habilitarlos más adelante exige cambiar esta regla a propósito, una vez homologados.
+     */
+    private static void deferredSurfaces(PropertyResolver properties, List<String> errors) {
+        if (bool(properties, "app.customer-accounts.enabled", false)) {
+            errors.add("CUSTOMER_ACCOUNTS_ENABLED está activado: las cuentas de comprador están fuera del alcance de "
+                    + "la salida (el storefront no tiene pantallas de cuenta ni recuperación de contraseña). Quítalo o "
+                    + "ponlo en false.");
+        }
+        String carriers = text(properties, "app.shipping.carriers.enabled", "").trim();
+        if (!carriers.isEmpty()) {
+            errors.add("SHIPPING_CARRIERS_ENABLED es '" + carriers + "': los transportistas con cotización por API "
+                    + "están fuera del alcance de la salida porque no están homologados. Déjalo vacío; los métodos "
+                    + "de despacho con tarifa propia siguen funcionando.");
         }
     }
 

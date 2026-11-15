@@ -13,10 +13,15 @@ import java.util.Locale;
  * <p><b>Un valor desconocido impide el arranque.</b> Si {@code prod} o {@code produccion} cayeran a
  * {@code development}, una errata apagaría en silencio todas las comprobaciones, que es el fallo que esta
  * clase existe para evitar.
+ *
+ * <p><b>Y un valor ausente también</b> (IMP-02). Antes, sin {@code APP_ENVIRONMENT} se caía a {@code development}:
+ * un despliegue que olvidara la variable arrancaba sin ninguna regla estricta, y lo único que podía notarlo era
+ * una advertencia por el dominio. Ahora el ambiente se declara siempre, también en local ({@code .env}) y en la
+ * suite de tests ({@code src/test/resources/config/application.properties}).
  */
 public enum AppEnvironment {
 
-    /** El valor por defecto. No comprueba nada: es lo que usan el desarrollo local y la suite de tests. */
+    /** No comprueba nada: es lo que declaran el desarrollo local, la suite de tests y el E2E. */
     DEVELOPMENT,
     /** Las mismas reglas que producción, salvo que permite el sandbox de Webpay. */
     STAGING,
@@ -25,7 +30,9 @@ public enum AppEnvironment {
     public static AppEnvironment parse(String value) {
         String normalized = value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
         if (normalized.isEmpty()) {
-            return DEVELOPMENT;
+            throw new IllegalStateException("APP_ENVIRONMENT no está definido. Declara el ambiente de forma explícita: "
+                    + "APP_ENVIRONMENT=development en tu .env local, staging o production en un despliegue. Sin él no "
+                    + "se puede saber si corresponde aplicar las comprobaciones de producción.");
         }
         return Arrays.stream(values())
                 .filter(environment -> environment.label().equals(normalized))
