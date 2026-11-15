@@ -44,6 +44,7 @@ class MetricsEndpointTest extends IntegrationTestSupport {
                 .contains("uvostore_orders_paid_without_stock{")
                 .contains("uvostore_orders_pending_stale{")
                 .contains("uvostore_refunds_pending{")
+                .contains("uvostore_orders_stock_shortage{")
                 .contains("uvostore_pos_stock_divergences_total{application=\"uvo-store\",source=\"webhook\"}")
                 .contains("uvostore_outbox_deliveries_total{application=\"uvo-store\",channel=\"pos\",outcome=\"uncertain\"}")
                 // Lo que Boot da sin código: la cola del planificador (el "tamaño de las colas" de la tarea), la JVM

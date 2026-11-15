@@ -77,6 +77,21 @@ class OperationalBacklogMetricsTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("IMP-03. Faltantes de stock: marcadas y todavía cobradas, como la pestaña «Sin stock»")
+    void theStockShortageGaugeMatchesThePanelTab() {
+        OperationalBacklogMetrics metrics = live();
+        long before = metrics.current().stockShortage();
+        Store store = createStore("backlog-shortage");
+
+        shortage(store, OrderStatus.PROCESSING, PaymentStatus.PAID, true);     // cuenta
+        shortage(store, OrderStatus.CANCELLED, PaymentStatus.PAID, true);      // cancelada: nada que despachar
+        shortage(store, OrderStatus.PROCESSING, PaymentStatus.REFUNDED, true); // reembolsada entera
+        shortage(store, OrderStatus.PROCESSING, PaymentStatus.PAID, false);    // ya liberada o repuesta
+
+        assertThat(metrics.current().stockShortage() - before).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("Reembolsos: solo los PENDING, los de resultado desconocido")
     void theRefundGaugeCountsOnlyPending() {
         OperationalBacklogMetrics metrics = live();
@@ -218,6 +233,15 @@ class OperationalBacklogMetricsTest extends IntegrationTestSupport {
         order.setPaidAt(paidAt);
         order.setStockApplied(stockApplied);
         return orderRepository.saveAndFlush(order);
+    }
+
+    private void shortage(Store store, OrderStatus status, PaymentStatus payment, boolean flagged) {
+        Order order = newOrder(store);
+        order.setStatus(status);
+        order.setPaymentStatus(payment);
+        order.setPaidAt(Instant.now());
+        order.setStockShortage(flagged);
+        orderRepository.saveAndFlush(order);
     }
 
     /** created_at lo pone Hibernate al insertar (@CreationTimestamp), así que la antigüedad se fija con SQL. */

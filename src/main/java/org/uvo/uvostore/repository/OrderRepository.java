@@ -188,6 +188,19 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
             """)
     long countPendingCreatedBefore(@Param("createdBefore") Instant createdBefore);
 
+    /**
+     * IMP-03. Órdenes cobradas sin stock que esperan una salida (GAP-03), en todas las tiendas: la métrica
+     * {@code uvostore_orders_stock_shortage}. El mismo criterio que la pestaña «Sin stock» del panel
+     * ({@code AdminOrderQueryServiceImpl.stockShortage()}): marcada, todavía cobrada y no cancelada.
+     */
+    @Query("""
+            select count(o) from Order o
+            where o.stockShortage = true
+              and o.paymentStatus = org.uvo.uvostore.entity.order.enums.PaymentStatus.PAID
+              and o.status <> org.uvo.uvostore.entity.order.enums.OrderStatus.CANCELLED
+            """)
+    long countOpenStockShortage();
+
     // Admin\Shipping\{Zones,Methods}\Index delete guards — refuse to delete a zone/method that
     // still has orders referencing it.
     long countByShippingZoneId(Long shippingZoneId);

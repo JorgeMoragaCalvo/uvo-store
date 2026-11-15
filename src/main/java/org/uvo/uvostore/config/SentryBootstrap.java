@@ -56,6 +56,8 @@ public final class SentryBootstrap {
         if (release != null) {
             options.setRelease(release);
         }
+        // IMP-03. Ningún token ni credencial concatenado en un mensaje sale a un tercero.
+        options.setBeforeSend((event, hint) -> SentryScrubber.scrub(event));
     }
 
     private static String notBlank(String value) {

@@ -201,6 +201,11 @@ CI (`.github/workflows/`):
 - `ci.yml`, on every pull request and on pushes to `main` and `feature/**`: the full backend suite
   (`clean verify`), frontend lint, tests and build, and the end-to-end suite (`e2e.yml`).
 - `dependency-review.yml` on pull requests, and `qodana_code_quality.yml` on pull requests and `main`.
-- `release.yml`, on a `vX.Y.Z` tag: builds the backend jar and the frontend bundle, runs the end-to-end
-  suite on that same commit, and publishes the GitHub Release only if it passes. Publishing a release
-  does not deploy anything.
+- `release.yml`, on a `vX.Y.Z` tag: builds the backend jar and one frontend bundle per environment
+  (`frontend-dist-<tag>-staging.zip`, `frontend-dist-<tag>-production.zip`, each with its own Sentry DSN,
+  environment and CSP), runs the end-to-end suite on that same commit, and publishes the GitHub Release with a
+  `SHA256SUMS` only if it passes. It needs the GitHub Environments `staging` and `production`, each with a
+  `VITE_SENTRY_DSN` variable; without it the release fails. Publishing a release does not deploy anything.
+  Deploy the zip of the target environment and set the backend's `SENTRY_RELEASE` to the same tag
+  (`docs/observabilidad.md`).
+- The `monitoring` job in `ci.yml` checks and unit-tests the alert rules in `ops/monitoring/` with `promtool`.

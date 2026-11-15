@@ -29,6 +29,9 @@ import org.uvo.uvostore.repository.OutboxMessageRepository;
  * <ul>
  *   <li>{@value #PAID_WITHOUT_STOCK}: cobradas con el stock sin descontar, pasado el margen de
  *       {@code app.stock-recovery.after-minutes} (lo que recoge {@code StockRecoveryJob}, PROD-13a).</li>
+ *   <li>{@value #STOCK_SHORTAGE} (IMP-03): cobradas sin stock que esperan una salida (GAP-03), lo que muestra la
+ *       pestaña «Sin stock» del panel. A diferencia de la anterior, no se resuelve sola: alguien tiene que reponer,
+ *       liberar o reembolsar.</li>
  *   <li>{@value #PENDING_STALE}: órdenes {@code PENDING} creadas hace más de {@code app.reconciliation.stale-hours}.</li>
  *   <li>{@value #REFUNDS_PENDING}: reembolsos cuyo resultado no se conoce (F12).</li>
  *   <li>{@value #OUTBOX_PENDING} y {@value #OUTBOX_OLDEST_PENDING}, por canal: la cola del outbox (PROD-13b), con
@@ -50,6 +53,7 @@ public class OperationalBacklogMetrics implements MeterBinder {
     private static final Logger log = LoggerFactory.getLogger(OperationalBacklogMetrics.class);
 
     public static final String PAID_WITHOUT_STOCK = "uvostore.orders.paid.without.stock";
+    public static final String STOCK_SHORTAGE = "uvostore.orders.stock.shortage";
     public static final String PENDING_STALE = "uvostore.orders.pending.stale";
     public static final String REFUNDS_PENDING = "uvostore.refunds.pending";
     public static final String OUTBOX_PENDING = "uvostore.outbox.pending";
@@ -93,6 +97,8 @@ public class OperationalBacklogMetrics implements MeterBinder {
     public void bindTo(MeterRegistry registry) {
         gauge(registry, PAID_WITHOUT_STOCK, "Órdenes cobradas con el stock sin descontar, pasado el margen",
                 Snapshot::paidWithoutStock, null);
+        gauge(registry, STOCK_SHORTAGE, "Órdenes cobradas sin stock que esperan reponer, liberar o reembolsar",
+                Snapshot::stockShortage, null);
         gauge(registry, PENDING_STALE, "Órdenes PENDING más viejas que app.reconciliation.stale-hours",
                 Snapshot::pendingStale, null);
         gauge(registry, REFUNDS_PENDING, "Reembolsos con el resultado sin conocer",
@@ -168,12 +174,13 @@ public class OperationalBacklogMetrics implements MeterBinder {
         }
         return new Snapshot(
                 orderRepository.countPaidWithoutStockApplied(now.minus(stockMargin)),
+                orderRepository.countOpenStockShortage(),
                 orderRepository.countPendingCreatedBefore(now.minus(staleAfter)),
                 refundRepository.countPending(),
                 pending, failed, oldestPending);
     }
 
-    record Snapshot(long paidWithoutStock, long pendingStale, long refundsPending, Map<OutboxChannel, Long> pending,
+    record Snapshot(long paidWithoutStock, long stockShortage, long pendingStale, long refundsPending, Map<OutboxChannel, Long> pending,
                     Map<OutboxChannel, Long> failed, Map<OutboxChannel, Instant> oldestPending) {
     }
 }

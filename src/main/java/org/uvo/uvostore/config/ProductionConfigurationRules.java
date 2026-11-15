@@ -297,7 +297,7 @@ public final class ProductionConfigurationRules {
     /**
      * Sin {@code SENTRY_ENVIRONMENT}, el SDK informa como {@code production}: un staging que la olvide mezcla sus
      * errores con los de producción. Se exige que coincida con {@code APP_ENVIRONMENT} solo si hay DSN, porque sin
-     * DSN no se envía nada.
+     * DSN no se envía nada. Por la misma razón, con DSN también se exige {@code SENTRY_RELEASE} (IMP-03).
      */
     private static void sentry(AppEnvironment environment, UnaryOperator<String> processEnv,
                                List<String> errors, List<String> warnings) {
@@ -313,6 +313,13 @@ public final class ProductionConfigurationRules {
                     : "'" + reported + "'") + " y APP_ENVIRONMENT es '" + environment.label() + "': los errores "
                     + "se archivarían en otro ambiente. Pon SENTRY_ENVIRONMENT=" + environment.label()
                     + " como variable de entorno real del proceso (no en el .env).");
+        }
+        // IMP-03. Sin release, un error no se puede atribuir a un despliegue ni a un commit.
+        String release = processEnv.apply(SentryBootstrap.ENV_RELEASE);
+        if (release == null || release.isBlank()) {
+            errors.add("SENTRY_RELEASE está vacío: los errores no se pueden atribuir a una versión. Pon "
+                    + "SENTRY_RELEASE con el tag desplegado (el mismo que VITE_SENTRY_RELEASE del frontend) como "
+                    + "variable de entorno real del proceso (no en el .env).");
         }
     }
 

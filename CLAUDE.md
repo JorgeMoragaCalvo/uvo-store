@@ -953,13 +953,23 @@ variables did nothing before, and turning it on would also admit every other `SE
 errors under production — since PROD-08a, with a DSN set and `APP_ENVIRONMENT` other than `development`, the
 app refuses to start unless `SENTRY_ENVIRONMENT` matches `APP_ENVIRONMENT`. The
 frontend does the same in `frontend/src/lib/sentry.ts` from build variables `VITE_SENTRY_ENVIRONMENT`
-(falls back to Vite's `MODE`) and `VITE_SENTRY_RELEASE` (`release.yml` sets it from the tag; the
-environment is *not* set there because the artifact is promoted between environments). That file also
+(falls back to Vite's `MODE`) and `VITE_SENTRY_RELEASE`. Since IMP-03 `release.yml` builds **one frontend per
+environment** (matrix `staging`/`production`, each in the GitHub Environment of that name): the DSN comes from that
+environment's *variable* `VITE_SENTRY_DSN` (a browser DSN is public), the environment from the matrix and the release
+from the tag; a missing DSN fails the release, and a step checks that the built `index.html` CSP allows the DSN's
+origin (the `<meta>` content is HTML-escaped, so it is parsed with node, not grepped). The zips are
+`frontend-dist-<tag>-<environment>.zip`, plus a `SHA256SUMS` of everything. That file also
 **strips the value of `token`/`password`/`secret`/`signature` query parameters** from `request.url`,
 `query_string`, the `Referer` header and the navigation/fetch/xhr breadcrumbs: the `?token=` in the reset
 and invitation e-mail links (`/admin/reset-password`, `/admin/aceptar-invitacion`) was reaching Sentry
 with every error raised on those pages. The backend sends no request URLs to Sentry (core SDK, no servlet
-integration), so it needs no such filter. Not covered: `main()` itself (one line, calls
+integration), but free text still goes out, so since IMP-03 `SentryBootstrap` installs `SentryScrubber` as
+`beforeSend`: in the message, every exception value, string extras and breadcrumbs it replaces the value of any
+`name=value` / `name: value` whose name contains token/password/secret/signature/api key/credential, and
+`Bearer …`/`Basic …`, with `[Filtered]` (`SentryScrubberTest`). Also IMP-03: with a DSN outside development,
+**`SENTRY_RELEASE` is required** too (`ProductionConfigurationRules.sentry`), and
+`POST /api/platform/diagnostics/sentry-test` (`PlatformDiagnosticsController`, platform key + private network)
+sends a test event and returns its id, or 409 without a DSN. Not covered: `main()` itself (one line, calls
 `SentryBootstrap`); and the customer-invitation e-mail links to `/cuenta/activar?token=…`, a route the SPA
 does not have (the customer surface is deferred).
 
@@ -1006,12 +1016,14 @@ store, an id for scheduled jobs, the id on the way to the POS, and Prometheus me
         `app.stock-recovery.after-minutes`;
       - `uvostore_orders_pending_stale`: `status = PENDING`, older than `app.reconciliation.stale-hours`;
       - `uvostore_refunds_pending`;
+      - `uvostore_orders_stock_shortage` (IMP-03): `stock_shortage`, still `PAID`, not cancelled — the panel's
+        «Sin stock» tab, system-wide (`OrderRepository.countOpenStockShortage`);
       - `uvostore_outbox_pending{channel}`: `PENDING` + `IN_FLIGHT`;
       - `uvostore_outbox_oldest_pending_seconds{channel}`: measured against the read time, so it keeps growing
         between snapshots. With `pos`, this is the signal for "the POS isn't getting the sales";
       - `uvostore_outbox_failed{channel}`: with `pos`, the sales the POS doesn't have, waiting for manual review.
         **It never goes down**, because nothing resolves a `FAILED` row, so alert on increases.
-    - **Queries:** the counts are global on purpose. The two on `OrderRepository` are in
+    - **Queries:** the counts are global on purpose. The three on `OrderRepository` are in
       `RepositoryTenantScopeTest.GLOBAL_ON_PURPOSE`; the refund and outbox counts aren't checked there, because
       those entities have no store of their own.
   - Counters, from `service/metrics/BusinessMetrics`, all registered at startup at zero so alerts have a series
@@ -1026,6 +1038,14 @@ store, an id for scheduled jobs, the id on the way to the POS, and Prometheus me
       orphan counts as `uncertain`. The final state is the `failed` gauge.
   - Boot adds, for free: JVM, Hikari, Tomcat, `http.server.requests` (templated `uri`) and `executor_*` for the
     scheduler.
+- **Alerts (IMP-03):** `ops/monitoring/` holds the versioned side: `prometheus/alerts.yml` (one rule per category,
+  each with `severity`, `owner` role and a `runbook` anchor in `docs/observabilidad.md`; grouped by the scrape's
+  `environment` label; thresholds provisional until C01), `prometheus/alerts.test.yml` (`promtool test rules`: each
+  alert fires with its series and not without it), `prometheus/scrape.example.yml` (private address, token from a
+  file, `job_name: uvostore`, which the rules use), `alertmanager/alertmanager.example.yml` (no real receivers) and
+  `grafana/uvostore-operacion.json`. The `monitoring` job in `ci.yml` runs promtool and amtool from pinned images.
+  Changing a threshold means changing its test. Runbooks, the per-environment Sentry setup and the evidence table
+  that closes C17 are in `docs/observabilidad.md`.
 - **Tests:**
   - `config/LogCorrelationTest`, `SchedulerRequestIdTest`, `MetricsEndpointTest` and `MetricsWithoutTokenTest`;
     the metrics tests use `@AutoConfigureMetrics`, because otherwise the test registry has no Prometheus

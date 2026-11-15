@@ -447,6 +447,30 @@
   },
   "openapi" : "3.1.0",
   "paths" : {
+    "/api/platform/diagnostics/sentry-test" : {
+      "post" : {
+        "operationId" : "sentryTest",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "additionalProperties" : {
+                    "type" : "string"
+                  },
+                  "type" : "object"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "platformApiKey" : [ ]
+        } ],
+        "tags" : [ "Diagnóstico (plataforma)" ]
+      }
+    },
     "/api/platform/stores" : {
       "get" : {
         "operationId" : "index",
@@ -874,6 +898,9 @@
     "url" : "/"
   } ],
   "tags" : [ {
+    "description" : "Comprobaciones de operación del ambiente desplegado; header X-Platform-Key, solo desde la red privada",
+    "name" : "Diagnóstico (plataforma)"
+  }, {
     "description" : "Lista, suspensión, cierre, acceso del dueño y auditoría de las tiendas; header X-Platform-Key, solo desde la red privada",
     "name" : "Operación de tiendas (plataforma)"
   }, {

@@ -81,7 +81,10 @@ class RepositoryTenantScopeTest {
                     "métrica PROD-15b (OperationalBacklogMetrics): un conteo de todo el sistema, sin la tienda como "
                             + "etiqueta, que solo lee /actuator/prometheus"),
             Map.entry("OrderRepository.countPendingCreatedBefore",
-                    "métrica PROD-15b (OperationalBacklogMetrics): un conteo de todo el sistema")));
+                    "métrica PROD-15b (OperationalBacklogMetrics): un conteo de todo el sistema"),
+            Map.entry("OrderRepository.countOpenStockShortage",
+                    "métrica IMP-03 (OperationalBacklogMetrics): un conteo de todo el sistema, sin la tienda como "
+                            + "etiqueta")));
 
     @Test
     @DisplayName("Toda consulta de un repositorio de tienda está acotada o es una global justificada")
