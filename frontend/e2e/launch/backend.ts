@@ -22,8 +22,10 @@ import {
   E2E_DB_NAME,
   E2E_ENCRYPTION_KEY,
   E2E_JWT_SECRET,
+  E2E_MODE,
   E2E_PLATFORM_API_KEY,
   E2E_STRIPE_WEBHOOK_SECRET,
+  NGINX_UPSTREAM_ADDRESS,
   VITE_PORT,
 } from '../support/env.ts'
 
@@ -80,7 +82,9 @@ async function main(): Promise<void> {
     APP_ENCRYPTION_KEY: E2E_ENCRYPTION_KEY,
     PLATFORM_API_KEY: E2E_PLATFORM_API_KEY,
     PUBLIC_STOREFRONT_URL: `http://{host}:${VITE_PORT}`,
-    PUBLIC_API_URL: `http://{host}:${BACKEND_PORT}`,
+    // IMP-04. En `dist`, la API y las imágenes por el mismo origen que la tienda, detrás de nginx, como en
+    // producción (ops/nginx/uvostore.conf): la CSP del build (img-src 'self') no deja cargar otra cosa sobre http.
+    PUBLIC_API_URL: `http://{host}:${E2E_MODE === 'dist' ? VITE_PORT : BACKEND_PORT}`,
     APP_UPLOAD_DIR: path.join(workDir, 'uploads'),
     // El POS en el circuito: encendido, y el outbox despachando cada segundo para que la venta llegue pronto.
     POS_ENABLED: 'true',
@@ -94,6 +98,9 @@ async function main(): Promise<void> {
     MAIL_PASSWORD: '',
     // Un solo cliente (127.0.0.1) hace todos los logins de la corrida; los límites por IP no aportan aquí.
     RATE_LIMIT_ENABLED: 'false',
+    // IMP-04. Detrás de nginx, como en producción: sin declararlo, el backend no le cree el X-Forwarded-For y la
+    // API de plataforma (el formulario de operador) rechaza todo lo que pasa por el proxy.
+    RATE_LIMIT_TRUSTED_PROXIES: E2E_MODE === 'dist' ? NGINX_UPSTREAM_ADDRESS : '',
     // GAP-08. Las tres pasarelas van a sus dobles (frontend/e2e/doubles/gateways.ts). El backend solo lo acepta
     // con APP_ENVIRONMENT=development.
     STRIPE_API_BASE: `http://127.0.0.1:${DOUBLES_HTTP_PORT}/stripe`,

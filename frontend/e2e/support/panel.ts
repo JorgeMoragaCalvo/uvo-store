@@ -103,6 +103,27 @@ export async function createProduct(page: Page, slug: string, product: PanelProd
   await expect(page).toHaveURL(/\/admin\/products$/)
 }
 
+/** PNG de 1×1: el backend reconoce la imagen por su firma, no por el nombre ni el tipo declarado. */
+export const PNG_1X1 = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+  'base64',
+)
+
+/** GAP-19. Un banner de portada con imagen subida (va a /uploads con el almacenamiento local). */
+export async function createBanner(page: Page, slug: string, title: string, sortOrder: number): Promise<void> {
+  await page.goto(storeUrl(slug, '/admin/banners/new'))
+  // Exactos: «Título» también está en «Subtítulo».
+  await page.getByLabel('Título', { exact: true }).fill(title)
+  await page.getByLabel('Descripción', { exact: true }).fill(`Descripción de ${title}`)
+  await page.getByLabel('Texto botón principal', { exact: true }).fill('Ver tienda')
+  await page.getByLabel('Link botón principal', { exact: true }).fill('/shop')
+  await page.getByLabel('Orden', { exact: true }).fill(String(sortOrder))
+  await page.getByLabel('Imagen (desktop)').setInputFiles({ name: 'banner.png', mimeType: 'image/png', buffer: PNG_1X1 })
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByText('Banner creado')).toBeVisible()
+  await expect(page).toHaveURL(/\/admin\/banners$/)
+}
+
 /** La celda de stock de un producto en `/admin/products` (columnas: Producto, SKU, Precio, Stock…). */
 export async function expectStockInList(page: Page, slug: string, sku: string, stock: number): Promise<void> {
   await page.goto(storeUrl(slug, '/admin/products'))

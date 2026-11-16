@@ -134,7 +134,9 @@ jobs:
 
       # The CSP must let the bundle reach the DSN's origin, or the browser blocks every event silently. The
       # <meta> content is HTML-escaped (&#39; for the quotes), so it is read with node rather than grep.
-      - name: Check that the CSP allows the Sentry origin
+      # IMP-04: and it must name no other origin than that one and Transbank's. The E2E builds its own copy with
+      # a test DSN (frontend/e2e/launch/frontend.ts); nothing test-only may ever reach a published zip.
+      - name: Check the CSP of the build
         run: |
           node -e '
             const html = require("fs").readFileSync("dist/index.html", "utf8");
@@ -146,7 +148,14 @@ jobs:
               console.log(`::error::dist/index.html has no CSP connect-src for ${origin} (found: "${connect}").`);
               process.exit(1);
             }
-            console.log(`CSP ${connect}`);
+            const allowed = new Set([origin, "https://webpay3g.transbank.cl", "https://webpay3gint.transbank.cl"]);
+            const origins = policy.split(/[\s;]+/).filter((token) => token.includes("://"));
+            const extra = origins.filter((o) => !allowed.has(o) || /localhost|127\.0\.0\.1/.test(o));
+            if (extra.length > 0) {
+              console.log(`::error::dist/index.html CSP names unexpected origins: ${extra.join(" ")}`);
+              process.exit(1);
+            }
+            console.log(`CSP ${policy}`);
           '
 
       - name: Zip build output

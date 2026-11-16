@@ -2,3 +2,5 @@
 *.cmd text eol=crlf
 # GAP-17: OpenApiSpecTest los genera con LF; sin esto, un checkout en Windows los vería cambiados.
 docs/api/*.json text eol=lf
+# IMP-04: los scripts de publicación corren en Linux
+ops/nginx/*.sh text eol=lf

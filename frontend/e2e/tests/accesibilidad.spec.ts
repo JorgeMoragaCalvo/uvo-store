@@ -14,7 +14,7 @@ import { expect, test, type Page, type TestInfo } from '@playwright/test'
 import { queryE2e } from '../support/database.ts'
 import { storeUrl } from '../support/env.ts'
 import { linkIn, waitForMail } from '../support/mail.ts'
-import { acceptInvitation, createProduct, createShippingZone, disableShipping } from '../support/panel.ts'
+import { acceptInvitation, createBanner, createProduct, createShippingZone, disableShipping } from '../support/panel.ts'
 import { createStoreViaApi } from '../support/platform.ts'
 import { fillCheckoutForms, openProduct, trackOrder, type Buyer } from '../support/storefront.ts'
 
@@ -39,12 +39,6 @@ const BUYER: Buyer = {
 const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']
 const BLOCKING = new Set(['serious', 'critical'])
 
-/** PNG de 1×1: el backend reconoce la imagen por su firma, no por el nombre ni el tipo declarado. */
-const PNG_1X1 = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
-  'base64',
-)
-
 const shop = { orderNumber: '' }
 
 /**
@@ -67,20 +61,6 @@ async function expectAccessible(page: Page, testInfo: TestInfo, label: string): 
   expect.soft(blocking, `${label}: violaciones de axe`).toEqual([])
 }
 
-async function createBanner(page: Page, title: string, sortOrder: number): Promise<void> {
-  await page.goto(storeUrl(SLUG, '/admin/banners/new'))
-  // Exactos: «Título» también está en «Subtítulo».
-  await page.getByLabel('Título', { exact: true }).fill(title)
-  await page.getByLabel('Descripción', { exact: true }).fill(`Descripción de ${title}`)
-  await page.getByLabel('Texto botón principal', { exact: true }).fill('Ver tienda')
-  await page.getByLabel('Link botón principal', { exact: true }).fill('/shop')
-  await page.getByLabel('Orden', { exact: true }).fill(String(sortOrder))
-  await page.getByLabel('Imagen (desktop)').setInputFiles({ name: 'banner.png', mimeType: 'image/png', buffer: PNG_1X1 })
-  await page.getByRole('button', { name: 'Guardar' }).click()
-  await expect(page.getByText('Banner creado')).toBeVisible()
-  await expect(page).toHaveURL(/\/admin\/banners$/)
-}
-
 // La tienda se prepara una vez. Si un escaneo falla, Playwright reinicia el worker y vuelve a correr el beforeAll:
 // la tienda ya existe y no se repite. Así una página con violaciones no impide revisar las demás.
 test.beforeAll(async ({ browser }) => {
@@ -100,8 +80,8 @@ test.beforeAll(async ({ browser }) => {
     await disableShipping(page, SLUG)
     await createProduct(page, SLUG, PRODUCT)
     // Dos banners: con uno solo no hay flechas, puntos ni botón de pausa.
-    await createBanner(page, 'Temporada de té', 0)
-    await createBanner(page, 'Envíos a todo Chile', 1)
+    await createBanner(page, SLUG, 'Temporada de té', 0)
+    await createBanner(page, SLUG, 'Envíos a todo Chile', 1)
   } finally {
     await page.close()
   }

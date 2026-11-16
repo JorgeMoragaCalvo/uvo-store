@@ -29,3 +29,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# IMP-04: el build que sirve nginx en el E2E (e2e/launch/frontend.ts)
+/e2e/.dist/

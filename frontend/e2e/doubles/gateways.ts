@@ -11,6 +11,7 @@
 // Igual que server.ts, solo sintaxis borrable: Node lo corre quitando los tipos.
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { E2E_MODE } from '../support/env.ts'
 
 export interface WebpayTransaction {
   token: string
@@ -172,6 +173,17 @@ function webpayError(res: ServerResponse, status: number, message: string): void
   sendJson(res, status, { error_message: message })
 }
 
+/**
+ * IMP-04. Dónde vive la página de pago del doble. La SPA le hace un POST de formulario (Checkout.submitWebpayForm),
+ * y la CSP del build solo admite form-action 'self' y los hosts de Transbank. En la modalidad `dist` la página se
+ * sirve en el origen de la tienda (el del return_url, que con PUBLIC_API_URL es el mismo de la tienda) y nginx
+ * la manda aquí por /__gateway/, una location que existe SOLO en el nginx del E2E (e2e/launch/frontend.ts). Así
+ * se prueba la CSP real sin abrirla. En `vite` no hay CSP y la página sigue en el origen de los dobles.
+ */
+function webpayPageOrigin(returnUrl: string, doublesOrigin: string): string {
+  return E2E_MODE === 'dist' ? new URL(returnUrl).origin : doublesOrigin
+}
+
 async function handleWebpayApi(req: IncomingMessage, res: ServerResponse, path: string, origin: string): Promise<void> {
   if (req.method === 'POST' && path === WEBPAY_API) {
     const body = JSON.parse(await readBody(req)) as {
@@ -192,7 +204,7 @@ async function handleWebpayApi(req: IncomingMessage, res: ServerResponse, path: 
       refunds: [],
     }
     state.webpay.push(tx)
-    sendJson(res, 200, { token: tx.token, url: `${origin}/__gateway/webpay/pay` })
+    sendJson(res, 200, { token: tx.token, url: `${webpayPageOrigin(tx.returnUrl, origin)}/__gateway/webpay/pay` })
     return
   }
 

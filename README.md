@@ -131,14 +131,17 @@ because what they test only happens on a real commit — concurrency, crash reco
 or `support/InterruptionTestSupport`. Those clean up after themselves, but one killed halfway leaves
 rows in the development database.
 
-**End-to-end.** `frontend/e2e/` is a Playwright suite that drives the packaged jar, Vite, and doubles
-for the POS, the payment gateways and SMTP:
+**End-to-end.** `frontend/e2e/` is a Playwright suite that drives the packaged jar, the production build
+of the frontend served by nginx with the config in `ops/nginx/`, and doubles for the POS, the payment
+gateways, Sentry and SMTP. It needs nginx on the `PATH` (or `NGINX_BIN`); `npm run e2e:dev` runs the same
+suite over the Vite dev server instead, without nginx and without the CSP:
 
 ```bash
 ./mvnw package -DskipTests            # the suite runs target/uvo-store-*.jar: rebuild after backend changes
 cd frontend
 npx playwright install chromium       # once
 npm run e2e                           # npm run e2e:report opens the last HTML report
+npm run e2e:dev                       # over Vite dev, no nginx
 ```
 
 It drops and recreates its own database, `uvostore_e2e`, on every run, with the credentials in
@@ -209,3 +212,6 @@ CI (`.github/workflows/`):
   Deploy the zip of the target environment and set the backend's `SENTRY_RELEASE` to the same tag
   (`docs/observabilidad.md`).
 - The `monitoring` job in `ci.yml` checks and unit-tests the alert rules in `ops/monitoring/` with `promtool`.
+- The `nginx` job in `ci.yml` checks the reference nginx config in `ops/nginx/` and tests the publish script.
+  The end-to-end job keeps the build it tested, with its checksum, as the `e2e-evidencia` artifact. Serving
+  and publishing the frontend: `docs/despliegue-frontend.md`.
