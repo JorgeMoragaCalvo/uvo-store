@@ -7,7 +7,32 @@
 // corrida, y los tests y el lanzador corren en procesos distintos, así que un valor aleatorio no se podría
 // compartir sin escribirlo a disco. No sirven para nada fuera de aquí.
 
+/**
+ * IMP-04. Qué sirve el storefront en VITE_PORT:
+ * - `dist` (por defecto, y en CI y en el release): el build de producción detrás de nginx, con la configuración
+ *   de ops/nginx/ (e2e/launch/frontend.ts). Prueba la CSP real, las cabeceras, la caché y las rutas del proxy.
+ * - `vite` (`npm run e2e:dev`): el servidor de desarrollo, más rápido de levantar y sin nginx. Sin CSP.
+ */
+export type E2eMode = 'dist' | 'vite'
+export const E2E_MODE: E2eMode = parseMode(process.env.E2E_MODE)
+
+function parseMode(value: string | undefined): E2eMode {
+  if (!value?.trim()) return 'dist'
+  if (value === 'dist' || value === 'vite') return value
+  throw new Error(`E2E_MODE tiene que ser dist o vite; llegó «${value}»`)
+}
+
+/**
+ * IMP-04. La dirección desde la que el nginx de `dist` se conecta al backend (proxy_bind), y la única que el
+ * backend acepta como proxy (RATE_LIMIT_TRUSTED_PROXIES). Distinta de 127.0.0.1 a propósito, como en producción
+ * el proxy tiene la suya: ClientIpResolver.resolveStrict no le cree a un proxy de confianza que llega sin
+ * X-Forwarded-For, así que si 127.0.0.1 fuera el proxy, las llamadas directas de los tests a la API de
+ * plataforma quedarían rechazadas.
+ */
+export const NGINX_UPSTREAM_ADDRESS = '127.0.0.2'
+
 export const BACKEND_PORT = 18080
+/** El puerto del storefront: Vite en la modalidad `vite`, nginx en `dist`. */
 export const VITE_PORT = 15173
 export const DOUBLES_HTTP_PORT = 18089
 export const DOUBLES_SMTP_PORT = 12525
@@ -15,7 +40,16 @@ export const DOUBLES_SMTP_PORT = 12525
 export const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`
 export const DOUBLES_URL = `http://127.0.0.1:${DOUBLES_HTTP_PORT}`
 
-/** URL del storefront de una tienda a través de Vite (Chromium resuelve `*.localhost` solo). */
+/**
+ * IMP-04. Sentry del build de la modalidad `dist`: el DSN apunta al doble (e2e/doubles/server.ts), así que su
+ * origen entra en la CSP del build como entraría el de Sentry, y los eventos se pueden leer en /__doubles/sentry.
+ * Lo comparten el lanzador (que compila con estos valores) y los tests (que los esperan en el evento).
+ */
+export const SENTRY_DOUBLE_DSN = `http://e2e@127.0.0.1:${DOUBLES_HTTP_PORT}/1`
+export const E2E_SENTRY_ENVIRONMENT = 'e2e'
+export const E2E_SENTRY_RELEASE = `e2e-${(process.env.GITHUB_SHA ?? 'local').slice(0, 7)}`
+
+/** URL del storefront de una tienda (Chromium resuelve `*.localhost` solo). */
 export function storeUrl(slug: string, path = ''): string {
   return `http://${slug}.localhost:${VITE_PORT}${path}`
 }

@@ -32,8 +32,33 @@ export interface CapturedMail {
   body: string
 }
 
+/** IMP-04. Un envelope de Sentry: la cabecera y cada ítem (`event`, `session`...) con su cuerpo ya parseado. */
+export interface SentryEnvelope {
+  receivedAt: string
+  items: { type: string; payload: unknown }[]
+}
+
 const posOrders: PosOrderCall[] = []
 const mails: CapturedMail[] = []
+const sentryEnvelopes: SentryEnvelope[] = []
+
+/** Envelope: línea de cabecera y luego pares cabecera de ítem / cuerpo. Lo que no es JSON se guarda tal cual. */
+function parseEnvelope(raw: string): SentryEnvelope['items'] {
+  const lines = raw.split('\n').filter((line) => line.trim() !== '')
+  const items: SentryEnvelope['items'] = []
+  for (let i = 1; i + 1 < lines.length; i += 2) {
+    let type = 'desconocido'
+    let payload: unknown = lines[i + 1]
+    try {
+      type = (JSON.parse(lines[i]) as { type?: string }).type ?? type
+      payload = JSON.parse(lines[i + 1])
+    } catch {
+      // Un ítem binario (adjunto) no se puede leer como texto; no hace falta para las pruebas.
+    }
+    items.push({ type, payload })
+  }
+  return items
+}
 
 // ---------------------------------------------------------------------------------------------- HTTP
 
@@ -76,6 +101,36 @@ const http = createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/v1/products/snapshot') {
       await readBody(req)
       sendJson(res, 200, { data: [] })
+      return
+    }
+    // IMP-04. Sentry del build `dist` (SENTRY_DOUBLE_DSN): el SDK manda cada evento como un envelope, una línea
+    // JSON por parte. Va desde el navegador y desde otro origen, así que necesita CORS como el Sentry real.
+    if (url.pathname === '/api/1/envelope/') {
+      res.setHeader('Access-Control-Allow-Origin', '*')
+      res.setHeader('Access-Control-Allow-Headers', '*')
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204)
+        res.end()
+        return
+      }
+      if (req.method === 'POST') {
+        const raw = await readBody(req)
+        sentryEnvelopes.push({ receivedAt: new Date().toISOString(), items: parseEnvelope(raw) })
+        sendJson(res, 200, { id: 'e2e' })
+        return
+      }
+    }
+    // IMP-04. Una página de otro origen y sin CSP propia que enmarca `src` (la prueba de frame-ancestors de
+    // artefacto.spec.ts) y, como control, una página que sí se deja enmarcar.
+    if (req.method === 'GET' && url.pathname === '/__doubles/enmarcar') {
+      const src = (url.searchParams.get('src') ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
+      const body = `<!doctype html><iframe name="panel" src="${src}"></iframe><iframe name="control" src="/__doubles/health"></iframe>`
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': Buffer.byteLength(body) })
+      res.end(body)
+      return
+    }
+    if (req.method === 'GET' && url.pathname === '/__doubles/sentry') {
+      sendJson(res, 200, sentryEnvelopes)
       return
     }
     if (req.method === 'GET' && url.pathname === '/__doubles/health') {

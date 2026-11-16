@@ -1,11 +1,29 @@
+import { useEffect, useState } from 'react'
 import { isRouteErrorResponse, Link, useRouteError } from 'react-router-dom'
+import { canReloadForStaleChunk, isStaleChunkError, reloadForStaleChunk } from '../lib/staleChunk'
 
 // PROD-24b. El `errorElement` de las rutas. Sin él, un error al cargar una página (un chunk que ya no
 // existe tras un despliegue, una excepción al renderizar) mostraba la pantalla por defecto de React
 // Router, en inglés y con la traza. `home` es a dónde volver: la tienda o el panel.
+//
+// IMP-04. Si el error es un chunk que no está, se recarga sola una vez (lib/staleChunk.ts); si ya lo intentó hace
+// poco, muestra la pantalla de siempre con el botón «Recargar».
 export default function RouteError({ home = '/' }: { home?: string }) {
   const error = useRouteError()
   const notFound = isRouteErrorResponse(error) && error.status === 404
+  const [autoReload] = useState(() => isStaleChunkError(error) && canReloadForStaleChunk())
+
+  useEffect(() => {
+    if (autoReload) reloadForStaleChunk()
+  }, [autoReload])
+
+  if (autoReload) {
+    return (
+      <p role="status" className="p-8 py-16 text-center text-secondary">
+        Actualizando la página…
+      </p>
+    )
+  }
 
   return (
     <div className="mx-auto max-w-lg p-8 py-16 text-center">

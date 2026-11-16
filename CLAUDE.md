@@ -45,7 +45,9 @@ Spring context per test class, and dependency resolution is the slowest part of 
 ```
 cd frontend && npm run dev        # Vite dev server (http://localhost:5173), proxies /api/* to VITE_DEV_PROXY_TARGET
                                   #   (<slug>.localhost:5173 reaches that store — see "Browser E2E")
-cd frontend && npm run e2e        # Playwright browser suite; needs the jar first (./mvnw -o package -DskipTests)
+cd frontend && npm run e2e        # Playwright browser suite over the build + nginx (IMP-04); needs the jar first
+                                  #   (./mvnw -o package -DskipTests) and nginx (NGINX_BIN or PATH)
+cd frontend && npm run e2e:dev    # same suite over Vite dev, no nginx and no CSP
 cd frontend && npm run build      # tsc -b && vite build
 cd frontend && npm run lint       # eslint .
 cd frontend && npm run test       # vitest run (npm run test:watch for watch mode)
@@ -132,7 +134,7 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
   domain clears the flag, so a new domain never inherits it.
 - The frontend computes every API client's `baseURL` **at runtime** from `window.location.origin` (`frontend/src/services/api.ts`, `admin/services/adminApi.ts`, `platform/services/platformApi.ts`) — not from a build-time env var — so one deployed frontend build serves any tenant. In dev, Vite's own proxy (`vite.config.ts`) forwards `/api/*` to `VITE_DEV_PROXY_TARGET` (`frontend/.env`, default `http://demo.localhost:8080`) so the browser still sees same-origin requests, matching production. Since
 PROD-14a the proxy keeps the browser's store: a page on `<slug>.localhost:5173` reaches the backend as
-`<slug>.localhost:8080`, and only a bare `localhost` goes to the target store. In production this assumes frontend static assets and the API are served from the same origin (a reverse proxy) — that infrastructure doesn't exist yet, see "Known gotchas".
+`<slug>.localhost:8080`, and only a bare `localhost` goes to the target store. In production this assumes frontend static assets and the API are served from the same origin (a reverse proxy). The reference nginx config is versioned in `ops/nginx/` (IMP-04, `docs/despliegue-frontend.md`) and the E2E runs against it, but nothing is deployed yet, see "Known gotchas".
 
 ## Local environment
 
@@ -1591,7 +1593,8 @@ consuming this API.
     landing after a fresh login would revoke the new token.
   - `JWT_EXPIRATION_MS` defaults to 8 h.
   - The SPA's CSP lives in `frontend/csp.ts` and is injected into the **built** `index.html` only. Vite dev
-    needs React's inline refresh preamble, so dev and the E2E run without it. Adding any third-party script,
+    needs React's inline refresh preamble, so dev and `npm run e2e:dev` run without it. The default E2E
+    (IMP-04) serves the build, so it runs under the real policy. Adding any third-party script,
     font, image host or form target means adding its exact origin there and re-checking the build in a
     browser.
   - `SecurityConfig` sends `Referrer-Policy`, `X-Frame-Options: DENY` and a locked-down CSP on `/api/**` and
@@ -1673,11 +1676,38 @@ used because V8 seeds it with no admin, and the platform API can't create it.
 ```
 ./mvnw -o package -DskipTests                 # the launcher runs target/uvo-store-*.jar, so rebuild after backend changes
 cd frontend && npx playwright install chromium   # once
-cd frontend && npm run e2e                    # ~1-2 min; npm run e2e:report opens the last HTML report
+cd frontend && npm run e2e                    # over the build + nginx; npm run e2e:report opens the last HTML report
+cd frontend && npm run e2e:dev                # over Vite dev (E2E_MODE=vite): no nginx needed, no CSP
 ```
 
-**Console output** (GAP-20). Vite forwards the browser's `console.warn`/`console.error` into the run's
-output as `[vite] (client) [console.warn] …`, so app warnings show up there; a clean run has none. The one
+**Two modes (IMP-04), `E2E_MODE` in `e2e/support/env.ts`.** The storefront on 15173 is either:
+- **`dist` (default; CI and release).** `e2e/launch/frontend.ts` runs `vite build` into `e2e/.dist` (not
+  `dist/`), with the Sentry DSN pointed at the doubles (`SENTRY_DOUBLE_DSN`), then starts nginx with a generated
+  `e2e/.logs/nginx/nginx.conf` that **includes `ops/nginx/uvostore-locations.conf` and
+  `security-headers.conf` (copied verbatim)**. So the suite exercises the real CSP, nginx's headers and cache,
+  the `/api` and `/uploads` proxying with the original `Host`, and SPA fallback. `E2E_FRONTEND_DIST` serves an
+  already-built dist instead. nginx comes from `NGINX_BIN` or `PATH`; on Windows, the nginx.org zip.
+  - The backend gets `PUBLIC_API_URL=http://{host}:15173` (same origin, as in production), or the CSP's
+    `img-src 'self'` would block the uploads.
+  - nginx connects to the backend from **127.0.0.2** (`proxy_bind`, `NGINX_UPSTREAM_ADDRESS`), and that is
+    the backend's `RATE_LIMIT_TRUSTED_PROXIES`. Without it, `ClientIpResolver.resolveStrict` distrusts
+    nginx's `X-Forwarded-For` and **the platform form 403s behind the proxy** (found by this suite; production
+    needs the same setting). It can't be 127.0.0.1: a trusted proxy without `X-Forwarded-For` resolves to
+    "unknown", which would reject the tests' direct platform API calls.
+  - The only test-only bits are in the generated conf and the doubles: `location /__gateway/` proxies to the
+    doubles, and in this mode the Webpay double returns a pay URL on the store's own origin (taken from
+    `return_url`), so `form-action 'self'` lets the form through without loosening the build's CSP.
+  - `e2e/tests/artefacto.spec.ts` (skipped in `vite`) checks what only the artifact has: direct reloads on
+    two stores, static files, `/api` 404 stays JSON, a missing chunk is a 404 that is never `index.html` and
+    never cached, `/actuator/**` 404, the served CSP equals `buildContentSecurityPolicy`, inline scripts and
+    foreign form targets are blocked, `frame-ancestors` (from a page served by the doubles, with a control
+    iframe), uploads with the backend's `sandbox` CSP, Sentry events with environment/release and
+    `token=[Filtered]`, cache headers, and the stale-chunk reload (`src/lib/staleChunk.ts`).
+- **`vite`.** The old setup, below. Faster to start, and the only one with the console forwarding.
+
+**Console output** (GAP-20, `vite` mode only). Vite forwards the browser's `console.warn`/`console.error` into
+the run's output as `[vite] (client) [console.warn] …`, so app warnings show up there; a clean run has none.
+nginx doesn't, so in `dist` mode browser warnings only show in traces. The one
 expected line is Node's `Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set`,
 which appears only when the shell that launches the run has `NO_COLOR` set (Playwright sets `FORCE_COLOR`
 on its children). It comes from the environment, not the project, and is harmless.
@@ -1689,7 +1719,7 @@ runs alongside the normal dev setup on 8080/5173:
 |---|---|---|
 | Doubles (`e2e/doubles/server.ts`) | 18089 HTTP, 12525 SMTP | One dependency-free Node process; it does need Node 24 to run `.ts` directly. Tests read what it received over HTTP (`/__doubles/pos/orders`, `/__doubles/mail?to=`), because they run in another process. |
 | Backend (`e2e/launch/backend.ts`) | 18080 | See below. Its log goes to `e2e/.logs/backend.log`. |
-| Vite | 15173 | `VITE_DEV_PROXY_TARGET=http://demo.localhost:18080` |
+| Storefront | 15173 | `dist`: nginx serving `e2e/.dist` (`e2e/launch/frontend.ts`, logs in `e2e/.logs/nginx/logs/`). `vite`: Vite with `VITE_DEV_PROXY_TARGET=http://demo.localhost:18080`. |
 
 **The launcher.** `e2e/launch/backend.ts`:
 - **Drops and recreates `uvostore_e2e` on every run** with `pg`, then runs `java -jar` against it.
@@ -1702,7 +1732,8 @@ runs alongside the normal dev setup on 8080/5173:
   - fixed test-only secrets, from `e2e/support/env.ts`;
   - `POS_ENABLED=true` and `OUTBOX_INTERVAL_MS=1000`;
   - SMTP pointed at the double, with no STARTTLS or auth;
-  - `PUBLIC_STOREFRONT_URL=http://{host}:15173`, so invitation links land on this Vite;
+  - `PUBLIC_STOREFRONT_URL=http://{host}:15173`, so invitation links land on this storefront;
+  - in `dist`, `PUBLIC_API_URL` on that same origin and `RATE_LIMIT_TRUSTED_PROXIES=127.0.0.2` (see above);
   - rate limiting off, since every login comes from 127.0.0.1;
   - the other scheduled jobs off.
 
@@ -1781,11 +1812,14 @@ This also makes several stores usable by hand in dev.
 creates no release unless it passes. Its check is named **`E2E / E2E (Playwright)`** (caller job name, then
 the called job's). The job:
 1. packages the jar with `-DskipTests` (the backend job runs the suite);
-2. installs Chromium with `--with-deps`;
-3. runs `npm run e2e` against its own `postgres:18` service.
+2. installs Chromium with `--with-deps`, and nginx from apt;
+3. runs `npm run e2e` (`dist` mode) against its own `postgres:18` service;
+4. on success, uploads **`e2e-evidencia`** for 90 days: the tested build zipped, its `SHA256SUMS`, the
+   generated nginx.conf with the copied snippets, `build-info.txt` and the HTML report (IMP-04).
 
 On failure it uploads `playwright-report/`, `test-results/` (traces and screenshots) and the
-backend log for 7 days. **#33 is pointing this same harness at staging.**
+logs for 7 days. The `nginx` job in `ci.yml` runs `nginx -t` on `ops/nginx/uvostore.conf` (self-signed certs
+in place of Certbot's) and `ops/nginx/publicar-frontend.test.sh`. **#33 is pointing this same harness at staging.**
 
 ## Known gotchas
 
@@ -1865,8 +1899,9 @@ backend log for 7 days. **#33 is pointing this same harness at staging.**
   `npx tsc -b`** (what `npm run build` runs). Run the full trio before calling frontend work done:
   `npx tsc -b`, `npm run lint`, `npm run test`. Skipping lint is how a
   `react-refresh/only-export-components` error shipped once — `tsc` and Vitest were both green.
-- **No deployment infrastructure exists yet** (no Docker, no reverse proxy, no SSL) — paused
-  pending a hosting decision. Client custom domains and same-origin frontend+API in production
+- **No deployment infrastructure exists yet** (no Docker, no deployed reverse proxy, no SSL) — paused
+  pending a hosting decision. What exists is the reference nginx config and the atomic publish script in
+  `ops/nginx/` (IMP-04, `docs/despliegue-frontend.md`), exercised by the E2E but not deployed anywhere. Client custom domains and same-origin frontend+API in production
   both depend on that piece landing eventually.
 - **The Laravel/Vue predecessor lives outside this repo** at `C:\Users\jorgemc\Desktop\uvostore_1.0`.
   Its Vue SPA (`resources/js/`) was dead code (never mounted) — the real reference for "what

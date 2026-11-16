@@ -105,6 +105,37 @@ jobs:
       - name: Check Grafana dashboard JSON
         run: python3 -m json.tool ops/monitoring/grafana/uvostore-operacion.json > /dev/null
 
+  # IMP-04. La configuración de nginx de ops/nginx/: que la referencia de producción sea válida (con certificados
+  # de prueba en lugar de los de Certbot) y que el script de publicación haga lo que promete. Las rutas, cabeceras
+  # y caché las prueba el E2E, que sirve el build con esos mismos archivos.
+  nginx:
+    name: nginx (config and publish script)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install nginx
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends nginx
+          nginx -v
+
+      - name: Check the reference configuration
+        run: |
+          work=$(mktemp -d)
+          mkdir -p "$work/uvostore" "$work/certs" "$work/logs"
+          cp ops/nginx/uvostore-locations.conf ops/nginx/security-headers.conf "$work/uvostore/"
+          sed -e "s#/etc/letsencrypt/live/[^/]*/#$work/certs/#" ops/nginx/uvostore.conf > "$work/uvostore.conf"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=prueba \
+            -keyout "$work/certs/privkey.pem" -out "$work/certs/fullchain.pem" 2> /dev/null
+          printf 'pid logs/nginx.pid;\nevents {}\nhttp {\n  include /etc/nginx/mime.types;\n  include uvostore.conf;\n}\n' \
+            > "$work/nginx.conf"
+          sudo nginx -t -e logs/error.log -p "$work/" -c "$work/nginx.conf"
+
+      - name: Test the publish script
+        run: bash ops/nginx/publicar-frontend.test.sh
+
   # PROD-14a. Red de navegador: Playwright contra el backend real. GAP-09: el job vive en e2e.yml porque
   # release.yml también lo llama. Su check se llama «E2E / E2E (Playwright)».
   e2e:
