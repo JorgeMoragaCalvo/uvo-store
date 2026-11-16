@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import RouteError from './RouteError'
 
@@ -42,7 +42,9 @@ describe('RouteError', () => {
     staleChunk.canReloadForStaleChunk.mockReturnValue(true)
     renderWithError(staleError)
     expect(await screen.findByRole('status')).toHaveTextContent('Actualizando la página')
-    expect(staleChunk.reloadForStaleChunk).toHaveBeenCalled()
+    // La recarga va en un efecto, que corre después del render: el loader del router resuelve fuera de act(), así
+    // que puede no haber corrido todavía cuando aparece el texto.
+    await waitFor(() => expect(staleChunk.reloadForStaleChunk).toHaveBeenCalled())
   })
 
   it('si ya recargó hace poco, muestra «Recargar» en vez de entrar en bucle', async () => {
