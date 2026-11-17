@@ -6,7 +6,7 @@
 #
 # <base> es el directorio del frontend (en producción /srv/uvostore/frontend). Deja:
 #   <base>/releases/<versión>/   una carpeta por versión (versión = nombre del zip sin .zip)
-#   <base>/current -> releases/<versión>   lo que sirve nginx (root de uvostore.conf)
+#   <base>/current -> releases/<versión>   lo que sirve nginx (root de uvostore.conf.template)
 #   <base>/historial             las versiones publicadas, la más reciente al final
 #
 # Por qué así (docs/despliegue-frontend.md):

@@ -1,0 +1,15 @@
+# SOLO ENSAYO (ops/servidor/ensayo/ensayo.sh). Hace las veces de la URL https pública del bucket de S3: en un
+# ambiente real las imágenes salen de https://<bucket>.s3.<región>.amazonaws.com o de una CDN, nunca de este nginx.
+# Aquí delante hay un MinIO local, que habla http.
+
+server {
+    listen 443 ssl;
+    server_name @@HOST@@;
+    ssl_certificate     @@CERTS@@/fullchain.pem;
+    ssl_certificate_key @@CERTS@@/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:9000;
+        proxy_set_header Host 127.0.0.1:9000;
+    }
+}

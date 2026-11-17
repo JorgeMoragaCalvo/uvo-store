@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.core.io.support.ResourcePropertySource;
 import org.springframework.mock.env.MockEnvironment;
 import org.uvo.uvostore.config.ProductionConfigurationRules.Findings;
@@ -405,6 +406,29 @@ class ProductionConfigurationRulesTest {
                 .anySatisfy(warning -> assertThat(warning).startsWith("SENTRY_DSN"));
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"", "0.0.0.0", "::", "200.1.2.3", "api.uvostore.cl"})
+    @DisplayName("IMP-05: un backend que escucha fuera de loopback o de la red privada se advierte, sin impedir el arranque")
+    void aPublicServerAddressWarns(String address) {
+        MockEnvironment properties = production();
+        properties.setProperty("server.address", address);
+
+        Findings findings = check(AppEnvironment.STAGING, properties, sentry("staging"), APP_ROLE);
+
+        assertThat(findings.errors()).isEmpty();
+        assertThat(findings.warnings()).singleElement().asString().startsWith("SERVER_ADDRESS");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"127.0.0.1", "localhost", "::1", "10.0.0.5", "192.168.1.10", "172.16.0.2"})
+    @DisplayName("IMP-05: loopback y red privada no se advierten")
+    void aPrivateServerAddressIsFine(String address) {
+        MockEnvironment properties = production();
+        properties.setProperty("server.address", address);
+
+        assertThat(check(AppEnvironment.PRODUCTION, properties, sentry("production"), APP_ROLE).warnings()).isEmpty();
+    }
+
     /** Todo lo que pide producción, bien puesto. Cada test le cambia una sola cosa. */
     static MockEnvironment production() {
         return new MockEnvironment()
@@ -424,6 +448,7 @@ class ProductionConfigurationRulesTest {
                 .withProperty("app.flyway.user", "uvostore_migrador")
                 .withProperty("app.pos.enabled", "true")
                 .withProperty("app.rate-limit.trusted-proxies", "10.0.0.0/8")
+                .withProperty("server.address", "127.0.0.1")
                 .withProperty("app.metrics.token", METRICS_TOKEN);
     }
 

@@ -6,6 +6,8 @@ import org.springframework.core.env.PropertyResolver;
 import org.uvo.uvostore.security.IpRanges;
 import org.uvo.uvostore.service.payment.WebpayPlatformPolicy;
 
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -98,7 +100,38 @@ public final class ProductionConfigurationRules {
                     + "comparten un contador y el login se corta a los 5 intentos del conjunto. Pon la IP o el CIDR "
                     + "del proxy.");
         }
+        serverAddress(properties, warnings);
         return new Findings(errors, warnings);
+    }
+
+    // IMP-05 (C03). El backend va detrás de nginx en el mismo servidor: escuchar en todas las interfaces deja el
+    // puerto alcanzable sin pasar por el proxy (sin sus cabeceras, sin el rechazo de hosts y con un X-Forwarded-For
+    // que nadie filtró). Advertencia y no error: el firewall puede estar cerrándolo, y eso no se ve desde aquí.
+    // Solo se aceptan literales de loopback o de red privada; un nombre que no sea localhost se trata como público
+    // porque resolverlo aquí sería adivinar.
+    private static void serverAddress(PropertyResolver properties, List<String> warnings) {
+        String address = text(properties, "server.address", "").trim();
+        if (!isLoopbackOrPrivate(address)) {
+            warnings.add("SERVER_ADDRESS es '" + (address.isEmpty() ? "(vacío: todas las interfaces)" : address)
+                    + "': el backend queda alcanzable sin pasar por nginx. Usa 127.0.0.1 detrás del proxy del "
+                    + "mismo servidor (ops/servidor/uvostore.env.example) o una dirección de la red privada.");
+        }
+    }
+
+    static boolean isLoopbackOrPrivate(String address) {
+        if (address.equalsIgnoreCase("localhost")) {
+            return true;
+        }
+        if (!IPV4.matcher(address).matches() && !address.contains(":")) {
+            return false;
+        }
+        try {
+            // Con un literal no hay consulta DNS.
+            InetAddress ip = InetAddress.getByName(address);
+            return ip.isLoopbackAddress() || ip.isSiteLocalAddress();
+        } catch (UnknownHostException e) {
+            return false;
+        }
     }
 
     private static void publicUrls(PropertyResolver properties, List<String> errors) {

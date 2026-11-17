@@ -50,19 +50,20 @@ class MultiTenancyIsolationTest extends IntegrationTestSupport {
 
         String body = "{\"email\":\"" + admin.getEmail() + "\",\"password\":\"" + TEST_PASSWORD + "\"}";
 
-        // Bare "localhost" (no subdomain) — TenantResolutionFilter resolves nothing.
+        // Bare "localhost" (no subdomain) — TenantResolutionFilter resolves nothing. IMP-05: 404 in the filter
+        // (UnknownHostTest); before, the controller's requireCurrent() answered 400.
         mockMvc.perform(post("/api/admin/auth/login")
                         .header("Host", "localhost")
                         .contentType("application/json")
                         .content(body))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isNotFound());
 
         // A subdomain that doesn't match any store's slug.
         mockMvc.perform(post("/api/admin/auth/login")
                         .header("Host", "no-such-store.localhost")
                         .contentType("application/json")
                         .content(body))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isNotFound());
     }
 
     // PROD-05a. El caso que antes pasaba: el primer segmento de CUALQUIER host era un slug válido, así que
@@ -86,14 +87,14 @@ class MultiTenancyIsolationTest extends IntegrationTestSupport {
                         .header("Host", store.getSlug() + ".dominio-ajeno.com")
                         .contentType("application/json")
                         .content(body))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isNotFound());
 
         // Ni con puerto, ni con el dominio de plataforma metido como prefijo del ajeno.
         mockMvc.perform(post("/api/admin/auth/login")
                         .header("Host", store.getSlug() + ".localhost.dominio-ajeno.com:8443")
                         .contentType("application/json")
                         .content(body))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isNotFound());
     }
 
     @Test

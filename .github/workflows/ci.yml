@@ -105,9 +105,11 @@ jobs:
       - name: Check Grafana dashboard JSON
         run: python3 -m json.tool ops/monitoring/grafana/uvostore-operacion.json > /dev/null
 
-  # IMP-04. La configuración de nginx de ops/nginx/: que la referencia de producción sea válida (con certificados
-  # de prueba en lugar de los de Certbot) y que el script de publicación haga lo que promete. Las rutas, cabeceras
-  # y caché las prueba el E2E, que sirve el build con esos mismos archivos.
+  # IMP-04. La configuración de nginx de ops/nginx/: que las plantillas de cada ambiente sean válidas (con
+  # certificados de prueba en lugar de los de Certbot) y que el script de publicación haga lo que promete. Las rutas,
+  # cabeceras y caché las prueba el E2E, que sirve el build con esos mismos archivos.
+  # IMP-05: staging y production renderizados juntos, con default.conf y un dominio propio en cada uno, como quedan
+  # en el servidor compartido (dos upstream, dos raíces, ningún server_name repetido); y shellcheck de los scripts.
   nginx:
     name: nginx (config and publish script)
     runs-on: ubuntu-latest
@@ -121,20 +123,123 @@ jobs:
           sudo apt-get install -y -qq --no-install-recommends nginx
           nginx -v
 
-      - name: Check the reference configuration
+      - name: Check the configuration of both environments
         run: |
+          set -o pipefail
+          . ops/servidor/comun.sh
           work=$(mktemp -d)
           mkdir -p "$work/uvostore" "$work/certs" "$work/logs"
           cp ops/nginx/uvostore-locations.conf ops/nginx/security-headers.conf "$work/uvostore/"
-          sed -e "s#/etc/letsencrypt/live/[^/]*/#$work/certs/#" ops/nginx/uvostore.conf > "$work/uvostore.conf"
           openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=prueba \
             -keyout "$work/certs/privkey.pem" -out "$work/certs/fullchain.pem" 2> /dev/null
-          printf 'pid logs/nginx.pid;\nevents {}\nhttp {\n  include /etc/nginx/mime.types;\n  include uvostore.conf;\n}\n' \
-            > "$work/nginx.conf"
-          sudo nginx -t -e logs/error.log -p "$work/" -c "$work/nginx.conf"
+          puerto=8081
+          for ambiente in staging production; do
+            mkdir -p "$work/uvostore/$ambiente/dominios"
+            renderizar ops/nginx/uvostore.conf.template "$work/uvostore-$ambiente.conf" AMBIENTE=$ambiente \
+              DOMINIO_TIENDAS=tiendas-$ambiente.example.cl PUERTO_BACKEND=$puerto CERTS_TIENDAS="$work/certs"
+            renderizar ops/nginx/dominio-propio.conf.template "$work/uvostore/$ambiente/dominios/propio.conf" \
+              AMBIENTE=$ambiente DOMINIO=tienda-$ambiente.example CERTS_DOMINIO="$work/certs"
+            puerto=$((puerto + 1))
+          done
+          cat > "$work/nginx.conf" << FIN
+          pid logs/nginx.pid;
+          events {}
+          http {
+            include /etc/nginx/mime.types;
+            include $PWD/ops/nginx/default.conf;
+            include uvostore-staging.conf;
+            include uvostore-production.conf;
+          }
+          FIN
+          sudo nginx -t -e logs/error.log -p "$work/" -c "$work/nginx.conf" 2>&1 | tee "$work/nginx-t.log"
+          # Un server_name repetido es solo un aviso para nginx, pero aquí significaría que un ambiente pisa al otro.
+          if grep -q 'conflicting server name' "$work/nginx-t.log"; then exit 1; fi
 
       - name: Test the publish script
         run: bash ops/nginx/publicar-frontend.test.sh
+
+      - name: Shellcheck
+        run: shellcheck -S warning -x ops/nginx/*.sh ops/servidor/*.sh ops/servidor/ensayo/*.sh
+
+  # IMP-05 (paso 7). Construye staging desde cero en una máquina Ubuntu limpia, solo con los scripts de ops/ y los
+  # artefactos armados como en release.yml, y comprueba lo que prometen: systemd con APP_ENVIRONMENT=staging (todas
+  # las reglas de arranque, roles de base incluidos), nginx con hosts desconocidos rechazados, dos tiendas, una
+  # imagen en S3 (MinIO) que sobrevive a reinicio, redespliegue y vuelta atrás, y un dominio propio con su cambio.
+  # Simulado: certificados autofirmados, MinIO y Mailpit (detalle en ops/servidor/ensayo/ensayo.sh). El informe de
+  # verificar.sh queda como artefacto.
+  ensayo-servidor:
+    name: Staging rehearsal (clean server)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build the artifacts as release.yml does
+        run: |
+          tag="ensayo-${GITHUB_SHA::7}"
+          dir="$RUNNER_TEMP/artefactos"
+          mkdir -p "$dir"
+          ./mvnw --batch-mode --no-transfer-progress -DskipTests package
+          cp "$(find target -maxdepth 1 -name '*.jar' ! -name '*original*' | head -n1)" "$dir/uvo-store-$tag.jar"
+          (cd frontend && npm ci && VITE_SENTRY_ENVIRONMENT=staging VITE_SENTRY_RELEASE="$tag" npm run build)
+          (cd frontend && zip -qr "$dir/frontend-dist-$tag-staging.zip" dist)
+          (cd "$dir" && sha256sum "uvo-store-$tag.jar" "frontend-dist-$tag-staging.zip" > SHA256SUMS && cat SHA256SUMS)
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+
+      - name: Server packages, MinIO and Mailpit
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends nginx postgresql jq
+          sudo systemctl start postgresql nginx
+          nginx -v
+          psql --version
+          docker run -d --name minio -p 127.0.0.1:9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
+            minio/minio:RELEASE.2025-04-22T22-12-26Z server /data
+          docker run -d --name mailpit -p 127.0.0.1:1025:1025 -p 127.0.0.1:8025:8025 axllent/mailpit:v1.27.0
+          for _ in $(seq 1 30); do curl -fs http://127.0.0.1:9000/minio/health/live && break; sleep 1; done
+
+      # sudo con el PATH del job: el java de setup-java (21), no el que trae la imagen por omisión.
+      - name: Rehearse
+        run: |
+          dir="$RUNNER_TEMP/artefactos"
+          sudo env "PATH=$PATH" bash ops/servidor/ensayo/ensayo.sh "$dir/uvo-store-$TAG.jar" \
+            "$dir/frontend-dist-$TAG-staging.zip" "$dir/SHA256SUMS" "$RUNNER_TEMP/informe"
+
+      - name: Collect logs
+        if: always()
+        run: |
+          # La carpeta la creó el ensayo como root.
+          informe="$RUNNER_TEMP/informe"
+          sudo mkdir -p "$informe"
+          sudo chown -R "$(id -u)" "$informe"
+          sudo journalctl -u uvostore-staging --no-pager 2>&1 | tee "$informe/backend.log" > /dev/null || true
+          sudo cp /var/log/nginx/error.log "$informe/nginx-error.log" 2> /dev/null || true
+          sudo cp /etc/nginx/conf.d/uvostore-staging.conf "$informe/" 2> /dev/null || true
+          sudo chown -R "$(id -u)" "$informe"
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ensayo-servidor
+          path: ${{ runner.temp }}/informe
+          retention-days: 30
 
   # PROD-14a. Red de navegador: Playwright contra el backend real. GAP-09: el job vive en e2e.yml porque
   # release.yml también lo llama. Su check se llama «E2E / E2E (Playwright)».

@@ -83,7 +83,7 @@ async function main(): Promise<void> {
     PLATFORM_API_KEY: E2E_PLATFORM_API_KEY,
     PUBLIC_STOREFRONT_URL: `http://{host}:${VITE_PORT}`,
     // IMP-04. En `dist`, la API y las imágenes por el mismo origen que la tienda, detrás de nginx, como en
-    // producción (ops/nginx/uvostore.conf): la CSP del build (img-src 'self') no deja cargar otra cosa sobre http.
+    // producción (ops/nginx/uvostore.conf.template): la CSP del build (img-src 'self') no deja cargar otra cosa sobre http.
     PUBLIC_API_URL: `http://{host}:${E2E_MODE === 'dist' ? VITE_PORT : BACKEND_PORT}`,
     APP_UPLOAD_DIR: path.join(workDir, 'uploads'),
     // El POS en el circuito: encendido, y el outbox despachando cada segundo para que la venta llegue pronto.

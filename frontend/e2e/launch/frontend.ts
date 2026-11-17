@@ -116,6 +116,8 @@ ${MIME_TYPES}
         root "${forNginx(dist)}";
         # La dirección propia del proxy, la que el backend tiene en RATE_LIMIT_TRUSTED_PROXIES (support/env.ts).
         proxy_bind ${NGINX_UPSTREAM_ADDRESS};
+        # El upstream de este server, por nombre (ops/nginx/uvostore-locations.conf).
+        set $uvostore_upstream uvostore_backend;
 
         include uvostore/uvostore-locations.conf;
 

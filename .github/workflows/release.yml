@@ -194,10 +194,24 @@ jobs:
           pattern: frontend-dist-*
           merge-multiple: true
 
+      # IMP-05. The server scripts and configuration (ops/) of the same commit as the jar: the server provisions
+      # and deploys with the scripts of the version it installs (docs/despliegue-backend.md), never a newer
+      # checkout. Only ops/ is checked out; owner and dates are fixed so the same commit gives the same tarball.
+      - name: Checkout ops/
+        uses: actions/checkout@v4
+        with:
+          path: repo
+          sparse-checkout: ops
+
+      - name: Package ops/
+        run: |
+          tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='@0' -C repo -czf             uvostore-ops-${{ github.ref_name }}.tar.gz ops
+          rm -rf repo
+
       # IMP-03. What was deployed can be checked against what was built: sha256sum -c SHA256SUMS.
       - name: Checksums
         run: |
-          sha256sum uvo-store-${{ github.ref_name }}.jar frontend-dist-${{ github.ref_name }}-*.zip > SHA256SUMS
+          sha256sum uvo-store-${{ github.ref_name }}.jar frontend-dist-${{ github.ref_name }}-*.zip             uvostore-ops-${{ github.ref_name }}.tar.gz > SHA256SUMS
           cat SHA256SUMS
 
       - name: Create release
@@ -208,4 +222,5 @@ jobs:
             uvo-store-${{ github.ref_name }}.jar
             frontend-dist-${{ github.ref_name }}-staging.zip
             frontend-dist-${{ github.ref_name }}-production.zip
+            uvostore-ops-${{ github.ref_name }}.tar.gz
             SHA256SUMS
