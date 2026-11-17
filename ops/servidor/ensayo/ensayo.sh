@@ -64,6 +64,22 @@ afirmar_igual() { # afirmar_igual <descripción> <esperado> <obtenido>
     [ "$2" = "$3" ] || die "$1: se esperaba '$2' y se obtuvo '$3'"
     echo "OK  $1"
 }
+# Para lo que depende de una recarga de nginx: "systemctl reload nginx" vuelve en cuanto manda la señal, y durante
+# un instante los workers viejos (con la configuración anterior) todavía aceptan conexiones nuevas. Reintenta hasta
+# 15 s antes de dar por fallida la comprobación.
+pronto() { # pronto <descripción> <esperado> <comando...>
+    local desc="$1" esperado="$2" obtenido=""
+    shift 2
+    for _ in $(seq 1 15); do
+        # Sin el || true, un curl que falla durante la recarga cortaría el script (set -e) en lugar de reintentar.
+        obtenido="$("$@")" || true
+        [ "$obtenido" = "$esperado" ] && break
+        sleep 1
+    done
+    afirmar_igual "$desc" "$esperado" "$obtenido"
+}
+# El código de salida de curl al abrir https://<host>/ (35 = handshake rechazado).
+salida_tls() { https "$1" -o /dev/null "https://$1/" && echo 0 || echo $?; }
 
 # ---- Máquina limpia ------------------------------------------------------------------------------------------
 paso "preparación"
@@ -225,7 +241,7 @@ paso "dominio propio: alta, verificación y cambio"
 bash "$SERVIDOR/dominio-propio.sh" alta "$AMBIENTE" "$PROPIO"
 plataforma PUT "/api/platform/stores/$TIENDA_A/domain" "{\"domain\":\"$PROPIO\"}" > /dev/null
 plataforma PUT "/api/platform/stores/$TIENDA_A/domain/verified" '{"verified":true}' | jq -e '.domainVerifiedAt != null' > /dev/null
-afirmar_igual "el dominio propio sirve la tienda A" 200 "$(codigo_de "$PROPIO" "https://$PROPIO/api/v1/store-settings")"
+pronto "el dominio propio sirve la tienda A" 200 codigo_de "$PROPIO" "https://$PROPIO/api/v1/store-settings"
 afirmar_igual "y es la tienda A, no otra" "$IMAGEN" "$(banner_de "$PROPIO")"
 afirmar_igual "la tienda B sigue en su subdominio, sin el banner de A" "sin banner" "$(banner_de "ensayo-b.$DOMINIO")"
 
@@ -236,13 +252,9 @@ echo "OK  cambiar el dominio deja la verificación pendiente"
 afirmar_igual "el dominio viejo ya no resuelve la tienda en el backend" 404 \
     "$(codigo_de "$PROPIO" "https://$PROPIO/api/v1/store-settings")"
 bash "$SERVIDOR/dominio-propio.sh" baja "$AMBIENTE" "$PROPIO"
-set +e
-https "$PROPIO" -o /dev/null "https://$PROPIO/"
-estado=$?
-set -e
-afirmar_igual "dado de baja, nginx rechaza el handshake del dominio viejo" 35 "$estado"
+pronto "dado de baja, nginx rechaza el handshake del dominio viejo" 35 salida_tls "$PROPIO"
 plataforma PUT "/api/platform/stores/$TIENDA_A/domain/verified" '{"verified":true}' > /dev/null
-afirmar_igual "el dominio nuevo sirve la tienda A" 200 "$(codigo_de "$PROPIO_NUEVO" "https://$PROPIO_NUEVO/api/v1/store-settings")"
+pronto "el dominio nuevo sirve la tienda A" 200 codigo_de "$PROPIO_NUEVO" "https://$PROPIO_NUEVO/api/v1/store-settings"
 
 # ---- Verificación final, la misma que en el servidor real ----------------------------------------------------
 paso "verificar.sh"
