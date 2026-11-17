@@ -1,0 +1,65 @@
+# IMP-05 (C02). El backend de UvoStore de un ambiente como servicio de systemd.
+#
+# Plantilla: provisionar.sh la instala como /etc/systemd/system/uvostore-@@AMBIENTE@@.service reemplazando:
+#   @@AMBIENTE@@     staging | production
+#   @@JAVA@@         ruta del java 21 del servidor (command -v java)
+#   @@HEAP_MAX@@     -Xmx de la JVM (HEAP_MAX, por omisión 512m)
+#   @@MEMORIA_MAX@@  techo de memoria del servicio entero, heap incluido (MEMORIA_MAX, por omisión 1G)
+#   @@CPU_MAX@@      CPUQuota (CPU_MAX, por omisión 100%: un núcleo)
+# Los límites existen porque el servidor es el de UvoPOS: un UvoStore desbocado no puede dejar sin memoria ni
+# CPU a AlfozApi (docs/adr/0001-infraestructura-plataforma-uvopos.md).
+#
+# Una sola instancia por ambiente. El despliegue (desplegar-backend.sh) cambia el symlink current.jar y
+# reinicia; no hay dos versiones atendiendo a la vez.
+
+[Unit]
+Description=UvoStore backend (@@AMBIENTE@@)
+After=network-online.target postgresql.service
+Wants=network-online.target
+# Un arranque que falla siempre (una regla de ProductionConfigurationCheck) no se reintenta para siempre: 5
+# intentos en 5 minutos y queda en failed, con el motivo en journalctl -u uvostore-@@AMBIENTE@@.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=uvostore-@@AMBIENTE@@
+Group=uvostore-@@AMBIENTE@@
+# root:uvostore-@@AMBIENTE@@ 640: el servicio lo lee, nadie más del sistema.
+EnvironmentFile=/etc/uvostore/@@AMBIENTE@@.env
+WorkingDirectory=/opt/uvostore-@@AMBIENTE@@
+ExecStart=@@JAVA@@ -Xms256m -Xmx@@HEAP_MAX@@ -XX:+ExitOnOutOfMemoryError -Djava.security.egd=file:/dev/urandom -jar /opt/uvostore-@@AMBIENTE@@/current.jar
+
+# Apagado ordenado (C02). SIGTERM: Spring deja de aceptar peticiones, espera las que están en curso y los jobs
+# programados hasta 30 s por fase (server.shutdown=graceful, spring.lifecycle.timeout-per-shutdown-phase). 60 s
+# cubre eso con margen antes de que systemd mande SIGKILL. 143 = terminado por SIGTERM, que es la salida normal
+# de un java detenido así.
+KillSignal=SIGTERM
+TimeoutStopSec=60
+SuccessExitStatus=143
+Restart=on-failure
+RestartSec=5
+
+# Límites del servidor compartido.
+MemoryMax=@@MEMORIA_MAX@@
+CPUQuota=@@CPU_MAX@@
+TasksMax=512
+
+# Endurecimiento. El proceso no escribe en disco: logs a journald, imágenes a S3, temporales en su /tmp privado.
+# StateDirectory deja /var/lib/uvostore-@@AMBIENTE@@ (suyo y escribible) por si un ambiente usa
+# APP_STORAGE_DRIVER=local con APP_UPLOAD_DIR=/var/lib/uvostore-@@AMBIENTE@@/uploads.
+StateDirectory=uvostore-@@AMBIENTE@@
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

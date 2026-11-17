@@ -11,6 +11,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import org.uvo.uvostore.entity.tenant.Store;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -20,7 +21,7 @@ import java.util.Set;
 // Leaves TenantContext empty (not an error) when nothing resolves — routes that don't need a
 // tenant this way (POS sync/webhooks, which resolve their store via companyId instead;
 // actuator/health; swagger; platform onboarding, which creates the store) simply never read
-// TenantContext, so they're unaffected.
+// TenantContext, so they're unaffected. Store-only routes get a 404 instead (IMP-05, isStoreRoute).
 //
 // G5: es también donde se rechaza una tienda suspendida (y desde PROD-23, una cerrada). El rechazo
 // va aquí y no en StoreHostResolver a propósito: el resolver tiene que seguir devolviendo la tienda
@@ -56,6 +57,11 @@ public class TenantResolutionFilter extends OncePerRequestFilter {
             Optional<Store> store = storeHostResolver.resolve(request.getHeader("Host"));
             store.ifPresent(TenantContext::set);
 
+            if (store.isEmpty() && isStoreRoute(request)) {
+                rejectUnknownHost(response);
+                return;
+            }
+
             if (store.isPresent() && !store.get().isActive() && !isPlatformRoute(request)
                     && !(store.get().isSuspended() && isPaymentCallback(request))) {
                 reject(response, store.get());
@@ -85,6 +91,30 @@ public class TenantResolutionFilter extends OncePerRequestFilter {
         }
         // GAP-19. El retorno de Webpay también llega por GET: es como vuelve el ambiente real de Transbank.
         return "GET".equals(request.getMethod()) && WEBPAY_RETURN.equals(uri);
+    }
+
+    // IMP-05. Las rutas que solo existen dentro de una tienda: la vitrina, el panel y la cuenta del comprador.
+    // Con un Host que no es de ninguna tienda (un subdominio inexistente del comodín, un dominio que nginx deja
+    // pasar por error) responden 404 de inmediato, igual que si la tienda no existiera, en vez de llegar al
+    // controlador y fallar con el 400 de TenantContext.requireCurrent() o, peor, con lo que haga una ruta que
+    // no lo llama. Es una lista de las que sí, no de las que no: una ruta nueva fuera de estos prefijos sigue
+    // como antes. Fuera quedan las que no tienen tienda por Host: /api/platform (la crea), /api/sync y
+    // /api/webhooks/pos (la resuelven por empresa), /actuator, swagger y /uploads.
+    private static final List<String> STORE_ROUTE_PREFIXES = List.of("/api/v1/", "/api/admin/", "/api/customer/");
+
+    // El catálogo de regiones y comunas es igual para todas las tiendas (PublicGeoController).
+    private static final String GLOBAL_GEO_PREFIX = "/api/v1/geo/";
+
+    private static boolean isStoreRoute(HttpServletRequest request) {
+        String uri = request.getRequestURI();
+        return STORE_ROUTE_PREFIXES.stream().anyMatch(uri::startsWith) && !uri.startsWith(GLOBAL_GEO_PREFIX);
+    }
+
+    private static void rejectUnknownHost(HttpServletResponse response) throws IOException {
+        response.setStatus(HttpServletResponse.SC_NOT_FOUND);
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setCharacterEncoding("UTF-8");
+        response.getWriter().write("{\"message\":\"Tienda no encontrada\"}");
     }
 
     private static void reject(HttpServletResponse response, Store store) throws IOException {

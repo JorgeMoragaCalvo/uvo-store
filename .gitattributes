@@ -4,3 +4,9 @@
 docs/api/*.json text eol=lf
 # IMP-04: los scripts de publicación corren en Linux
 ops/nginx/*.sh text eol=lf
+# IMP-05: lo que se ejecuta o se renderiza en el servidor (bash, sed, systemd, psql), siempre con LF
+ops/servidor/** text eol=lf
+ops/postgres/*.sql text eol=lf
+ops/nginx/*.template text eol=lf
+ops/nginx/default.conf text eol=lf
+ops/s3/*.json text eol=lf

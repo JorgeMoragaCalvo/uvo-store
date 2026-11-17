@@ -1,0 +1,36 @@
+# IMP-05. El dominio propio de una tienda (stores.domain), en un ambiente.
+#
+# Plantilla: ops/servidor/dominio-propio.sh la renderiza en /etc/nginx/uvostore/@@AMBIENTE@@/dominios/@@DOMINIO@@.conf
+# después de obtener el certificado, y uvostore-@@AMBIENTE@@.conf la incluye. Mismas rutas, cabeceras y proxy que el
+# comodín de la plataforma; solo cambian el nombre y el certificado.
+#
+# Marcadores: @@AMBIENTE@@, @@DOMINIO@@ (el dominio exacto, sin www: es lo que la tienda tiene en stores.domain)
+# y @@CERTS_DOMINIO@@ (carpeta con fullchain.pem y privkey.pem; con Certbot, /etc/letsencrypt/live/@@DOMINIO@@).
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name @@DOMINIO@@;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name @@DOMINIO@@;
+
+    ssl_certificate     @@CERTS_DOMINIO@@/fullchain.pem;
+    ssl_certificate_key @@CERTS_DOMINIO@@/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    root /srv/uvostore-@@AMBIENTE@@/frontend/current;
+    set $uvostore_upstream uvostore_@@AMBIENTE@@;
+    proxy_bind 127.0.0.2;
+    include uvostore/uvostore-locations.conf;
+}

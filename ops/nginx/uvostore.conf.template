@@ -1,0 +1,71 @@
+# IMP-05. nginx de UvoStore para un ambiente (staging o producción) en el servidor de la plataforma UvoPOS.
+#
+# Plantilla: ops/servidor/provisionar.sh la renderiza en /etc/nginx/conf.d/uvostore-<ambiente>.conf reemplazando
+# los marcadores @@...@@ (sed, nada más: las variables de nginx con $ quedan como están). Decisión y contexto:
+# docs/adr/0001-infraestructura-plataforma-uvopos.md; procedimiento: docs/despliegue-backend.md.
+#
+# Marcadores:
+#   @@AMBIENTE@@         staging | production. Nombra el upstream, la raíz y la carpeta de dominios propios, así
+#                        que los dos ambientes conviven en el mismo nginx sin pisarse.
+#   @@DOMINIO_TIENDAS@@  PUBLIC_PLATFORM_DOMAIN del ambiente: las tiendas sin dominio propio son
+#                        <slug>.@@DOMINIO_TIENDAS@@. Staging usa uno distinto del de producción.
+#   @@PUERTO_BACKEND@@   SERVER_PORT del backend de este ambiente, que escucha solo en 127.0.0.1. Nunca el 8080:
+#                        es el de AlfozApi en el mismo servidor.
+#   @@CERTS_TIENDAS@@    carpeta con fullchain.pem y privkey.pem del certificado comodín (*.@@DOMINIO_TIENDAS@@ y
+#                        @@DOMINIO_TIENDAS@@). Con Certbot, /etc/letsencrypt/live/@@DOMINIO_TIENDAS@@; el comodín
+#                        exige el desafío DNS-01.
+#
+# Instalación (la hace provisionar.sh):
+#   /etc/nginx/uvostore/                          <- uvostore-locations.conf y security-headers.conf
+#   /etc/nginx/uvostore/@@AMBIENTE@@/dominios/    <- un archivo por dominio propio (dominio-propio.sh)
+#   /etc/nginx/conf.d/uvostore-default.conf       <- default.conf: corta los hosts que nadie configuró
+#   /srv/uvostore-@@AMBIENTE@@/frontend/current   <- lo crea publicar-frontend.sh
+#
+# Va con el backend configurado así (ops/servidor/uvostore.env.example):
+#   SERVER_ADDRESS=127.0.0.1  SERVER_PORT=@@PUERTO_BACKEND@@
+#   PUBLIC_STOREFRONT_URL=https://{host}  PUBLIC_API_URL=https://{host}   (mismo origen: CSP img-src 'self')
+#   RATE_LIMIT_TRUSTED_PROXIES=127.0.0.2  (el proxy_bind de abajo)
+# Y NUNCA server.forward-headers-strategy (CLAUDE.md).
+#
+# "listen ... ssl http2" y no la directiva "http2 on": esa existe desde nginx 1.25.1 y Ubuntu 24.04 trae la 1.24.
+# En versiones nuevas la forma de listen solo da un aviso.
+
+upstream uvostore_@@AMBIENTE@@ {
+    server 127.0.0.1:@@PUERTO_BACKEND@@;
+    keepalive 16;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name .@@DOMINIO_TIENDAS@@;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    # Con el punto delante cubre el dominio y cualquier subdominio. Un slug que no existe llega igual al backend,
+    # que responde 404 en las rutas de tienda (TenantResolutionFilter); el HTML de la SPA sí se sirve.
+    server_name .@@DOMINIO_TIENDAS@@;
+
+    ssl_certificate     @@CERTS_TIENDAS@@/fullchain.pem;
+    ssl_certificate_key @@CERTS_TIENDAS@@/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    root /srv/uvostore-@@AMBIENTE@@/frontend/current;
+    set $uvostore_upstream uvostore_@@AMBIENTE@@;
+    # nginx sale hacia el backend desde 127.0.0.2: así el backend distingue al proxy (de confianza, con
+    # X-Forwarded-For) del POS, que llama a /api/platform desde 127.0.0.1 sin pasar por aquí.
+    proxy_bind 127.0.0.2;
+    include uvostore/uvostore-locations.conf;
+}
+
+# Los dominios propios verificados de este ambiente, uno por archivo (ops/servidor/dominio-propio.sh).
+include uvostore/@@AMBIENTE@@/dominios/*.conf;

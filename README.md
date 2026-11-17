@@ -207,11 +207,15 @@ CI (`.github/workflows/`):
 - `release.yml`, on a `vX.Y.Z` tag: builds the backend jar and one frontend bundle per environment
   (`frontend-dist-<tag>-staging.zip`, `frontend-dist-<tag>-production.zip`, each with its own Sentry DSN,
   environment and CSP), runs the end-to-end suite on that same commit, and publishes the GitHub Release with a
-  `SHA256SUMS` only if it passes. It needs the GitHub Environments `staging` and `production`, each with a
+  `SHA256SUMS` only if it passes. The release also carries `uvostore-ops-<tag>.tar.gz`, the server scripts and
+  configuration of that same commit. It needs the GitHub Environments `staging` and `production`, each with a
   `VITE_SENTRY_DSN` variable; without it the release fails. Publishing a release does not deploy anything.
-  Deploy the zip of the target environment and set the backend's `SENTRY_RELEASE` to the same tag
-  (`docs/observabilidad.md`).
+  The server is provisioned and deployed with `ops/servidor/` (`docs/despliegue-backend.md`), which also sets the
+  backend's `SENTRY_RELEASE` to the deployed tag (`docs/observabilidad.md`).
 - The `monitoring` job in `ci.yml` checks and unit-tests the alert rules in `ops/monitoring/` with `promtool`.
-- The `nginx` job in `ci.yml` checks the reference nginx config in `ops/nginx/` and tests the publish script.
+- The `nginx` job in `ci.yml` checks the nginx templates in `ops/nginx/` for both environments, tests the publish
+  script and runs shellcheck on the server scripts.
+- The `ensayo-servidor` job in `ci.yml` builds staging from scratch on a clean Ubuntu runner with `ops/servidor/`
+  (systemd, PostgreSQL roles, nginx, S3 through S3Mock, a custom domain) and keeps the `verificar.sh` report.
   The end-to-end job keeps the build it tested, with its checksum, as the `e2e-evidencia` artifact. Serving
   and publishing the frontend: `docs/despliegue-frontend.md`.

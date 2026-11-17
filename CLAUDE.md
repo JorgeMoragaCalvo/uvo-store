@@ -57,7 +57,7 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
 
 ## Multi-tenancy
 
-- `TenantContext` (ThreadLocal) holds the current request's `Store`. `TenantResolutionFilter` populates it from the `Host` header: exact match on `Store.domain` first (a client's own custom domain), then a `<slug>.<platform-domain>` subdomain match as the fallback every store keeps working under regardless (e.g. `demo.localhost:8080` in dev). **PROD-05a:** the fallback accepts the host only when it is *exactly* one label plus `app.public-url.platform-domain` (`StorePublicUrlResolver.slugOfPlatformHost`, which sits next to the code that composes that same subdomain so the two can't drift) — `demo.somebody-else.com`, `a.demo.<platform-domain>` and the bare platform domain resolve nothing. Before, it took the first label of *any* hostname, and since CORS shares the resolver, a foreign origin borrowing a real store's nick got credentialed access. The custom-domain match is unchanged. Consequence for dev: a `VITE_DEV_PROXY_TARGET` or `Host` outside `*.<platform-domain>` (default `localhost`) now answers 400 "no se pudo determinar la tienda" instead of resolving by accident. This does **not** close PROD-05: the proxy must still reject unknown hosts (PROD-03/05c). `JwtAuthenticationFilter` cross-checks the token's `sid` claim against the resolved tenant — a mismatch clears the security context (and so answers **401**, F19), not a silent cross-tenant leak.
+- `TenantContext` (ThreadLocal) holds the current request's `Store`. `TenantResolutionFilter` populates it from the `Host` header: exact match on `Store.domain` first (a client's own custom domain), then a `<slug>.<platform-domain>` subdomain match as the fallback every store keeps working under regardless (e.g. `demo.localhost:8080` in dev). **PROD-05a:** the fallback accepts the host only when it is *exactly* one label plus `app.public-url.platform-domain` (`StorePublicUrlResolver.slugOfPlatformHost`, which sits next to the code that composes that same subdomain so the two can't drift) — `demo.somebody-else.com`, `a.demo.<platform-domain>` and the bare platform domain resolve nothing. Before, it took the first label of *any* hostname, and since CORS shares the resolver, a foreign origin borrowing a real store's nick got credentialed access. The custom-domain match is unchanged. Consequence for dev: a `VITE_DEV_PROXY_TARGET` or `Host` outside `*.<platform-domain>` (default `localhost`) now answers 404 "Tienda no encontrada" on store routes instead of resolving by accident. **IMP-05** closes the other half: `ops/nginx/default.conf` drops any host no server has (444 on 80, `ssl_reject_handshake` on 443), and since the platform wildcard lets any slug through nginx, `TenantResolutionFilter` answers **404** `{"message":"Tienda no encontrada"}` before authentication on store routes (`/api/v1/**` except the global `/api/v1/geo/**`, `/api/admin/**`, `/api/customer/**`) when the Host resolves no store. It's an allowlist of prefixes on purpose: `/api/platform`, `/api/sync`, `/api/webhooks/pos`, actuator, swagger and `/uploads` keep working without a store (`UnknownHostTest`). Before, those requests reached the controller and failed with `requireCurrent()`'s 400, or not at all. `JwtAuthenticationFilter` cross-checks the token's `sid` claim against the resolved tenant — a mismatch clears the security context (and so answers **401**, F19), not a silent cross-tenant leak.
 - **A repository query on a tenant entity must name the store (PROD-17b).** E-mails, slugs, SKUs, coupon
   codes, role names and setting keys are unique *per store*, not globally, so `findByEmail(String)` on
   `CustomerRepository` would return — or count — another store's customer the day someone called it
@@ -134,7 +134,7 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
   domain clears the flag, so a new domain never inherits it.
 - The frontend computes every API client's `baseURL` **at runtime** from `window.location.origin` (`frontend/src/services/api.ts`, `admin/services/adminApi.ts`, `platform/services/platformApi.ts`) — not from a build-time env var — so one deployed frontend build serves any tenant. In dev, Vite's own proxy (`vite.config.ts`) forwards `/api/*` to `VITE_DEV_PROXY_TARGET` (`frontend/.env`, default `http://demo.localhost:8080`) so the browser still sees same-origin requests, matching production. Since
 PROD-14a the proxy keeps the browser's store: a page on `<slug>.localhost:5173` reaches the backend as
-`<slug>.localhost:8080`, and only a bare `localhost` goes to the target store. In production this assumes frontend static assets and the API are served from the same origin (a reverse proxy). The reference nginx config is versioned in `ops/nginx/` (IMP-04, `docs/despliegue-frontend.md`) and the E2E runs against it, but nothing is deployed yet, see "Known gotchas".
+`<slug>.localhost:8080`, and only a bare `localhost` goes to the target store. In production this assumes frontend static assets and the API are served from the same origin (a reverse proxy). The nginx config is versioned in `ops/nginx/` (IMP-04, `docs/despliegue-frontend.md`) and the server provisioning in `ops/servidor/` (IMP-05, `docs/despliegue-backend.md`); the E2E and the CI rehearsal run against them, but nothing is deployed yet, see "Known gotchas".
 
 ## Local environment
 
@@ -1124,7 +1124,10 @@ constructor, like the other startup validators. **All errors come out together**
   for `null`, so the placeholder's `""` builds a second datasource with an empty user that can't connect.
   Customizers run after Boot sets the datasource, so this one wins. Nothing in `src/main` issues DDL or
   `TRUNCATE` at runtime, and Hibernate's `validate` reads `pg_catalog`, so DML grants are enough.
-- **Provisioning SQL for the two roles** (PROD-08b does it on the platform; role names are illustrative):
+- **Provisioning SQL for the two roles.** The real, idempotent version is `ops/postgres/roles.sql` (IMP-05), applied by
+  `ops/servidor/provisionar.sh`: database `uvostore_<env>` owned by `uvostore_<env>_migrador`, app role
+  `uvostore_<env>_app` with `CONNECTION LIMIT` = pool + 2, `REVOKE ALL ON DATABASE ... FROM PUBLIC` so staging's
+  roles can't even connect to production's base. Passwords come in on stdin (`\set`), never argv. The gist:
   ```sql
   CREATE ROLE uvostore_migrator LOGIN PASSWORD '...';
   CREATE ROLE uvostore_app LOGIN PASSWORD '...';
@@ -1818,8 +1821,52 @@ the called job's). The job:
    generated nginx.conf with the copied snippets, `build-info.txt` and the HTML report (IMP-04).
 
 On failure it uploads `playwright-report/`, `test-results/` (traces and screenshots) and the
-logs for 7 days. The `nginx` job in `ci.yml` runs `nginx -t` on `ops/nginx/uvostore.conf` (self-signed certs
-in place of Certbot's) and `ops/nginx/publicar-frontend.test.sh`. **#33 is pointing this same harness at staging.**
+logs for 7 days. The `nginx` job in `ci.yml` renders `ops/nginx/uvostore.conf.template` for staging and production
+together (plus `default.conf` and one custom domain each, self-signed certs in place of Certbot's), runs `nginx -t`
+(failing on a conflicting server name), `ops/nginx/publicar-frontend.test.sh` and `shellcheck -S warning`. The
+`ensayo-servidor` job builds staging from scratch (see "Server provisioning" below). **#33 is pointing this same
+harness at staging.**
+
+### Server provisioning (IMP-05)
+
+Decision: `docs/adr/0001-infraestructura-plataforma-uvopos.md` (UvoPOS's Ubuntu VPS: jar in systemd, shared nginx,
+its PostgreSQL, S3). Runbook and evidence per checklist item: `docs/despliegue-backend.md`.
+- `ops/servidor/`: `provisionar.sh <env>` (user, dirs, `/etc/uvostore/<env>.env` with generated secrets, roles,
+  unit, nginx; idempotent, the first run stops with exit 2 until a human fills the `CAMBIAR_` values),
+  `desplegar-backend.sh` (SHA256SUMS, atomic `current.jar`, `SENTRY_RELEASE=<tag>`, restart, wait for readiness;
+  `--activar` rolls back; never rolls back on its own because a migration may have run), `dominio-propio.sh
+  alta|baja`, `verificar.sh` (the evidence report, secrets masked). Shared helpers in `comun.sh`.
+- Everything per environment is named after it (`uvostore-<env>` user/service/upstream, `/opt/uvostore-<env>`,
+  `/srv/uvostore-<env>/frontend`, base `uvostore_<env>`), so staging and production share the server and nothing
+  else. Backend ports 8081/8082 on 127.0.0.1 — **never 8080, AlfozApi's**.
+- nginx reaches the backend from **127.0.0.2** (`proxy_bind`), the only `RATE_LIMIT_TRUSTED_PROXIES`; the POS calls
+  `/api/platform` from 127.0.0.1 directly (`PLATFORM_ALLOWED_NETWORKS=127.0.0.1/32`). Same trick as the E2E.
+- Templates use `@@NAME@@` markers rendered with sed (`renderizar` in `comun.sh`, which fails on any leftover
+  marker), so nginx's and systemd's `$` survive. `uvostore-locations.conf` proxies to `$uvostore_upstream`, which
+  every including server must `set` (the E2E's generated conf does).
+- `listen 443 ssl http2`, **not** `http2 on`: that directive is nginx ≥ 1.25.1 and Ubuntu 24.04 ships 1.24.
+  `default.conf` repeats `http2` on its listen, or nginx warns "protocol options redefined".
+- Scripts are committed 100644, so they're always run as `sudo bash ops/...`. `.gitattributes` forces LF on
+  `ops/servidor/**`, templates, `roles.sql` and `default.conf`.
+- `release.yml` attaches `uvostore-ops-<tag>.tar.gz` (sparse checkout of `ops/`, deterministic tar) and includes it
+  in `SHA256SUMS`: the server always runs the scripts of the version it installs.
+- **The rehearsal** (`ops/servidor/ensayo/ensayo.sh`, CI job `ensayo-servidor` on `ubuntu-24.04`): apt nginx +
+  PostgreSQL, S3Mock (`adobe/s3mock`; `minio/minio` is gone from Docker Hub) and Mailpit containers, artifacts built like the release, `sudo env "PATH=$PATH"` so the unit
+  gets setup-java's 21 and not the image's default java. It runs the three provisioning passes, deploys, two
+  stores (owner invitations read from Mailpit's API), a banner image in S3Mock that survives restart, redeploy and
+  rollback, a custom domain with its change, and `verificar.sh --reinicio --inseguro` (report uploaded as the
+  `ensayo-servidor` artifact). The banner upload needs `textPosition`, `textColor`, `overlayColor`, `ctaText` and
+  `ctaLink`, or it 500s (NPE / NOT NULL) — the panel always sends them.
+- Two behaviours worth knowing: a spoofed `X-Forwarded-For` on `/api/platform` from a non-proxy socket gets
+  **404** (the platform API hides itself), not 403; and the platform API can change a store's domain but not
+  remove it (`UpdateStoreDomainRequest` is `@NotBlank`) — only closing the store clears it.
+- Rehearsal gotchas already hit on CI: `systemctl reload nginx` returns before the old workers stop taking new
+  connections, so a check right after a reload must retry (`pronto` in `ensayo.sh`); Java on Linux binds
+  `127.0.0.1` through an IPv6 socket, so `ss` shows `[::ffff:127.0.0.1]` (accepted as loopback by `verificar.sh`);
+  and when `verificar.sh` fails, the rehearsal's error lists its `FALLA` lines.
+- Verified locally without systemd: `roles.sql` on a throwaway PostgreSQL 18 cluster (idempotent, rejects a bad
+  env with exit 3), and the jar against it with `APP_ENVIRONMENT=staging` (Flyway with the migrator, all startup
+  rules green). The full rehearsal only runs in CI.
 
 ## Known gotchas
 
@@ -1899,10 +1946,11 @@ in place of Certbot's) and `ops/nginx/publicar-frontend.test.sh`. **#33 is point
   `npx tsc -b`** (what `npm run build` runs). Run the full trio before calling frontend work done:
   `npx tsc -b`, `npm run lint`, `npm run test`. Skipping lint is how a
   `react-refresh/only-export-components` error shipped once — `tsc` and Vitest were both green.
-- **No deployment infrastructure exists yet** (no Docker, no deployed reverse proxy, no SSL) — paused
-  pending a hosting decision. What exists is the reference nginx config and the atomic publish script in
-  `ops/nginx/` (IMP-04, `docs/despliegue-frontend.md`), exercised by the E2E but not deployed anywhere. Client custom domains and same-origin frontend+API in production
-  both depend on that piece landing eventually.
+- **Nothing is deployed yet.** The platform is decided (`docs/adr/0001-infraestructura-plataforma-uvopos.md`) and
+  everything needed to install it is versioned: `ops/nginx/` (IMP-04), `ops/servidor/`, `ops/postgres/` and
+  `ops/s3/` (IMP-05, runbook `docs/despliegue-backend.md`), rehearsed from scratch by the `ensayo-servidor` CI job.
+  Installing it on the real server (DNS and its Certbot plugin, certificates, buckets, SMTP) waits on external
+  access; until then C02-C09 stay open.
 - **The Laravel/Vue predecessor lives outside this repo** at `C:\Users\jorgemc\Desktop\uvostore_1.0`.
   Its Vue SPA (`resources/js/`) was dead code (never mounted) — the real reference for "what
   should this page do" was always the Blade views + `app.js` + the Livewire home component, not
