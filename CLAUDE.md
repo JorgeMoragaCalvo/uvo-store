@@ -1860,6 +1860,10 @@ its PostgreSQL, S3). Runbook and evidence per checklist item: `docs/despliegue-b
 - Two behaviours worth knowing: a spoofed `X-Forwarded-For` on `/api/platform` from a non-proxy socket gets
   **404** (the platform API hides itself), not 403; and the platform API can change a store's domain but not
   remove it (`UpdateStoreDomainRequest` is `@NotBlank`) — only closing the store clears it.
+- Rehearsal gotchas already hit on CI: `systemctl reload nginx` returns before the old workers stop taking new
+  connections, so a check right after a reload must retry (`pronto` in `ensayo.sh`); Java on Linux binds
+  `127.0.0.1` through an IPv6 socket, so `ss` shows `[::ffff:127.0.0.1]` (accepted as loopback by `verificar.sh`);
+  and when `verificar.sh` fails, the rehearsal's error lists its `FALLA` lines.
 - Verified locally without systemd: `roles.sql` on a throwaway PostgreSQL 18 cluster (idempotent, rejects a bad
   env with exit 3), and the jar against it with `APP_ENVIRONMENT=staging` (Flyway with the migrator, all startup
   rules green). The full rehearsal only runs in CI.

@@ -262,6 +262,9 @@ set +e
 bash "$SERVIDOR/verificar.sh" "$AMBIENTE" --tienda ensayo-a --dominio-propio "$PROPIO_NUEVO" --imagen "$IMAGEN"     --reinicio --inseguro | tee "$INFORME/verificacion-staging.txt"
 estado=${PIPESTATUS[0]}
 set -e
-afirmar_igual "verificar.sh sin fallas" 0 "$estado"
+# Si algo falló, que el error lo diga sin tener que buscarlo en el log ni bajar el artefacto.
+[ "$estado" = 0 ] || die "verificar.sh tuvo fallas:
+$(grep '^FALLA' "$INFORME/verificacion-staging.txt")"
+echo "OK  verificar.sh sin fallas"
 
 paso "ensayo completo"

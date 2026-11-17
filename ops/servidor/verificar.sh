@@ -121,7 +121,8 @@ solo_loopback() {
     todas="$(direcciones_en "$1")"
     [ -n "$todas" ] || return 1
     for d in $todas; do
-        case "$d" in 127.* | "[::1]" | ::1) ;; *) return 1 ;; esac
+        # Java en Linux abre el socket como IPv6 aunque se le pida 127.0.0.1, y ss lo muestra como [::ffff:127.0.0.1].
+        case "$d" in 127.* | "[::1]" | ::1 | "[::ffff:127."*) ;; *) return 1 ;; esac
     done
 }
 if solo_loopback "$PUERTO"; then ok "backend ($PUERTO) escucha solo en loopback"; else falla "backend ($PUERTO) escucha en: $(direcciones_en "$PUERTO" | tr '\n' ' ')"; fi
@@ -211,7 +212,16 @@ if [ "$REINICIO" = 1 ]; then
     inicio=$(date +%s)
     systemctl stop "$SERVICIO"
     dato "detenido en $(($(date +%s) - inicio)) s"
-    if journalctl -u "$SERVICIO" --since "$desde" --no-pager | grep -q 'Graceful shutdown complete'; then
+    # journald puede escribir las últimas líneas del proceso un instante después de que systemctl stop vuelve.
+    apagado=0
+    for _ in 1 2 3 4 5; do
+        if journalctl -u "$SERVICIO" --since "$desde" --no-pager | grep -q 'Graceful shutdown complete'; then
+            apagado=1
+            break
+        fi
+        sleep 1
+    done
+    if [ "$apagado" = 1 ]; then
         ok "Spring completó el apagado ordenado"
     else
         falla "no aparece «Graceful shutdown complete» en el log"
