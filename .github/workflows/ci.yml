@@ -164,8 +164,8 @@ jobs:
   # IMP-05 (paso 7). Construye staging desde cero en una máquina Ubuntu limpia, solo con los scripts de ops/ y los
   # artefactos armados como en release.yml, y comprueba lo que prometen: systemd con APP_ENVIRONMENT=staging (todas
   # las reglas de arranque, roles de base incluidos), nginx con hosts desconocidos rechazados, dos tiendas, una
-  # imagen en S3 (MinIO) que sobrevive a reinicio, redespliegue y vuelta atrás, y un dominio propio con su cambio.
-  # Simulado: certificados autofirmados, MinIO y Mailpit (detalle en ops/servidor/ensayo/ensayo.sh). El informe de
+  # imagen en S3 (S3Mock) que sobrevive a reinicio, redespliegue y vuelta atrás, y un dominio propio con su cambio.
+  # Simulado: certificados autofirmados, S3Mock y Mailpit (detalle en ops/servidor/ensayo/ensayo.sh). El informe de
   # verificar.sh queda como artefacto.
   ensayo-servidor:
     name: Staging rehearsal (clean server)
@@ -201,18 +201,18 @@ jobs:
           (cd "$dir" && sha256sum "uvo-store-$tag.jar" "frontend-dist-$tag-staging.zip" > SHA256SUMS && cat SHA256SUMS)
           echo "TAG=$tag" >> "$GITHUB_ENV"
 
-      - name: Server packages, MinIO and Mailpit
+      - name: Server packages, S3Mock and Mailpit
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends nginx postgresql jq
           sudo systemctl start postgresql nginx
           nginx -v
           psql --version
-          docker run -d --name minio -p 127.0.0.1:9000:9000 \
-            -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
-            minio/minio:RELEASE.2025-04-22T22-12-26Z server /data
+          # S3Mock y no MinIO: la imagen minio/minio ya no se publica en Docker Hub.
+          docker run -d --name s3mock -p 127.0.0.1:9090:9090 adobe/s3mock:5.2.3
           docker run -d --name mailpit -p 127.0.0.1:1025:1025 -p 127.0.0.1:8025:8025 axllent/mailpit:v1.27.0
-          for _ in $(seq 1 30); do curl -fs http://127.0.0.1:9000/minio/health/live && break; sleep 1; done
+          for _ in $(seq 1 60); do curl -fs -o /dev/null http://127.0.0.1:9090/ && break; sleep 1; done
+          curl -fsS -o /dev/null http://127.0.0.1:9090/
 
       # sudo con el PATH del job: el java de setup-java (21), no el que trae la imagen por omisión.
       - name: Rehearse

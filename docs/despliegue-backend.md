@@ -133,11 +133,11 @@ El job **`ensayo-servidor`** de `ci.yml` (`ops/servidor/ensayo/ensayo.sh`) const
 - Dos tiendas:
   - el token de una no sirve en la otra;
   - un `X-Forwarded-For` que no viene del proxy se rechaza.
-- Una imagen en S3 (MinIO) sobrevive a reinicio, redespliegue con otra versión y vuelta atrás.
+- Una imagen en S3 (S3Mock) sobrevive a reinicio, redespliegue con otra versión y vuelta atrás.
 - Dominio propio: alta, verificación y cambio. El viejo da 404 en el backend y, dado de baja, nginx rechaza su handshake.
 - `verificar.sh` completo, con apagado ordenado. Su informe queda como artefacto `ensayo-servidor` (30 días).
 
-**Simulado:** certificados autofirmados, MinIO en lugar de S3, Mailpit en lugar del SMTP, y nombres `.test` sin DNS.
+**Simulado:** certificados autofirmados, S3Mock en lugar de S3 (no aplica políticas de bucket: las de `ops/s3/` solo se validan como JSON), Mailpit en lugar del SMTP, y nombres `.test` sin DNS.
 
 Es la «ejecución limpia» del paso 7 de IMP-05. Lo que solo se ve en el servidor real queda en la tabla siguiente.
 

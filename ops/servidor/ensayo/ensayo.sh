@@ -6,14 +6,15 @@
 #
 #   sudo bash ops/servidor/ensayo/ensayo.sh <uvo-store-X.jar> <frontend-dist-X-staging.zip> <SHA256SUMS> <carpeta-informe>
 #
-# Requisitos (los instala el job): PostgreSQL corriendo, nginx, Java 21, curl, jq, aws (CLI), MinIO en
-# 127.0.0.1:9000 (minioadmin/minioadmin) y Mailpit en 127.0.0.1:1025 (SMTP) y :8025 (API).
+# Requisitos (los instala el job): PostgreSQL corriendo, nginx, Java 21, curl, jq, aws (CLI), S3Mock (adobe/s3mock)
+# en 127.0.0.1:9090 y Mailpit en 127.0.0.1:1025 (SMTP) y :8025 (API).
 #
 # Qué es simulado y qué no:
 #   real      systemd, la unidad y sus límites; PostgreSQL con los roles de roles.sql y APP_ENVIRONMENT=staging, así
 #             que corren TODAS las reglas de arranque, DatabaseRole incluido; nginx con las mismas plantillas;
 #             Flyway con el rol migrador; el despliegue, la vuelta atrás y la publicación del frontend.
-#   simulado  certificados autofirmados en lugar de Let's Encrypt; MinIO en lugar de S3 (misma API); Mailpit en lugar
+#   simulado  certificados autofirmados en lugar de Let's Encrypt; S3Mock en lugar de S3 (misma API para subir, leer
+#             y borrar; no aplica políticas de bucket, así que la de lectura pública solo se valida); Mailpit en lugar
 #             del SMTP real; nombres .test resueltos a 127.0.0.1 con curl --resolve en lugar de DNS.
 
 set -euo pipefail
@@ -72,13 +73,19 @@ grep -q " $IMAGENES\$" /etc/hosts || echo "127.0.0.1 $IMAGENES" >> /etc/hosts
 rm -f /etc/nginx/sites-enabled/default
 systemctl reload nginx || systemctl start nginx
 
-export AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin AWS_DEFAULT_REGION=us-east-1
+# S3Mock no valida credenciales; van igual porque el SDK y la CLI firman todas las peticiones.
+export AWS_ACCESS_KEY_ID=ensayo AWS_SECRET_ACCESS_KEY=ensayo AWS_DEFAULT_REGION=us-east-1
 aws configure set default.s3.addressing_style path
-S3=(aws --endpoint-url http://127.0.0.1:9000 s3api)
+S3=(aws --endpoint-url http://127.0.0.1:9090 s3api)
 "${S3[@]}" create-bucket --bucket "$BUCKET" > /dev/null
-tmp="$(mktemp)"
-renderizar "$OPS/s3/politica-lectura-publica.json" "$tmp" BUCKET="$BUCKET"
-"${S3[@]}" put-bucket-policy --bucket "$BUCKET" --policy "file://$tmp"
+# S3Mock no implementa PutBucketPolicy (y sirve los objetos sin autenticar, como el bucket público). La política
+# solo se puede ejercitar en S3 de verdad; aquí se comprueba que se renderiza y es JSON con el bucket correcto.
+for politica in politica-lectura-publica politica-iam-aplicacion; do
+    tmp="$(mktemp)"
+    renderizar "$OPS/s3/$politica.json" "$tmp" BUCKET="$BUCKET"
+    jq -e --arg r "arn:aws:s3:::$BUCKET/*" '.Statement[0].Resource == $r' "$tmp" > /dev/null \
+        || die "ops/s3/$politica.json no queda como JSON válido para $BUCKET"
+done
 
 # ---- Provisión -----------------------------------------------------------------------------------------------
 paso "provisionar.sh, primera vez: crea el archivo de entorno y se detiene"
@@ -94,9 +101,9 @@ echo "OK  sin marcadores; secretos generados: $(grep -cE '^(JWT_SECRET|PLATFORM_
 # Lo que completaría una persona: aquí, los servicios del ensayo.
 fijar_env "$ENV_FILE" APP_STORAGE_S3_BUCKET "$BUCKET"
 fijar_env "$ENV_FILE" APP_STORAGE_S3_REGION us-east-1
-fijar_env "$ENV_FILE" APP_STORAGE_S3_ACCESS_KEY minioadmin
-fijar_env "$ENV_FILE" APP_STORAGE_S3_SECRET_KEY minioadmin
-fijar_env "$ENV_FILE" APP_STORAGE_S3_ENDPOINT http://127.0.0.1:9000
+fijar_env "$ENV_FILE" APP_STORAGE_S3_ACCESS_KEY ensayo
+fijar_env "$ENV_FILE" APP_STORAGE_S3_SECRET_KEY ensayo
+fijar_env "$ENV_FILE" APP_STORAGE_S3_ENDPOINT http://127.0.0.1:9090
 fijar_env "$ENV_FILE" APP_STORAGE_S3_PUBLIC_BASE_URL "https://$IMAGENES/$BUCKET"
 fijar_env "$ENV_FILE" MAIL_HOST 127.0.0.1
 fijar_env "$ENV_FILE" MAIL_PORT 1025
@@ -174,7 +181,7 @@ afirmar_igual "cada token sirve en su tienda" 200 \
     "$(codigo_de ensayo-b."$DOMINIO" -H "Authorization: Bearer $JWT_B" "https://ensayo-b.$DOMINIO/api/admin/products")"
 
 # ---- Imágenes persistentes (C09) -----------------------------------------------------------------------------
-paso "imagen subida a S3 (MinIO)"
+paso "imagen subida a S3 (S3Mock)"
 png="$(mktemp --suffix=.png)"
 base64 -d > "$png" <<< 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
 IMAGEN="$(https "ensayo-a.$DOMINIO" -X POST "https://ensayo-a.$DOMINIO/api/admin/home/banners" \
@@ -186,6 +193,8 @@ echo "    $IMAGEN"
 case "$IMAGEN" in "https://$IMAGENES/$BUCKET/"*) ;; *) die "la URL de la imagen no es la pública del bucket: $IMAGEN" ;; esac
 imagen_sirve() { [ "$(codigo_de "$IMAGENES" "$IMAGEN")" = 200 ]; }
 imagen_sirve || die "la imagen no se sirve"
+"${S3[@]}" head-object --bucket "$BUCKET" --key "${IMAGEN#"https://$IMAGENES/$BUCKET/"}" > /dev/null \
+    || die "la imagen no está en el bucket"
 echo "OK  la imagen está en el bucket y se sirve por https"
 
 paso "reinicio: la imagen sigue"

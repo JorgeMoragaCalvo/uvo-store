@@ -216,6 +216,6 @@ CI (`.github/workflows/`):
 - The `nginx` job in `ci.yml` checks the nginx templates in `ops/nginx/` for both environments, tests the publish
   script and runs shellcheck on the server scripts.
 - The `ensayo-servidor` job in `ci.yml` builds staging from scratch on a clean Ubuntu runner with `ops/servidor/`
-  (systemd, PostgreSQL roles, nginx, S3 through MinIO, a custom domain) and keeps the `verificar.sh` report.
+  (systemd, PostgreSQL roles, nginx, S3 through S3Mock, a custom domain) and keeps the `verificar.sh` report.
   The end-to-end job keeps the build it tested, with its checksum, as the `e2e-evidencia` artifact. Serving
   and publishing the frontend: `docs/despliegue-frontend.md`.

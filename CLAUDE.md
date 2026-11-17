@@ -1851,9 +1851,9 @@ its PostgreSQL, S3). Runbook and evidence per checklist item: `docs/despliegue-b
 - `release.yml` attaches `uvostore-ops-<tag>.tar.gz` (sparse checkout of `ops/`, deterministic tar) and includes it
   in `SHA256SUMS`: the server always runs the scripts of the version it installs.
 - **The rehearsal** (`ops/servidor/ensayo/ensayo.sh`, CI job `ensayo-servidor` on `ubuntu-24.04`): apt nginx +
-  PostgreSQL, MinIO and Mailpit containers, artifacts built like the release, `sudo env "PATH=$PATH"` so the unit
+  PostgreSQL, S3Mock (`adobe/s3mock`; `minio/minio` is gone from Docker Hub) and Mailpit containers, artifacts built like the release, `sudo env "PATH=$PATH"` so the unit
   gets setup-java's 21 and not the image's default java. It runs the three provisioning passes, deploys, two
-  stores (owner invitations read from Mailpit's API), a banner image in MinIO that survives restart, redeploy and
+  stores (owner invitations read from Mailpit's API), a banner image in S3Mock that survives restart, redeploy and
   rollback, a custom domain with its change, and `verificar.sh --reinicio --inseguro` (report uploaded as the
   `ensayo-servidor` artifact). The banner upload needs `textPosition`, `textColor`, `overlayColor`, `ctaText` and
   `ctaLink`, or it 500s (NPE / NOT NULL) — the panel always sends them.
