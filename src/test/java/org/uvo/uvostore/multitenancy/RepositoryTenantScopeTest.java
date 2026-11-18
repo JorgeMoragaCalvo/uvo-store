@@ -82,6 +82,14 @@ class RepositoryTenantScopeTest {
                             + "etiqueta, que solo lee /actuator/prometheus"),
             Map.entry("OrderRepository.countPendingCreatedBefore",
                     "métrica PROD-15b (OperationalBacklogMetrics): un conteo de todo el sistema"),
+            // IMP-06: con store_id (V36), OutboxMessage pasó a ser entidad de tienda y su repositorio entra en la regla.
+            Map.entry("OutboxMessageRepository.findDue",
+                    "despachador del outbox: recorre todas las tiendas y fija el tenant por fila"),
+            Map.entry("OutboxMessageRepository.findOrphans",
+                    "despachador del outbox: recorre todas las tiendas y fija el tenant por fila"),
+            Map.entry("OutboxMessageRepository.countBacklogByTypeAndStatus",
+                    "métrica PROD-15b (OperationalBacklogMetrics): un conteo de todo el sistema, sin la tienda como "
+                            + "etiqueta"),
             Map.entry("OrderRepository.countOpenStockShortage",
                     "métrica IMP-03 (OperationalBacklogMetrics): un conteo de todo el sistema, sin la tienda como "
                             + "etiqueta")));

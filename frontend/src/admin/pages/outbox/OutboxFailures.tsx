@@ -16,11 +16,13 @@ const TYPE_LABEL: Record<OutboxType, string> = {
   ORDER_PLACED_EMAIL: 'Correo de pedido recibido',
   ORDER_CONFIRMATION_EMAIL: 'Correo de confirmación de pago',
   CUSTOMER_INVITATION_EMAIL: 'Correo de invitación a crear cuenta',
+  ADMIN_INVITATION_EMAIL: 'Correo de invitación al panel',
+  PASSWORD_RESET_EMAIL: 'Correo de restablecimiento de contraseña',
 }
 
 /**
- * GAP-04. Las entregas del outbox que fallaron de forma definitiva —la venta al POS, los correos de una orden— y que
- * antes solo se veían en Sentry y se resolvían con SQL. Reintentar las devuelve a la cola; marcar resuelta las cierra
+ * GAP-04. Las entregas del outbox que fallaron de forma definitiva —la venta al POS, los correos de una orden y, desde
+ * IMP-06, los correos de acceso al panel— y que antes solo se veían en Sentry y se resolvían con SQL. Reintentar las devuelve a la cola; marcar resuelta las cierra
  * sin reenviar, cuando ya se resolvieron por otra vía.
  */
 export default function OutboxFailures() {
@@ -50,7 +52,8 @@ export default function OutboxFailures() {
     <div className="flex flex-col gap-4">
       <h1 ref={headingRef} tabIndex={-1} className="text-2xl font-semibold outline-none">Envíos fallidos</h1>
       <p className="text-sm text-muted-foreground">
-        Ventas al POS y correos de las órdenes que no se pudieron entregar y necesitan que alguien los revise.
+        Ventas al POS, correos de las órdenes y correos de acceso al panel que no se pudieron entregar y necesitan que
+        alguien los revise.
       </p>
 
       <div className="rounded-lg border bg-background">
@@ -58,7 +61,7 @@ export default function OutboxFailures() {
           <TableHeader>
             <TableRow>
               <TableHead>Envío</TableHead>
-              <TableHead>Orden</TableHead>
+              <TableHead>Orden o destinatario</TableHead>
               <TableHead>Error</TableHead>
               <TableHead>Intentos</TableHead>
               <TableHead>Último intento</TableHead>
@@ -92,9 +95,13 @@ export default function OutboxFailures() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Link to={`/admin/orders/${failure.orderId}`} className="font-medium hover:underline">
-                        {failure.orderNumber}
-                      </Link>
+                      {failure.orderId != null ? (
+                        <Link to={`/admin/orders/${failure.orderId}`} className="font-medium hover:underline">
+                          {failure.orderNumber}
+                        </Link>
+                      ) : (
+                        <span className="break-all">{failure.recipientEmail ?? '—'}</span>
+                      )}
                     </TableCell>
                     <TableCell className="max-w-xs text-sm break-words whitespace-normal text-muted-foreground">
                       {failure.lastError ?? '—'}
@@ -138,7 +145,7 @@ export default function OutboxFailures() {
 
 /**
  * Las dos salidas de una entrega fallida. Las dos piden nota: el sistema no puede comprobar lo que el operador revisó,
- * y la nota queda en el historial de la orden. Una venta incierta pide además confirmar que se revisó el POS, porque
+ * y la nota queda en el historial de la orden (en un correo de acceso, en la auditoría). Una venta incierta pide además confirmar que se revisó el POS, porque
  * reenviarla si ya está allí puede emitir un segundo documento tributario.
  */
 function FailureResolver({ failure, onDone }: { failure: OutboxFailure; onDone: () => void }) {
@@ -168,6 +175,12 @@ function FailureResolver({ failure, onDone }: { failure: OutboxFailure; onDone: 
         <p className="text-sm text-muted-foreground">
           Esta venta es anterior al outbox y no indica a qué empresa del POS va, así que no se puede reintentar.
           Revísala en el POS y márcala resuelta.
+        </p>
+      ) : failure.channel === 'ACCESS' ? (
+        <p className="text-sm text-muted-foreground">
+          Reintentar lo devuelve a la cola, y solo sale si el enlace sigue vigente y es el último que se emitió. Si venció
+          o se reemplazó, reenvía la invitación desde <Link to="/admin/users" className="underline">Usuarios</Link> (o pide
+          otra vez el restablecimiento de contraseña) y marca este envío resuelto.
         </p>
       ) : failure.uncertain ? (
         <p className="text-sm text-amber-800">

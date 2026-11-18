@@ -10,14 +10,13 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.event.ApplicationEvents;
-import org.springframework.test.context.event.RecordApplicationEvents;
 import org.uvo.uvostore.entity.catalog.Product;
 import org.uvo.uvostore.entity.pos.PosConnection;
 import org.uvo.uvostore.entity.security.User;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.PosConnectionRepository;
-import org.uvo.uvostore.service.platform.StoreOwnerInvitedEvent;
+import org.uvo.uvostore.entity.outbox.enums.OutboxType;
+import org.uvo.uvostore.repository.OutboxMessageRepository;
 import org.uvo.uvostore.support.AuditRows;
 import org.uvo.uvostore.support.IntegrationTestSupport;
 import org.uvo.uvostore.support.WithPosIntegration;
@@ -40,7 +39,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * después del commit están en {@code StoreOnboardingCommitTest}, que confirma transacciones.
  */
 @WithPosIntegration
-@RecordApplicationEvents
 class PosStoreOnboardingTest extends IntegrationTestSupport {
 
     @Value("${app.platform-api-key}")
@@ -51,7 +49,7 @@ class PosStoreOnboardingTest extends IntegrationTestSupport {
     @Autowired
     private JdbcTemplate jdbcTemplate;
     @Autowired
-    private ApplicationEvents events;
+    private OutboxMessageRepository outboxRepository;
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -85,8 +83,9 @@ class PosStoreOnboardingTest extends IntegrationTestSupport {
         assertThat(owner.getEmail()).isEqualTo(alta.email());
         assertThat(owner.getPassword()).isNull();
         assertThat(owner.getInvitationToken()).isNotNull();
-        assertThat(events.stream(StoreOwnerInvitedEvent.class))
-                .singleElement().satisfies(event -> assertThat(event.userId()).isEqualTo(owner.getId()));
+        assertThat(outboxRepository.findByUserIdOrderByIdDesc(owner.getId()))
+                .singleElement().satisfies(message ->
+                        assertThat(message.getType()).isEqualTo(OutboxType.ADMIN_INVITATION_EMAIL));
     }
 
     @Test
@@ -138,7 +137,8 @@ class PosStoreOnboardingTest extends IntegrationTestSupport {
         assertThat(connectionRepository.count()).isEqualTo(connections);
         assertThat(settingRepository.count()).isEqualTo(settings);
         // Y una sola invitación: el reintento no le manda otro correo al dueño.
-        assertThat(events.stream(StoreOwnerInvitedEvent.class)).hasSize(1);
+        assertThat(outboxRepository.findByUserIdOrderByIdDesc(objectMapper.readTree(first).get("adminUserId").asLong()))
+                .hasSize(1);
         // PROD-18. Y una sola fila de alta: el reintento no escribe nada, tampoco en la auditoría.
         assertThat(AuditRows.forStore(jdbcTemplate, objectMapper.readTree(first).get("storeId").asLong(), "STORE_CREATE"))
                 .singleElement()

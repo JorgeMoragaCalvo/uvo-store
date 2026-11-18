@@ -29,7 +29,8 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * PROD-13b. Entrega las filas del outbox: la venta al POS y los correos de una orden.
+ * PROD-13b. Entrega las filas del outbox: la venta al POS y los correos de una orden. IMP-06: también los correos de
+ * acceso del panel, en su canal ({@link OutboxChannel#ACCESS}).
  *
  * <p>Sustituye a los oyentes {@code AFTER_COMMIT} que corrían en ejecutores en memoria, donde una caída o un
  * redespliegue perdía lo que estuviera en cola, y al reintento del POS, que solo veía las órdenes que ya
@@ -54,6 +55,8 @@ public class OutboxDispatcher {
     /** Las siguientes a las de la conciliación (…001) y el barrido de stock (…002). */
     static final long POS_LOCK_KEY = 7_312_025_003L;
     static final long MAIL_LOCK_KEY = 7_312_025_004L;
+    /** IMP-06. Los correos de acceso, con su propio cerrojo para no esperar a los de pedidos. */
+    static final long ACCESS_LOCK_KEY = 7_312_025_005L;
 
     private static final long MAX_BACKOFF_MINUTES = 30;
 
@@ -103,8 +106,15 @@ public class OutboxDispatcher {
         if (stopping) {
             return;
         }
-        advisoryLock.runExclusively(channel == OutboxChannel.POS ? POS_LOCK_KEY : MAIL_LOCK_KEY,
-                "outbox " + channel, () -> runOnce(channel));
+        advisoryLock.runExclusively(lockKey(channel), "outbox " + channel, () -> runOnce(channel));
+    }
+
+    private static long lockKey(OutboxChannel channel) {
+        return switch (channel) {
+            case POS -> POS_LOCK_KEY;
+            case MAIL -> MAIL_LOCK_KEY;
+            case ACCESS -> ACCESS_LOCK_KEY;
+        };
     }
 
     /**
@@ -183,7 +193,7 @@ public class OutboxDispatcher {
         if (result.outcome() == OutboxResult.Outcome.DELIVERED) {
             OutboxResult delivered = result;
             try {
-                withRequestIdOf(message, () -> TenantContext.runWithin(message.getOrder().getStore(),
+                withRequestIdOf(message, () -> TenantContext.runWithin(message.getStore(),
                         () -> handler.afterDelivered(message, delivered)));
             } catch (Exception e) {
                 log.error("Fallo después de entregar la fila del outbox id={} error={}", message.getId(), e.getMessage());
@@ -197,7 +207,7 @@ public class OutboxDispatcher {
         // Cada fila con el tenant de SU tienda: un job no tiene petición, así que nadie lo ha puesto por él.
         AtomicReference<OutboxResult> result = new AtomicReference<>();
         withRequestIdOf(message, () ->
-                TenantContext.runWithin(message.getOrder().getStore(), () -> result.set(handler.handle(message))));
+                TenantContext.runWithin(message.getStore(), () -> result.set(handler.handle(message))));
         return result.get();
     }
 
@@ -223,8 +233,7 @@ public class OutboxDispatcher {
      * durante la entrega, así que no se sabe si llegó.
      */
     private void recoverOrphan(OutboxMessage orphan) {
-        log.warn("Fila del outbox huérfana en vuelo id={} tipo={} order_id={}",
-                orphan.getId(), orphan.getType(), orphan.getOrder().getId());
+        log.warn("Fila del outbox huérfana en vuelo id={} tipo={} {}", orphan.getId(), orphan.getType(), subject(orphan));
         apply(orphan, orphan.getAttempts(), OutboxResult.uncertain(
                 "Huérfana en vuelo: el proceso se interrumpió durante la entrega, que pudo haber ocurrido"));
     }
@@ -272,14 +281,22 @@ public class OutboxDispatcher {
             log.warn("La fila del outbox id={} cambió durante la entrega; no se marca {}", message.getId(), status);
             return;
         }
-        log.info("Outbox {} id={} tipo={} order_id={}{}", status, message.getId(), message.getType(),
-                message.getOrder().getId(), detail == null ? "" : " motivo=" + detail);
+        log.info("Outbox {} id={} tipo={} {}{}", status, message.getId(), message.getType(), subject(message),
+                detail == null ? "" : " motivo=" + detail);
     }
 
     /** Fallo definitivo: lo revisa una persona, así que tiene que verse. */
     private void fail(OutboxMessage message, int attempts, String detail, Instant now) {
         if (!store.finish(message.getId(), attempts, OutboxStatus.FAILED, detail, now)) {
             log.warn("La fila del outbox id={} cambió durante la entrega; no se marca FAILED", message.getId());
+            return;
+        }
+        if (message.getOrder() == null) {
+            // IMP-06. Un correo de acceso: ni la dirección ni el token, solo el usuario y la tienda.
+            log.error("Outbox: entrega fallida de forma definitiva id={} tipo={} user_id={} store_id={} error={}",
+                    message.getId(), message.getType(), userId(message), message.getStore().getId(), detail);
+            Sentry.captureMessage("Outbox: entrega " + message.getType() + " fallida de forma definitiva — "
+                    + detail + " [user_id=" + userId(message) + ", store_id=" + message.getStore().getId() + "]");
             return;
         }
         String orderNumber = message.getOrder().getOrderNumber();
@@ -289,6 +306,16 @@ public class OutboxDispatcher {
         // busca en el panel. Un fallo definitivo ocurre una sola vez por fila, así que no inunda.
         Sentry.captureMessage("Outbox: entrega " + message.getType() + " fallida de forma definitiva — "
                 + detail + " [order_number=" + orderNumber + "]");
+    }
+
+    /** De qué es la fila, para el log: su orden, o el usuario de un correo de acceso. */
+    private static String subject(OutboxMessage message) {
+        return message.getOrder() != null ? "order_id=" + message.getOrder().getId() : "user_id=" + userId(message);
+    }
+
+    /** El id sin inicializar el proxy perezoso: Hibernate lo tiene sin ir a la base. */
+    private static Long userId(OutboxMessage message) {
+        return message.getUser() == null ? null : message.getUser().getId();
     }
 
     /** 1, 2, 4, 8, 16 y luego 30 minutos. */

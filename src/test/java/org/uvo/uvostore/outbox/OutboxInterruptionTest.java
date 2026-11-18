@@ -190,6 +190,7 @@ class OutboxInterruptionTest extends InterruptionTestSupport {
         Order order = pay(shop, pendingWebpayOrder(shop, 1, null));
         OutboxMessage legacy = outboxRepository.save(OutboxMessage.builder()
                 .order(order)
+                .store(order.getStore())
                 .type(OutboxType.POS_ORDER)
                 .dedupKey("pos-legacy:" + order.getId())
                 .status(OutboxStatus.FAILED)

@@ -18,8 +18,8 @@ import java.util.Optional;
 
 /**
  * PROD-13b. Las consultas del despachador recorren todas las tiendas a propósito —es un trabajo
- * programado que fija el tenant fila a fila—, y {@code join fetch} de la orden y su tienda porque se
- * consumen fuera de toda sesión.
+ * programado que fija el tenant fila a fila—, y {@code join fetch} de la tienda (y de la orden, si la hay) porque
+ * se consumen fuera de toda sesión.
  *
  * <p>Los cambios de estado son UPDATE condicionados, y el número de filas afectadas es la única respuesta
  * de fiar (el mismo criterio que C5 con el stock): el reclamo exige {@code PENDING}, y cerrar un intento
@@ -54,8 +54,8 @@ public interface OutboxMessageRepository extends JpaRepository<OutboxMessage, Lo
 
     @Query("""
             select m from OutboxMessage m
-            join fetch m.order o
-            join fetch o.store
+            join fetch m.store
+            left join fetch m.order
             where m.type in :types
               and m.status = org.uvo.uvostore.entity.outbox.enums.OutboxStatus.PENDING
               and m.nextAttemptAt <= :now
@@ -71,8 +71,8 @@ public interface OutboxMessageRepository extends JpaRepository<OutboxMessage, Lo
      */
     @Query("""
             select m from OutboxMessage m
-            join fetch m.order o
-            join fetch o.store
+            join fetch m.store
+            left join fetch m.order
             where m.type in :types
               and m.status = org.uvo.uvostore.entity.outbox.enums.OutboxStatus.IN_FLIGHT
               and m.updatedAt < :cutoff
@@ -125,10 +125,14 @@ public interface OutboxMessageRepository extends JpaRepository<OutboxMessage, Lo
     /**
      * PROD-23. Lo que el outbox todavía tiene que entregar por una tienda (la venta al POS, los correos de las
      * órdenes). Cerrar con algo aquí borraría la conexión con el POS antes de que la venta llegue.
+     *
+     * <p>IMP-06. Sin los correos de acceso: el cierre revoca a los administradores y borra sus tokens, así que esas
+     * filas se omitirán solas al entregarse, y no hay motivo para que retengan el cierre.
      */
     @Query("""
             select count(m) from OutboxMessage m
-            where m.order.store.id = :storeId
+            where m.store.id = :storeId
+              and m.order is not null
               and m.status in (org.uvo.uvostore.entity.outbox.enums.OutboxStatus.PENDING,
                                org.uvo.uvostore.entity.outbox.enums.OutboxStatus.IN_FLIGHT)
             """)
@@ -136,37 +140,77 @@ public interface OutboxMessageRepository extends JpaRepository<OutboxMessage, Lo
 
     /**
      * GAP-04. Las entregas de una tienda que fallaron de forma definitiva y esperan a una persona: la página «Envíos
-     * fallidos» del panel. La fila no tiene tienda propia, así que el filtro va por su orden (y por eso este
-     * repositorio no lo vigila {@code RepositoryTenantScopeTest}).
+     * fallidos» del panel. Desde IMP-06 la fila tiene su tienda ({@code store_id}), y la lista incluye los correos
+     * de acceso, que no tienen orden.
      */
     @Query(value = """
             select m from OutboxMessage m
-            join fetch m.order o
-            where o.store.id = :storeId
+            left join fetch m.order
+            left join fetch m.user
+            where m.store.id = :storeId
               and m.status = org.uvo.uvostore.entity.outbox.enums.OutboxStatus.FAILED
             order by m.updatedAt desc, m.id desc
             """,
             countQuery = """
             select count(m) from OutboxMessage m
-            where m.order.store.id = :storeId
+            where m.store.id = :storeId
               and m.status = org.uvo.uvostore.entity.outbox.enums.OutboxStatus.FAILED
             """)
     Page<OutboxMessage> findFailedForStore(@Param("storeId") Long storeId, Pageable pageable);
 
     @Query("""
             select count(m) from OutboxMessage m
-            where m.order.store.id = :storeId
+            where m.store.id = :storeId
               and m.status = org.uvo.uvostore.entity.outbox.enums.OutboxStatus.FAILED
             """)
     long countFailedForStore(@Param("storeId") Long storeId);
 
     @Query("""
             select m from OutboxMessage m
-            join fetch m.order o
+            left join fetch m.order
+            left join fetch m.user
             where m.id = :id
-              and o.store.id = :storeId
+              and m.store.id = :storeId
             """)
     Optional<OutboxMessage> findForStore(@Param("id") Long id, @Param("storeId") Long storeId);
+
+    /**
+     * IMP-06. Los correos de acceso fallidos de todas las tiendas, o de una ({@code storeId} no nulo), para la API de
+     * plataforma: el dueño de una tienda nueva cuya invitación no salió no tiene panel donde verlo. Con
+     * {@code storeId} nulo recorre todas las tiendas a propósito: solo la llama la API de plataforma.
+     */
+    @Query(value = """
+            select m from OutboxMessage m
+            join fetch m.store
+            join fetch m.user
+            where m.type in (org.uvo.uvostore.entity.outbox.enums.OutboxType.ADMIN_INVITATION_EMAIL,
+                             org.uvo.uvostore.entity.outbox.enums.OutboxType.PASSWORD_RESET_EMAIL)
+              and m.status = org.uvo.uvostore.entity.outbox.enums.OutboxStatus.FAILED
+              and (:storeId is null or m.store.id = :storeId)
+            order by m.updatedAt desc, m.id desc
+            """,
+            countQuery = """
+            select count(m) from OutboxMessage m
+            where m.type in (org.uvo.uvostore.entity.outbox.enums.OutboxType.ADMIN_INVITATION_EMAIL,
+                             org.uvo.uvostore.entity.outbox.enums.OutboxType.PASSWORD_RESET_EMAIL)
+              and m.status = org.uvo.uvostore.entity.outbox.enums.OutboxStatus.FAILED
+              and (:storeId is null or m.store.id = :storeId)
+            """)
+    Page<OutboxMessage> findFailedAccessEmails(@Param("storeId") Long storeId, Pageable pageable);
+
+    /** IMP-06. Un correo de acceso de cualquier tienda, para la API de plataforma; vacío si la fila es de una orden. */
+    @Query("""
+            select m from OutboxMessage m
+            join fetch m.store
+            join fetch m.user
+            where m.id = :id
+              and m.type in (org.uvo.uvostore.entity.outbox.enums.OutboxType.ADMIN_INVITATION_EMAIL,
+                             org.uvo.uvostore.entity.outbox.enums.OutboxType.PASSWORD_RESET_EMAIL)
+            """)
+    Optional<OutboxMessage> findAccessEmail(@Param("id") Long id);
+
+    /** IMP-06. Las filas de acceso de un usuario, de la más nueva a la más vieja (pruebas y diagnóstico). */
+    List<OutboxMessage> findByUserIdOrderByIdDesc(Long userId);
 
     /**
      * GAP-04. Reintento desde el panel: de vuelta a la cola sin tocar {@code attempts}, que es lo que el despachador

@@ -183,7 +183,8 @@ public abstract class InterruptionTestSupport {
 
     protected CommittedFixtures fixtures;
     protected TransactionTemplate tx;
-    private final List<Long> createdStores = new ArrayList<>();
+    /** Las tiendas que la limpieza borra al final; una subclase que cree la suya la agrega aquí. */
+    protected final List<Long> createdStores = new ArrayList<>();
 
     @TestConfiguration
     static class FakeTransbank {
@@ -358,14 +359,18 @@ public abstract class InterruptionTestSupport {
     // y los mismos beans, salvo la consulta que elige qué recoger, que solo ve la tienda de la prueba.
 
     protected OutboxDispatcher dispatcher(Shop shop) {
-        Long storeId = shop.store().getId();
+        return dispatcher(shop.store().getId());
+    }
+
+    /** IMP-06. El mismo despachador para una tienda sin {@link Shop} (los correos de acceso no tienen orden). */
+    protected OutboxDispatcher dispatcher(Long storeId) {
         OutboxMessageRepository scoped = Mockito.mock(OutboxMessageRepository.class,
                 AdditionalAnswers.delegatesTo(outboxRepository));
         Mockito.doAnswer(inv -> outboxRepository.findDue(inv.getArgument(0), inv.getArgument(1), Pageable.unpaged())
-                        .stream().filter(m -> m.getOrder().getStore().getId().equals(storeId)).toList())
+                        .stream().filter(m -> m.getStore().getId().equals(storeId)).toList())
                 .when(scoped).findDue(Mockito.any(), Mockito.any(), Mockito.any());
         Mockito.doAnswer(inv -> outboxRepository.findOrphans(inv.getArgument(0), inv.getArgument(1), Pageable.unpaged())
-                        .stream().filter(m -> m.getOrder().getStore().getId().equals(storeId)).toList())
+                        .stream().filter(m -> m.getStore().getId().equals(storeId)).toList())
                 .when(scoped).findOrphans(Mockito.any(), Mockito.any(), Mockito.any());
         // Los mismos valores que application.properties, con la venta incierta sin reintento (POS-1).
         return new OutboxDispatcher(scoped, outboxStore, advisoryLock, outboxHandlers, false, 50, 48, 120,

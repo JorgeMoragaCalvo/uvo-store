@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # IMP-05 (paso 7). Ensayo limpio: construye staging desde cero con los scripts de ops/ en una máquina Ubuntu nueva
-# y comprueba lo que esos scripts prometen. Lo corre el job «ensayo-servidor» de .github/workflows/ci.yml; se puede
+# y comprueba lo que esos scripts prometen. IMP-06 le suma C11: un correo de acceso que sobrevive a una caída del SMTP
+# y a un reinicio. Lo corre el job «ensayo-servidor» de .github/workflows/ci.yml; se puede
 # repetir en una VM Ubuntu 24.04 desechable. NUNCA en el servidor de la plataforma: borra el sitio por omisión de
 # nginx y crea tiendas de prueba.
 #
@@ -172,6 +173,19 @@ token_de_invitacion() { # token_de_invitacion <correo>
     [ -n "$id" ] || return 1
     curl -s "http://127.0.0.1:8025/api/v1/message/$id" | jq -r .Text | grep -o 'token=[A-Za-z0-9_-]*' | head -n 1 | cut -d= -f2
 }
+# El token del correo de restablecimiento más reciente para <correo> que no sea <token-anterior> (vacío si no hay).
+token_de_reset() { # token_de_reset <correo> [token-anterior]
+    local id token
+    for id in $(curl -s "http://127.0.0.1:8025/api/v1/search?query=to:$1" | jq -r '.messages[].ID'); do
+        token="$(curl -s "http://127.0.0.1:8025/api/v1/message/$id" | jq -r .Text \
+            | grep -o 'reset-password?token=[A-Za-z0-9_-]*' | head -n 1 | cut -d= -f2)"
+        if [ -n "$token" ] && [ "$token" != "${2:-}" ]; then
+            echo "$token"
+            return 0
+        fi
+    done
+    return 1
+}
 entrar() { # entrar <slug> -> JWT del panel, aceptando la invitación del dueño
     local correo="$1@ensayo.test" token
     esperar "invitación para $correo" 60 token_de_invitacion "$correo"
@@ -255,6 +269,68 @@ bash "$SERVIDOR/dominio-propio.sh" baja "$AMBIENTE" "$PROPIO"
 pronto "dado de baja, nginx rechaza el handshake del dominio viejo" 35 salida_tls "$PROPIO"
 plataforma PUT "/api/platform/stores/$TIENDA_A/domain/verified" '{"verified":true}' > /dev/null
 pronto "el dominio nuevo sirve la tienda A" 200 codigo_de "$PROPIO_NUEVO" "https://$PROPIO_NUEVO/api/v1/store-settings"
+
+# ---- Correos de acceso recuperables (C11, IMP-06) ------------------------------------------------------------
+# Con el SMTP caído y un reinicio en medio, el enlace de «Olvidé mi contraseña» sale solo cuando el SMTP vuelve, y
+# un segundo pedido deja sin efecto el primero. Es el outbox desplegado de verdad, con la unidad y PostgreSQL reales.
+paso "C11: correo de acceso con el SMTP caído, un reinicio en medio y recuperación"
+CORREO_A="ensayo-a@ensayo.test"
+sql() { (cd / && runuser -u postgres -- psql -X -At -d "uvostore_$AMBIENTE" -c "$1"); }
+olvide() { # olvide <correo> -> código HTTP de «¿Olvidaste tu contraseña?» en la tienda A
+    codigo_de "ensayo-a.$DOMINIO" -X POST "https://ensayo-a.$DOMINIO/api/admin/auth/forgot-password" \
+        -H 'Content-Type: application/json' -d "{\"email\":\"$1\"}"
+}
+restablecer() { # restablecer <token> -> código HTTP
+    codigo_de "ensayo-a.$DOMINIO" -X POST "https://ensayo-a.$DOMINIO/api/admin/auth/reset-password" \
+        -H 'Content-Type: application/json' -d "{\"token\":\"$1\",\"password\":\"$CLAVE_ADMIN-c11\"}"
+}
+fila_reset() { # estado|con-error o sin-error de la fila de reset más nueva de la tienda A
+    # Texto explícito y no el booleano: concatenado, PostgreSQL lo convierte en 'true'/'false', no en el 't'/'f'
+    # que psql muestra para una columna booleana suelta.
+    sql "SELECT m.status || '|' || CASE WHEN m.last_error IS NULL THEN 'sin-error' ELSE 'con-error' END
+         FROM outbox_messages m
+         JOIN users u ON u.id = m.user_id
+         WHERE u.email = '$CORREO_A' AND m.type = 'PASSWORD_RESET_EMAIL' ORDER BY m.id DESC LIMIT 1"
+}
+# Como esperar(), pero al rendirse dice en qué estado quedó la fila (vacío = no hay fila).
+esperar_fila() { # esperar_fila <descripción> <segundos> <estado esperado>
+    local i=0 visto=""
+    until visto="$(fila_reset 2>&1)" && [ "$visto" = "$3" ]; do
+        i=$((i + 1))
+        [ "$i" -le "$2" ] || die "no se cumplió: $1 (se esperaba '$3', la fila está en '$visto')"
+        sleep 1
+    done
+}
+mailpit_arriba() { curl -fs -o /dev/null http://127.0.0.1:8025/api/v1/info; }
+
+docker stop mailpit > /dev/null
+afirmar_igual "C11: con el SMTP caído, el pedido de restablecimiento responde igual" 200 "$(olvide "$CORREO_A")"
+esperar_fila "el despachador intenta, falla y deja la fila en cola" 60 "PENDING|con-error"
+echo "OK  C11: la fila queda en cola con el error del intento"
+sql "SELECT last_error FROM outbox_messages m JOIN users u ON u.id = m.user_id
+     WHERE u.email = '$CORREO_A' AND m.type = 'PASSWORD_RESET_EMAIL' ORDER BY m.id DESC LIMIT 1" \
+    | sed 's/^/    last_error: /'
+
+systemctl restart uvostore-staging
+esperar_readiness "$PUERTO" 180 uvostore-staging || die "no volvió después del reinicio"
+afirmar_igual "C11: tras el reinicio la fila sigue en cola" "PENDING|con-error" "$(fila_reset)"
+
+docker start mailpit > /dev/null
+esperar "Mailpit de vuelta" 60 mailpit_arriba
+# El reintento llega con la espera del despachador (1 minuto tras el primer fallo).
+esperar "el correo de restablecimiento después de volver el SMTP" 180 token_de_reset "$CORREO_A"
+TOKEN_RESET_1="$(token_de_reset "$CORREO_A")"
+esperar_fila "C11: la fila queda entregada" 15 "SENT|sin-error"
+echo "OK  C11: la fila queda entregada"
+afirmar_igual "C11: la fila no guarda el token" 0 \
+    "$(sql "SELECT count(*) FROM outbox_messages WHERE dedup_key LIKE '%$TOKEN_RESET_1%' OR token_hash = '$TOKEN_RESET_1'")"
+
+afirmar_igual "C11: un segundo pedido responde igual" 200 "$(olvide "$CORREO_A")"
+esperar "el segundo correo de restablecimiento" 60 token_de_reset "$CORREO_A" "$TOKEN_RESET_1"
+TOKEN_RESET_2="$(token_de_reset "$CORREO_A" "$TOKEN_RESET_1")"
+afirmar_igual "C11: el primer enlace ya no vale" 401 "$(restablecer "$TOKEN_RESET_1")"
+afirmar_igual "C11: el enlace nuevo sí" 200 "$(restablecer "$TOKEN_RESET_2")"
+afirmar_igual "C11: y es de un solo uso" 401 "$(restablecer "$TOKEN_RESET_2")"
 
 # ---- Verificación final, la misma que en el servidor real ----------------------------------------------------
 paso "verificar.sh"

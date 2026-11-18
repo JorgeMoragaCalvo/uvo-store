@@ -196,6 +196,7 @@ class OutboxCrashRecoveryTest {
         Order order = pendingOrder(f);
         OutboxMessage row = outboxRepository.save(OutboxMessage.builder()
                 .order(order)
+                .store(order.getStore())
                 .type(OutboxType.ORDER_PLACED_EMAIL)
                 .dedupKey("email:placed:" + order.getId())
                 .status(OutboxStatus.PENDING)
@@ -321,6 +322,7 @@ class OutboxCrashRecoveryTest {
     private OutboxMessage posRow(Order order, Long companyId, OutboxStatus status, int attempts, Instant updatedAt) {
         return outboxRepository.save(OutboxMessage.builder()
                 .order(order)
+                .store(order.getStore())
                 .type(OutboxType.POS_ORDER)
                 .companyId(companyId)
                 .dedupKey("pos:" + PosOrderPayloadMapper.idempotencyKey(order.getOrderNumber(), companyId))

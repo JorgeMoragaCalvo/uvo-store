@@ -156,6 +156,7 @@ class AdminOutboxControllerTest extends IntegrationTestSupport {
     private OutboxMessage row(Order order, OutboxType type, Long companyId, OutboxStatus status, String lastError) {
         return outboxRepository.save(OutboxMessage.builder()
                 .order(order)
+                .store(order.getStore())
                 .type(type)
                 .companyId(companyId)
                 .dedupKey(type + ":" + order.getId() + ":" + nextSeq())

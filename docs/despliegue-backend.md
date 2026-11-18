@@ -123,6 +123,33 @@ El backend resuelve la tienda por `stores.domain` y nginx necesita un server con
 - **Los demás secretos:** se editan en el archivo de entorno y se reinicia el servicio.
 - **`APP_ENCRYPTION_KEY`:** no se rota.
 
+## Correo (C11)
+
+**Cómo salen los correos.** Todos los correos del backend salen por el outbox (`outbox_messages`), escritos en la misma transacción que los origina, y los entrega `OutboxDispatcher` cada 10 s con reintentos:
+- los de pedidos (canal `mail`);
+- desde IMP-06, los de acceso al panel (canal `access`): invitación de administrador y su reenvío, invitación del dueño al crear la tienda, recuperación de acceso del dueño y «¿Olvidaste tu contraseña?».
+
+**Qué pasa cuando falla el SMTP.**
+- Si cae o no responde, nada se pierde: la fila queda `PENDING` con el error y se reintenta con espera creciente (1, 2, 4… hasta 30 min) durante 48 h (`OUTBOX_GIVE_UP_AFTER_HOURS`). Pasado ese plazo queda `FAILED`.
+- Una dirección rechazada por el servidor queda `FAILED` al momento.
+- Un correo de acceso nunca lleva un enlace que ya no vale. La fila guarda la huella SHA-256 del token, no el token, y al entregarse se compara con el vigente: si se reenvió otro, se usó o venció, la fila queda `SKIPPED` con el motivo.
+- Un resultado incierto (el proceso murió enviando) se reintenta; un duplicado lleva el mismo enlace de un solo uso.
+
+**Dónde se ve un fallo.**
+- Alerta `UvoStoreOutboxFallido{channel="access"}` y `UvoStoreCorreosDeAccesoDetenidos` (más de 10 min en cola). Runbook en `docs/observabilidad.md`.
+- Página «Envíos fallidos» del panel de cada tienda (reintentar o marcar resuelto, con nota).
+- `GET /api/platform/access-emails/failed[?storeId=]` y `POST /api/platform/access-emails/{id}/retry|resolve` con `{"note": "..."}`, para el dueño de una tienda nueva que no tiene a nadie que entre al panel.
+- Reintentar solo sirve si el enlace sigue vigente. Si venció, la salida es «Reenviar invitación» (panel), `POST /api/platform/stores/{id}/owner/access-recovery` o pedir de nuevo el restablecimiento.
+
+**Configurar el proveedor (pendiente, con el proveedor elegido):**
+1. Un relay SMTP autenticado con TLS en `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_SMTP_AUTH=true` y `MAIL_SMTP_STARTTLS=true`. Fuera de desarrollo el arranque exige `MAIL_HOST`.
+2. `MAIL_FROM` con un dominio propio verificado en el proveedor, con SPF, DKIM y DMARC publicados en su DNS.
+3. Prueba de entregabilidad real con la cuenta de staging:
+   - una invitación y un «¿Olvidaste tu contraseña?» a buzones de Gmail y Outlook;
+   - comprobar que llegan a la bandeja de entrada (no a spam) y que las cabeceras dicen `spf=pass`, `dkim=pass` y `dmarc=pass`;
+   - archivar las cabeceras como evidencia.
+4. Ensayar el fallo en staging: credenciales SMTP inválidas, pedir un restablecimiento y ver la alerta y la fila en cola. Corregirlas y ver que el correo sale solo.
+
 ## El ensayo de CI
 
 El job **`ensayo-servidor`** de `ci.yml` (`ops/servidor/ensayo/ensayo.sh`) construye staging desde cero en una máquina Ubuntu 24.04 nueva, solo con estos scripts y los artefactos armados como en `release.yml`.
@@ -135,6 +162,7 @@ El job **`ensayo-servidor`** de `ci.yml` (`ops/servidor/ensayo/ensayo.sh`) const
   - un `X-Forwarded-For` que no viene del proxy se rechaza.
 - Una imagen en S3 (S3Mock) sobrevive a reinicio, redespliegue con otra versión y vuelta atrás.
 - Dominio propio: alta, verificación y cambio. El viejo da 404 en el backend y, dado de baja, nginx rechaza su handshake.
+- C11: con Mailpit detenido, «¿Olvidaste tu contraseña?» responde igual y la fila queda en cola con el error. Sobrevive a un reinicio del servicio y el correo sale solo al volver el SMTP. La fila no guarda el token, y un segundo pedido deja sin efecto el primer enlace.
 - `verificar.sh` completo, con apagado ordenado. Su informe queda como artefacto `ensayo-servidor` (30 días).
 
 **Simulado:** certificados autofirmados, S3Mock en lugar de S3 (no aplica políticas de bucket: las de `ops/s3/` solo se validan como JSON), Mailpit en lugar del SMTP, y nombres `.test` sin DNS.
@@ -150,6 +178,7 @@ Es la «ejecución limpia» del paso 7 de IMP-05. Lo que solo se ve en el servid
 | C04: Host preservado, proxies de confianza, spoofing rechazado, contadores separados | `ensayo-servidor` (token cruzado, spoofing), `TrustedProxyRateLimitTest`, `PlatformNetworkBehindProxyTest` | Repetir el spoofing desde fuera contra el dominio real |
 | C05: caché por host, privado sin caché compartida, SPA recargable | E2E en modalidad `dist` (IMP-04) y `verificar.sh` (no-cache, no-store, recarga directa) | Ninguna CDN delante; si se agrega, revisarla |
 | C07: ambiente correcto, secretos nuevos, roles separados, rotación | `provisionar.sh` (secretos generados en el servidor, roles con nombre por ambiente), `verificar.sh` (roles, 640, configuración enmascarada), el arranque (`DatabaseRole`) | Custodia de `APP_ENCRYPTION_KEY` en el gestor de secretos y registro de quién tiene acceso |
+| C11: invitación, reset y pedidos recibidos; remitente autenticado; fallo de SMTP visible y recuperable | `AccessEmailOutboxTest` (caída tras el commit, SMTP caído, huérfana, token reemplazado, usado o vencido, recuperación desde la plataforma), `PlatformAccessEmailControllerTest`, `ensayo-servidor` (SMTP caído con reinicio en medio), la alerta `UvoStoreCorreosDeAccesoDetenidos` (promtool) | El proveedor SMTP real: SPF/DKIM/DMARC, recepción en bandeja de entrada de invitación, reset y pedido, y el ensayo de fallo en staging (sección «Correo (C11)») |
 | C09: imágenes persistentes, permisos, URL https | `ensayo-servidor` (reinicio, redespliegue, vuelta atrás), `verificar.sh --imagen` | El bucket real con su política, y subir una imagen y repetirlo tras un redespliegue |
 
 La ausencia de accesos (VPS, DNS, AWS, SMTP) es una dependencia pendiente, no un punto cerrado. Los Cxx los aprueba el responsable con estas evidencias (`GO_LIVE_CHECKLIST.md` §12).

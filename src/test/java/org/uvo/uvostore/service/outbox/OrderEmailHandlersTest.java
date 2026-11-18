@@ -155,7 +155,7 @@ class OrderEmailHandlersTest {
 
     private OutboxMessage row(Order order, OutboxType type) {
         when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
-        return OutboxMessage.builder().id(1L).order(order).type(type).dedupKey(type + ":1").build();
+        return OutboxMessage.builder().id(1L).order(order).store(order.getStore()).type(type).dedupKey(type + ":1").build();
     }
 
     private static Order order(PaymentStatus paymentStatus, OrderStatus status) {

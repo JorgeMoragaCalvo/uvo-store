@@ -71,7 +71,7 @@ tests:
               channel: pos
             exp_annotations:
               summary: "Entregas del outbox fallidas de forma definitiva (canal pos)"
-              description: "Con channel=pos son ventas que el POS no tiene; con channel=mail, correos que no salieron. Quedan en la página «Envíos fallidos» del panel de la tienda."
+              description: "Con channel=pos son ventas que el POS no tiene; con channel=mail, correos de pedidos que no salieron; con channel=access, invitaciones o restablecimientos de contraseña del panel. Quedan en la página «Envíos fallidos» del panel de la tienda; los de acceso, también en /api/platform/access-emails/failed."
               runbook: docs/observabilidad.md#outbox-fallido
       - eval_time: 50m
         alertname: UvoStoreOutboxFallido
@@ -99,6 +99,29 @@ tests:
               summary: "La venta más vieja en cola para el POS lleva 16m 0s esperando"
               description: "El POS no está aceptando las ventas web. El stock del POS no las descuenta mientras tanto."
               runbook: docs/observabilidad.md#pos-no-recibe-ventas
+
+  # --- IMP-06. Correos de acceso detenidos: el más viejo pasa de 10 minutos en cola; el de pedidos no cuenta ------
+  - interval: 1m
+    input_series:
+      - series: 'uvostore_outbox_oldest_pending_seconds{application="uvo-store",job="uvostore",instance="app:8080",environment="production",channel="access"}'
+        values: '0 60 540 660'
+      - series: 'uvostore_outbox_oldest_pending_seconds{application="uvo-store",job="uvostore",instance="app:8080",environment="production",channel="mail"}'
+        values: '5000x3'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: UvoStoreCorreosDeAccesoDetenidos
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: UvoStoreCorreosDeAccesoDetenidos
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              owner: operaciones-tiendas
+              environment: production
+            exp_annotations:
+              summary: "El correo de acceso más viejo en cola lleva 11m 0s esperando"
+              description: "Invitaciones al panel y restablecimientos de contraseña sin salir: el SMTP no está aceptando correos. Siguen en la cola y salen solos cuando vuelva; los que venzan antes habrá que pedirlos de nuevo."
+              runbook: docs/observabilidad.md#correos-de-acceso-detenidos
 
   # --- Stock: venta sin stock alerta enseguida; stock sin descontar espera al job 15 minutos --------------------
   - interval: 1m

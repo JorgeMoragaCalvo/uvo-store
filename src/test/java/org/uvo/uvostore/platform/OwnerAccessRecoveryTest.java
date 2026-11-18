@@ -7,14 +7,14 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.test.context.event.ApplicationEvents;
-import org.springframework.test.context.event.RecordApplicationEvents;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.uvo.uvostore.entity.security.Role;
 import org.uvo.uvostore.entity.security.User;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.entity.tenant.enums.StoreStatus;
-import org.uvo.uvostore.service.platform.StoreOwnerInvitedEvent;
+import org.uvo.uvostore.entity.outbox.enums.OutboxType;
+import org.uvo.uvostore.repository.OutboxMessageRepository;
+import org.uvo.uvostore.service.outbox.AccessTokenHash;
 import org.uvo.uvostore.support.AuditRows;
 import org.uvo.uvostore.support.IntegrationTestSupport;
 
@@ -37,7 +37,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <p>El correo después del commit está en {@code OwnerAccessRecoveryCommitTest}: aquí todo se deshace y los oyentes
  * {@code AFTER_COMMIT} no corren, así que solo se ve el evento.
  */
-@RecordApplicationEvents
 class OwnerAccessRecoveryTest extends IntegrationTestSupport {
 
     private static final String NEW_PASSWORD = "password123456";
@@ -46,7 +45,7 @@ class OwnerAccessRecoveryTest extends IntegrationTestSupport {
     private String platformKey;
 
     @Autowired
-    private ApplicationEvents events;
+    private OutboxMessageRepository outboxRepository;
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -100,8 +99,12 @@ class OwnerAccessRecoveryTest extends IntegrationTestSupport {
         mockMvc.perform(login(store, recovered.getEmail(), NEW_PASSWORD))
                 .andExpect(status().isOk());
 
-        assertThat(events.stream(StoreOwnerInvitedEvent.class))
-                .singleElement().satisfies(event -> assertThat(event.userId()).isEqualTo(owner.getId()));
+        // IMP-06. El correo, en el outbox con la recuperación, y con la huella del token nuevo (no el token).
+        assertThat(outboxRepository.findByUserIdOrderByIdDesc(owner.getId()))
+                .singleElement().satisfies(message -> {
+                    assertThat(message.getType()).isEqualTo(OutboxType.ADMIN_INVITATION_EMAIL);
+                    assertThat(message.getTokenHash()).isEqualTo(AccessTokenHash.of(invitationToken));
+                });
         AuditRows.Row row = auditRow(store, "STORE_OWNER_ACCESS_RECOVERY");
         assertThat(row.actorType()).isEqualTo("PLATFORM");
         assertThat(row.actorLabel()).isEqualTo("op-acceso");

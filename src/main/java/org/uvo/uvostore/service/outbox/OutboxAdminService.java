@@ -32,6 +32,12 @@ import java.util.NoSuchElementException;
  * siguiente pasada, con el mismo handler, que vuelve a comprobar el estado de la orden (una venta de una orden ya
  * reembolsada se omite, igual que la primera vez). Las dos exigen que la fila siga {@code FAILED} en la misma
  * sentencia que la cambia; el despachador nunca escribe en una fila así, de modo que no compiten.
+ *
+ * <p>IMP-06. También los correos de acceso, que no tienen orden: no escriben historial y se auditan contra el usuario.
+ * Reintentar uno vuelve a comprobar al entregarlo que su token sigue vigente y es el actual; si no, la fila queda
+ * {@code SKIPPED} y la salida es reenviar la invitación o la recuperación de acceso del dueño, que emiten uno nuevo. La
+ * API de plataforma ({@code PlatformAccessEmailController}) usa los métodos {@code *AccessEmail*}, sobre cualquier
+ * tienda y solo para esos tipos: el dueño de una tienda nueva cuya invitación no salió no tiene panel donde verla.
  */
 @Service
 public class OutboxAdminService {
@@ -71,7 +77,42 @@ public class OutboxAdminService {
     @Transactional
     public void retry(Long id, String note, boolean posChecked) {
         requireNote(note, "Reintentar un envío necesita una nota");
-        OutboxMessage message = failedOrThrow(id);
+        requeue(failedOrThrow(repository.findForStore(id, TenantContext.requireStoreId()).orElse(null), id),
+                note, posChecked);
+    }
+
+    /**
+     * Cierra la fila sin reenviar, porque ya se resolvió por otra vía (la venta está en el POS, el correo se mandó a
+     * mano). Una venta cerrada así deja de frenar la conciliación del stock con el POS
+     * ({@code findProductsWithUnregisteredSales}), así que la nota tiene que poder explicarlo.
+     */
+    @Transactional
+    public void resolve(Long id, String note) {
+        requireNote(note, "Marcar un envío como resuelto necesita una nota");
+        close(failedOrThrow(repository.findForStore(id, TenantContext.requireStoreId()).orElse(null), id), note);
+    }
+
+    /** IMP-06. Los correos de acceso fallidos de todas las tiendas, o de una si {@code storeId} no es nulo. */
+    @Transactional(readOnly = true)
+    public Page<OutboxFailureDto> listFailedAccessEmails(Long storeId, Pageable pageable) {
+        return repository.findFailedAccessEmails(storeId, pageable).map(OutboxAdminService::toDto);
+    }
+
+    /** IMP-06. {@link #retry} para un correo de acceso de cualquier tienda; una fila de orden no se encuentra. */
+    @Transactional
+    public void retryAccessEmail(Long id, String note) {
+        requireNote(note, "Reintentar un envío necesita una nota");
+        requeue(failedOrThrow(repository.findAccessEmail(id).orElse(null), id), note, false);
+    }
+
+    /** IMP-06. {@link #resolve} para un correo de acceso de cualquier tienda. */
+    @Transactional
+    public void resolveAccessEmail(Long id, String note) {
+        requireNote(note, "Marcar un envío como resuelto necesita una nota");
+        close(failedOrThrow(repository.findAccessEmail(id).orElse(null), id), note);
+    }
+
+    private void requeue(OutboxMessage message, String note, boolean posChecked) {
         if (isLegacy(message)) {
             throw new BusinessException("Este envío es anterior al outbox y no indica a qué empresa del POS va: "
                     + "solo puede marcarse resuelto");
@@ -84,38 +125,29 @@ public class OutboxAdminService {
             throw alreadyHandled();
         }
 
-        String label = label(message.getType());
-        appendHistory(message.getOrder(), label + ": reintento pedido desde el panel. Nota: " + note.trim());
-        auditTrail.record(AuditEntry.of(AuditAction.OUTBOX_RETRY, AuditTargetType.ORDER, message.getOrder().getId())
+        appendHistory(message, label(message.getType()) + ": reintento pedido desde el panel. Nota: " + note.trim());
+        auditTrail.record(audit(AuditAction.OUTBOX_RETRY, message)
                 .details(details(message).with("posChecked", posChecked)));
-        log.info("Envío del outbox reencolado desde el panel id={} tipo={} order_id={}",
-                message.getId(), message.getType(), message.getOrder().getId());
+        log.info("Envío del outbox reencolado a mano id={} tipo={} {}", message.getId(), message.getType(),
+                subject(message));
     }
 
-    /**
-     * Cierra la fila sin reenviar, porque ya se resolvió por otra vía (la venta está en el POS, el correo se mandó a
-     * mano). Una venta cerrada así deja de frenar la conciliación del stock con el POS
-     * ({@code findProductsWithUnregisteredSales}), así que la nota tiene que poder explicarlo.
-     */
-    @Transactional
-    public void resolve(Long id, String note) {
-        requireNote(note, "Marcar un envío como resuelto necesita una nota");
-        OutboxMessage message = failedOrThrow(id);
+    private void close(OutboxMessage message, String note) {
         if (repository.resolveManually(message.getId(), RESOLVED_PREFIX + note.trim(), Instant.now()) != 1) {
             throw alreadyHandled();
         }
 
-        appendHistory(message.getOrder(), label(message.getType()) + ": marcado como resuelto desde el panel. Nota: "
+        appendHistory(message, label(message.getType()) + ": marcado como resuelto desde el panel. Nota: "
                 + note.trim());
-        auditTrail.record(AuditEntry.of(AuditAction.OUTBOX_RESOLVE, AuditTargetType.ORDER, message.getOrder().getId())
-                .details(details(message)));
-        log.info("Envío del outbox resuelto a mano id={} tipo={} order_id={}",
-                message.getId(), message.getType(), message.getOrder().getId());
+        auditTrail.record(audit(AuditAction.OUTBOX_RESOLVE, message).details(details(message)));
+        log.info("Envío del outbox resuelto a mano id={} tipo={} {}", message.getId(), message.getType(),
+                subject(message));
     }
 
-    private OutboxMessage failedOrThrow(Long id) {
-        OutboxMessage message = repository.findForStore(id, TenantContext.requireStoreId())
-                .orElseThrow(() -> new NoSuchElementException("Outbox message " + id + " not found"));
+    private static OutboxMessage failedOrThrow(OutboxMessage message, Long id) {
+        if (message == null) {
+            throw new NoSuchElementException("Outbox message " + id + " not found");
+        }
         if (message.getStatus() != OutboxStatus.FAILED) {
             throw alreadyHandled();
         }
@@ -146,21 +178,45 @@ public class OutboxAdminService {
                 && (message.getLastError() == null || !message.getLastError().startsWith(OutboxDispatcher.REJECTED_PREFIX));
     }
 
-    private static AuditDiff details(OutboxMessage message) {
-        return AuditDiff.create()
-                .with("outboxId", message.getId())
-                .with("orderNumber", message.getOrder().getOrderNumber())
-                .with("type", message.getType())
-                .with("companyId", message.getCompanyId())
-                .with("attempts", message.getAttempts());
+    /**
+     * Contra la orden, o contra el usuario en un correo de acceso. Con la tienda de la fila dicha explícitamente: desde
+     * la API de plataforma el Host de la llamada puede ser el de otra tienda.
+     */
+    private static AuditEntry audit(AuditAction action, OutboxMessage message) {
+        AuditEntry entry = message.getOrder() != null
+                ? AuditEntry.of(action, AuditTargetType.ORDER, message.getOrder().getId())
+                : AuditEntry.of(action, AuditTargetType.USER, message.getUser().getId());
+        return entry.forStore(message.getStore().getId());
     }
 
-    private void appendHistory(Order order, String notes) {
+    private static AuditDiff details(OutboxMessage message) {
+        AuditDiff diff = AuditDiff.create()
+                .with("outboxId", message.getId())
+                .with("type", message.getType())
+                .with("attempts", message.getAttempts());
+        if (message.getOrder() != null) {
+            return diff.with("orderNumber", message.getOrder().getOrderNumber())
+                    .with("companyId", message.getCompanyId());
+        }
+        // Ni el token ni su huella.
+        return diff.with("email", message.getUser().getEmail());
+    }
+
+    private void appendHistory(OutboxMessage message, String notes) {
+        Order order = message.getOrder();
+        if (order == null) {
+            return;
+        }
         OrderStatusHistory history = new OrderStatusHistory();
         history.setOrder(order);
         history.setStatus(order.getStatus().name());
         history.setNotes(notes);
         historyRepository.save(history);
+    }
+
+    private static String subject(OutboxMessage message) {
+        return message.getOrder() != null ? "order_id=" + message.getOrder().getId()
+                : "user_id=" + message.getUser().getId();
     }
 
     private static String label(OutboxType type) {
@@ -169,12 +225,19 @@ public class OutboxAdminService {
             case ORDER_PLACED_EMAIL -> "Correo de pedido recibido";
             case ORDER_CONFIRMATION_EMAIL -> "Correo de confirmación de pago";
             case CUSTOMER_INVITATION_EMAIL -> "Correo de invitación a crear cuenta";
+            case ADMIN_INVITATION_EMAIL -> "Correo de invitación al panel";
+            case PASSWORD_RESET_EMAIL -> "Correo de restablecimiento de contraseña";
         };
     }
 
     private static OutboxFailureDto toDto(OutboxMessage message) {
+        Order order = message.getOrder();
+        boolean access = message.getUser() != null;
         return new OutboxFailureDto(message.getId(), message.getType(), message.getType().channel(),
-                message.getOrder().getId(), message.getOrder().getOrderNumber(), message.getCompanyId(),
+                message.getStore().getId(),
+                order == null ? null : order.getId(), order == null ? null : order.getOrderNumber(),
+                message.getCompanyId(),
+                access ? message.getUser().getId() : null, access ? message.getUser().getEmail() : null,
                 message.getAttempts(), message.getLastError(), message.getCreatedAt(), message.getUpdatedAt(),
                 isUncertain(message), isLegacy(message));
     }

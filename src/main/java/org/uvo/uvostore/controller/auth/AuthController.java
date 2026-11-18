@@ -29,32 +29,28 @@ import org.uvo.uvostore.service.audit.AuditActor;
 import org.uvo.uvostore.service.audit.AuditDiff;
 import org.uvo.uvostore.service.audit.AuditEntry;
 import org.uvo.uvostore.service.audit.AuditTrail;
-import org.uvo.uvostore.service.notification.EmailService;
+import org.uvo.uvostore.service.outbox.OutboxService;
 import org.uvo.uvostore.service.security.AdminInvitationPolicy;
-import org.uvo.uvostore.service.url.StorePublicUrlResolver;
+import org.uvo.uvostore.service.security.PasswordResetMailer;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 @io.swagger.v3.oas.annotations.tags.Tag(name = "Autenticación", description = "Login/registro de admin y cliente, recuperación de contraseña — todo público, emite el JWT bearer usado por las superficies admin y cliente")
 @RestController
 public class AuthController {
 
-    // Reset links expire quickly since, unlike the invitation token, this one can be requested
-    // repeatedly by anyone who knows an email address.
-    private static final Duration PASSWORD_RESET_TTL = Duration.ofHours(1);
-
     private final UserRepository userRepository;
     private final CustomerRepository customerRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
-    private final EmailService emailService;
+    // IMP-06. El token y el correo del reset; el correo sale por el outbox (OutboxService.enqueuePasswordReset).
+    private final PasswordResetMailer resetMailer;
+    private final OutboxService outboxService;
     private final TokenVersionService tokenVersionService;
     private final AccountAttemptThrottle accountThrottle;
-    private final StorePublicUrlResolver publicUrls;
     // F24: días y no una hora como el reset de contraseña — el reset lo pide el usuario y lo usa en el
     // momento; la invitación le llega sin haberla pedido, dentro del correo del pedido.
     private final Duration customerInvitationTtl;
@@ -65,19 +61,19 @@ public class AuthController {
     private final AuditTrail auditTrail;
 
     public AuthController(UserRepository userRepository, CustomerRepository customerRepository,
-                           PasswordEncoder passwordEncoder, JwtService jwtService, EmailService emailService,
-                           TokenVersionService tokenVersionService, AccountAttemptThrottle accountThrottle,
-                           StorePublicUrlResolver publicUrls, AdminInvitationPolicy adminInvitationPolicy,
+                           PasswordEncoder passwordEncoder, JwtService jwtService, PasswordResetMailer resetMailer,
+                           OutboxService outboxService, TokenVersionService tokenVersionService,
+                           AccountAttemptThrottle accountThrottle, AdminInvitationPolicy adminInvitationPolicy,
                            AuditTrail auditTrail,
                            @Value("${app.customer-invitation.ttl-days:30}") int customerInvitationTtlDays) {
         this.userRepository = userRepository;
         this.customerRepository = customerRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
-        this.emailService = emailService;
+        this.resetMailer = resetMailer;
+        this.outboxService = outboxService;
         this.tokenVersionService = tokenVersionService;
         this.accountThrottle = accountThrottle;
-        this.publicUrls = publicUrls;
         this.customerInvitationTtl = Duration.ofDays(customerInvitationTtlDays);
         this.adminInvitationPolicy = adminInvitationPolicy;
         this.auditTrail = auditTrail;
@@ -306,30 +302,13 @@ public class AuthController {
         // Always respond 200 regardless of whether the email matches an account — don't leak
         // which admin emails exist on this store.
         userRepository.findByStoreIdAndEmail(store.getId(), request.email()).ifPresent(user -> {
-            String token = UUID.randomUUID().toString();
-            user.setPasswordResetToken(token);
-            user.setPasswordResetExpiresAt(Instant.now().plus(PASSWORD_RESET_TTL));
-            userRepository.save(user);
-
-            emailService.send(user.getEmail(), "Recupera tu contraseña", resetPasswordBody(store, token));
+            resetMailer.issue(user);
+            User saved = userRepository.save(user);
+            // IMP-06. Al outbox, en esta transacción: un SMTP caído ya no pierde el enlace, y la respuesta no espera al
+            // SMTP, así que tampoco tarda distinto cuando la cuenta existe que cuando no.
+            outboxService.enqueuePasswordReset(saved);
         });
         return ResponseEntity.ok().build();
-    }
-
-    /**
-     * PROD-04. El enlace sale del origen de ESTA tienda. Antes era la URL global de plataforma, así que el
-     * administrador de cualquier tienda recibía un enlace al panel de otra — y el token, que sí es suyo, no
-     * habría servido allí: {@code adminResetPassword} resuelve el tenant por él {@code Host}.
-     *
-     * <p>Visible en el paquete para poder afirmar sobre el cuerpo sin enviar nada, igual que
-     * {@code AdminInvitationMailer.body} y {@code OrderEmailComposer.invitationBody}: en los tests no
-     * hay SMTP y {@code EmailServiceImpl} registra y omite el envío.
-     */
-    String resetPasswordBody(Store store, String token) {
-        String link = publicUrls.storefrontUrl(store, "/admin/reset-password?token=" + token);
-        return "Recibimos una solicitud para restablecer tu contraseña.\n\n"
-                + "Ingresa al siguiente enlace para elegir una nueva (válido por 1 hora):\n" + link
-                + "\n\nSi no fuiste tú, puedes ignorar este correo.";
     }
 
     @PostMapping("/api/admin/auth/reset-password")

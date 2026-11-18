@@ -1,6 +1,14 @@
 {
   "components" : {
     "schemas" : {
+      "AccessEmailNoteRequest" : {
+        "properties" : {
+          "note" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "CloseStoreRequest" : {
         "properties" : {
           "confirmSlug" : {
@@ -13,6 +21,66 @@
           }
         },
         "required" : [ "reason" ],
+        "type" : "object"
+      },
+      "OutboxFailureDto" : {
+        "properties" : {
+          "attempts" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "channel" : {
+            "enum" : [ "POS", "MAIL", "ACCESS" ],
+            "type" : "string"
+          },
+          "companyId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "lastError" : {
+            "type" : "string"
+          },
+          "legacy" : {
+            "type" : "boolean"
+          },
+          "orderId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "orderNumber" : {
+            "type" : "string"
+          },
+          "recipientEmail" : {
+            "type" : "string"
+          },
+          "storeId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "type" : {
+            "enum" : [ "POS_ORDER", "ORDER_PLACED_EMAIL", "ORDER_CONFIRMATION_EMAIL", "CUSTOMER_INVITATION_EMAIL", "ADMIN_INVITATION_EMAIL", "PASSWORD_RESET_EMAIL" ],
+            "type" : "string"
+          },
+          "uncertain" : {
+            "type" : "boolean"
+          },
+          "updatedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "userId" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
         "type" : "object"
       },
       "Owner" : {
@@ -46,6 +114,52 @@
             "maxLength" : 255,
             "minLength" : 0,
             "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "PageOutboxFailureDto" : {
+        "properties" : {
+          "content" : {
+            "items" : {
+              "$ref" : "#/components/schemas/OutboxFailureDto"
+            },
+            "type" : "array"
+          },
+          "empty" : {
+            "type" : "boolean"
+          },
+          "first" : {
+            "type" : "boolean"
+          },
+          "last" : {
+            "type" : "boolean"
+          },
+          "number" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "numberOfElements" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "pageable" : {
+            "$ref" : "#/components/schemas/PageableObject"
+          },
+          "size" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "sort" : {
+            "$ref" : "#/components/schemas/SortObject"
+          },
+          "totalElements" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalPages" : {
+            "format" : "int32",
+            "type" : "integer"
           }
         },
         "type" : "object"
@@ -447,6 +561,111 @@
   },
   "openapi" : "3.1.0",
   "paths" : {
+    "/api/platform/access-emails/failed" : {
+      "get" : {
+        "operationId" : "failed",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "storeId",
+          "required" : false,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "query",
+          "name" : "page",
+          "required" : false,
+          "schema" : {
+            "default" : 1,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PageOutboxFailureDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "platformApiKey" : [ ]
+        } ],
+        "tags" : [ "Correos de acceso (plataforma)" ]
+      }
+    },
+    "/api/platform/access-emails/{id}/resolve" : {
+      "post" : {
+        "operationId" : "resolve",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/AccessEmailNoteRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "platformApiKey" : [ ]
+        } ],
+        "tags" : [ "Correos de acceso (plataforma)" ]
+      }
+    },
+    "/api/platform/access-emails/{id}/retry" : {
+      "post" : {
+        "operationId" : "retry",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/AccessEmailNoteRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "platformApiKey" : [ ]
+        } ],
+        "tags" : [ "Correos de acceso (plataforma)" ]
+      }
+    },
     "/api/platform/diagnostics/sentry-test" : {
       "post" : {
         "operationId" : "sentryTest",
@@ -898,6 +1117,9 @@
     "url" : "/"
   } ],
   "tags" : [ {
+    "description" : "Invitaciones y restablecimientos de contraseña que no se pudieron entregar, de cualquier tienda; header X-Platform-Key, solo desde la red privada",
+    "name" : "Correos de acceso (plataforma)"
+  }, {
     "description" : "Comprobaciones de operación del ambiente desplegado; header X-Platform-Key, solo desde la red privada",
     "name" : "Diagnóstico (plataforma)"
   }, {

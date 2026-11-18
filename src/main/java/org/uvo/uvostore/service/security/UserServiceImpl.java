@@ -18,6 +18,7 @@ import org.uvo.uvostore.service.audit.AuditDiff;
 import org.uvo.uvostore.service.audit.AuditEntry;
 import org.uvo.uvostore.service.audit.AuditTrail;
 import org.uvo.uvostore.service.catalog.FileStorageService;
+import org.uvo.uvostore.service.outbox.OutboxService;
 
 import java.time.Duration;
 import java.util.HashSet;
@@ -38,12 +39,15 @@ public class UserServiceImpl implements UserService {
     private final AdminInvitationPolicy invitationPolicy;
     // POS-6. El token y el correo de la invitación, compartidos con el alta de tiendas.
     private final AdminInvitationMailer invitationMailer;
+    // IMP-06. El correo de la invitación, al outbox en la misma transacción que el token.
+    private final OutboxService outboxService;
     private final AuditTrail auditTrail;
 
     public UserServiceImpl(UserRepository userRepository, RoleRepository roleRepository,
                             PasswordEncoder passwordEncoder, FileStorageService fileStorageService,
                             TokenVersionService tokenVersionService, AdminInvitationPolicy invitationPolicy,
-                            AdminInvitationMailer invitationMailer, AuditTrail auditTrail) {
+                            AdminInvitationMailer invitationMailer, OutboxService outboxService,
+                            AuditTrail auditTrail) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
@@ -51,6 +55,7 @@ public class UserServiceImpl implements UserService {
         this.tokenVersionService = tokenVersionService;
         this.invitationPolicy = invitationPolicy;
         this.invitationMailer = invitationMailer;
+        this.outboxService = outboxService;
         this.auditTrail = auditTrail;
     }
 
@@ -109,7 +114,9 @@ public class UserServiceImpl implements UserService {
                         .with("roles", roleNames(saved))));
 
         if (command.sendInvitation()) {
-            invitationMailer.send(saved, store);
+            // IMP-06. Antes se enviaba aquí mismo, dentro de la transacción: si algo la deshacía después, el correo
+            // ya había salido con un token que no existe, y si el SMTP fallaba solo quedaba el log.
+            outboxService.enqueueAdminInvitation(saved);
         }
         return saved;
     }
@@ -157,7 +164,7 @@ public class UserServiceImpl implements UserService {
         User saved = userRepository.save(user);
         auditTrail.record(AuditEntry.of(AuditAction.USER_INVITATION_RESEND, AuditTargetType.USER, saved.getId())
                 .details(AuditDiff.create().with("email", saved.getEmail())));
-        invitationMailer.send(saved, store);
+        outboxService.enqueueAdminInvitation(saved);
         return saved;
     }
 

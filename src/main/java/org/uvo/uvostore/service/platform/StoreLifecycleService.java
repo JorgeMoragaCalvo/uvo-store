@@ -11,7 +11,7 @@ public interface StoreLifecycleService {
 
     /**
      * Una invitación nueva para el dueño, que deja su cuenta como recién creada: activa, sin contraseña, sin sesiones,
-     * con el rol de dueño y, si se pide, con otro correo. El correo sale después del commit.
+     * con el rol de dueño y, si se pide, con otro correo. El correo se encola en el outbox con el commit (IMP-06).
      *
      * @param newEmail nulo o vacío = el mismo
      */

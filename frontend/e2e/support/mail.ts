@@ -1,5 +1,5 @@
-// PROD-14a. Los correos que capturó el doble de SMTP. Todos salen después del commit (la invitación por un
-// oyente AFTER_COMMIT, los de la orden por el outbox), que es justo lo que los tests del backend no ejecutan.
+// PROD-14a. Los correos que capturó el doble de SMTP. Todos salen después del commit por el outbox (los de acceso
+// desde IMP-06, los de la orden desde PROD-13b), que es justo lo que los tests del backend no ejecutan.
 
 import { expect } from '@playwright/test'
 import { http } from './http.ts'
