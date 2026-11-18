@@ -284,17 +284,28 @@ restablecer() { # restablecer <token> -> código HTTP
     codigo_de "ensayo-a.$DOMINIO" -X POST "https://ensayo-a.$DOMINIO/api/admin/auth/reset-password" \
         -H 'Content-Type: application/json' -d "{\"token\":\"$1\",\"password\":\"$CLAVE_ADMIN-c11\"}"
 }
-fila_reset() { # estado|con_error de la fila de reset más nueva de la tienda A
-    sql "SELECT m.status || '|' || (m.last_error IS NOT NULL) FROM outbox_messages m
+fila_reset() { # estado|con-error o sin-error de la fila de reset más nueva de la tienda A
+    # Texto explícito y no el booleano: concatenado, PostgreSQL lo convierte en 'true'/'false', no en el 't'/'f'
+    # que psql muestra para una columna booleana suelta.
+    sql "SELECT m.status || '|' || CASE WHEN m.last_error IS NULL THEN 'sin-error' ELSE 'con-error' END
+         FROM outbox_messages m
          JOIN users u ON u.id = m.user_id
          WHERE u.email = '$CORREO_A' AND m.type = 'PASSWORD_RESET_EMAIL' ORDER BY m.id DESC LIMIT 1"
 }
-reset_fallo_y_espera() { [ "$(fila_reset)" = "PENDING|t" ]; }
+# Como esperar(), pero al rendirse dice en qué estado quedó la fila (vacío = no hay fila).
+esperar_fila() { # esperar_fila <descripción> <segundos> <estado esperado>
+    local i=0 visto=""
+    until visto="$(fila_reset 2>&1)" && [ "$visto" = "$3" ]; do
+        i=$((i + 1))
+        [ "$i" -le "$2" ] || die "no se cumplió: $1 (se esperaba '$3', la fila está en '$visto')"
+        sleep 1
+    done
+}
 mailpit_arriba() { curl -fs -o /dev/null http://127.0.0.1:8025/api/v1/info; }
 
 docker stop mailpit > /dev/null
 afirmar_igual "C11: con el SMTP caído, el pedido de restablecimiento responde igual" 200 "$(olvide "$CORREO_A")"
-esperar "el despachador intenta, falla y deja la fila en cola" 60 reset_fallo_y_espera
+esperar_fila "el despachador intenta, falla y deja la fila en cola" 60 "PENDING|con-error"
 echo "OK  C11: la fila queda en cola con el error del intento"
 sql "SELECT last_error FROM outbox_messages m JOIN users u ON u.id = m.user_id
      WHERE u.email = '$CORREO_A' AND m.type = 'PASSWORD_RESET_EMAIL' ORDER BY m.id DESC LIMIT 1" \
@@ -302,14 +313,15 @@ sql "SELECT last_error FROM outbox_messages m JOIN users u ON u.id = m.user_id
 
 systemctl restart uvostore-staging
 esperar_readiness "$PUERTO" 180 uvostore-staging || die "no volvió después del reinicio"
-afirmar_igual "C11: tras el reinicio la fila sigue en cola" "PENDING|t" "$(fila_reset)"
+afirmar_igual "C11: tras el reinicio la fila sigue en cola" "PENDING|con-error" "$(fila_reset)"
 
 docker start mailpit > /dev/null
 esperar "Mailpit de vuelta" 60 mailpit_arriba
 # El reintento llega con la espera del despachador (1 minuto tras el primer fallo).
 esperar "el correo de restablecimiento después de volver el SMTP" 180 token_de_reset "$CORREO_A"
 TOKEN_RESET_1="$(token_de_reset "$CORREO_A")"
-pronto "C11: la fila queda entregada" "SENT|f" fila_reset
+esperar_fila "C11: la fila queda entregada" 15 "SENT|sin-error"
+echo "OK  C11: la fila queda entregada"
 afirmar_igual "C11: la fila no guarda el token" 0 \
     "$(sql "SELECT count(*) FROM outbox_messages WHERE dedup_key LIKE '%$TOKEN_RESET_1%' OR token_hash = '$TOKEN_RESET_1'")"
 
