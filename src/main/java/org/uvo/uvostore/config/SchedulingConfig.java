@@ -20,7 +20,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  * <p>PROD-15b: cada pasada de un trabajo programado lleva su propio id en el MDC ({@code job-…}, ver
  * {@link LogContext#newJobId()}), así sus líneas de log se agrupan como las de una petición, y lo que
  * escriba (una fila de auditoría, una fila del outbox que acabe en el POS) queda con ese id. Va como
- * decorador del planificador y no en cada {@code @Scheduled}: así cubre los siete sin tocarlos, y
+ * decorador del planificador y no en cada {@code @Scheduled}: así cubre los ocho sin tocarlos, y
  * también al que se añada mañana.
  */
 @Configuration

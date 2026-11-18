@@ -90,6 +90,7 @@ class PosNotifierDisabledTest {
         return OutboxMessage.builder()
                 .id(1L)
                 .order(order)
+                .store(order.getStore())
                 .type(OutboxType.POS_ORDER)
                 .companyId(companyId)
                 .dedupKey("pos:" + PosOrderPayloadMapper.idempotencyKey(order.getOrderNumber(), companyId))

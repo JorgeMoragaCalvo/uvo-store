@@ -706,7 +706,7 @@ transaction** as the fact — `CheckoutServiceImpl.checkout` (new orders only, n
 on its early returns — as a plain INSERT against a UNIQUE `dedup_key`, so a double enqueue aborts the second
 transaction. One `POS_ORDER` row **per company** (key = `PosOrderPayloadMapper.idempotencyKey`), so one
 company failing no longer re-sends to the other. `OutboxDispatcher` delivers them every 10 s
-(`app.outbox.*`) on two channels (POS, mail), each under its own `AdvisoryLock` (`…003`, `…004`), triggered by
+(`app.outbox.*`) on two channels (POS, mail; IMP-06 added `access`), each under its own `AdvisoryLock` (`…003`, `…004`), triggered by
 `OutboxScheduler` (a separate bean so tests can switch it off). Per row: **claim** (`PENDING→IN_FLIGHT`,
 `attempts+1`) committed in `OutboxStore` *before* the network call (the `RefundIntentStore` pattern), content
 built in a short read-only transaction in a separate bean, the call outside any transaction, and the outcome
@@ -731,6 +731,34 @@ load the order before `markPaid` in the same transaction, and `findByIdForUpdate
 unrefreshed instance, so two simultaneous confirmations both saw `PENDING`. `findForUpdateOrThrow` now does
 `flush()` → lock → `refresh()` (`ConcurrentPaymentConfirmationTest`). Deploy without overlapping instances: an
 old one still writes the dropped columns.
+
+**The panel's access e-mails go through the same outbox** (IMP-06, V36). Admin invitation (create and resend), the
+owner's invitation on store creation, the owner's access recovery and the admin «¿Olvidaste tu contraseña?» used to
+send inside the transaction (an e-mail with a token that a later rollback erased) or from an `AFTER_COMMIT` listener
+(lost on a crash, and an SMTP failure only reached the log). Now each is a row written **in the transaction that
+issues the token** (`OutboxService.enqueueAdminInvitation` / `enqueuePasswordReset`, `MANDATORY`):
+- **Shape.** `outbox_messages` got `store_id` (NOT NULL for every row, backfilled from the order; store queries no
+  longer go through the order), a nullable `order_id`, and `user_id` + `token_hash` for the two access types. The
+  `outbox_messages_subject` CHECK enforces "order XOR user". `StoreOwnerInvitedEvent` / `StoreOwnerInvitationListener`
+  are gone, and `AdminInvitationMailer` / `PasswordResetMailer` only `issue` and `compose`.
+- **No secret in the row.** `token_hash` is the token's SHA-256 (`AccessTokenHash`), and the dedup key is
+  `access:<type>:<hash>`. At delivery `AccessEmailComposer` reloads the user and compares the hash with the live
+  token. A row whose token was replaced (a resend), used, revoked or expired becomes `SKIPPED` with the reason. So
+  an old e-mail never carries a usable link, and a resend voids the queued one.
+- **Delivery.** The mail retries what's uncertain (an orphan in flight): a duplicate carries the same single-use
+  link. Access rows are their own channel, `OutboxChannel.ACCESS` (lock `…005`, a third scheduler method,
+  `SCHEDULER_POOL_SIZE` default 8), so a backlog of order e-mails doesn't delay a link that expires in an hour.
+  Metrics label it `channel="access"`, and `UvoStoreCorreosDeAccesoDetenidos` fires at 10 min in queue.
+- **Recovery.** Failed access rows show in the store's «Envíos fallidos» (no history row; audited against the
+  `USER`) and in `GET /api/platform/access-emails/failed[?storeId=]` + `POST …/{id}/retry|resolve`
+  (`PlatformAccessEmailController`, any store, order rows 404). That's for an owner whose invitation never arrived
+  and who has nobody to log in. `countUnfinishedForStore` ignores access rows: closure revokes the tokens, and
+  those rows skip themselves. `forgot-password` no longer waits for SMTP, which also removes the timing difference
+  between existing and unknown accounts.
+- **Tests and evidence.** `AccessEmailOutboxTest` (committed, dispatcher scoped to the test store via
+  `InterruptionTestSupport.dispatcher(storeId)`), `PlatformAccessEmailControllerTest`, and the rehearsal's C11 step
+  (Mailpit stopped, a restart in between, the mail goes out on its own). `docs/despliegue-backend.md` «Correo (C11)»
+  lists what still depends on the real provider (SPF/DKIM/DMARC, inbox delivery).
 
 **The admin panel doesn't edit what UvoPOS owns** (POS-2). It used to ignore `ProductSyncMapping`: an admin could
 change a synced product's price or stock, the change never reached the POS and the next sync overwrote it.
@@ -1175,16 +1203,13 @@ proposed** (POS-1 is still open; `uvopos-app` has none of this), like POS-4/POS-
   back secrets the POS no longer holds. The operator path (no `pos`) keeps the old semantics (duplicate slug ⇒
   400).
 - **The owner is always invited** (both paths; the operator form `/plataforma/nueva-tienda` lost its password
-  field): password `null` plus a PROD-06 token. `service/security/AdminInvitationMailer` (`issue`, `send`,
-  package-visible `body`) came out of `UserServiceImpl` so both use it with an explicit `Store`. The e-mail goes
-  **after commit** (`StoreOwnerInvitedEvent` → `StoreOwnerInvitationListener`, `AFTER_COMMIT`, own
-  `REQUIRES_NEW` read-only transaction). A failure there can't change the response: Spring runs `AFTER_COMMIT`
-  listeners inside `afterCompletion`, and `TransactionSynchronizationUtils` catches and logs whatever they throw
-  (a bite proved it — without the listener's `try` the onboarding still answered 200). The `try` is there to
-  attribute the failure: a log line with the user and a Sentry event, instead of Spring's generic log line that
-  alerts nobody. **Not durable**; if it's lost, «¿Olvidaste tu contraseña?» works for an account
-  without a password and closes the pending invitation (`AuthController.adminResetPassword`). The platform can
-  send a new one (PROD-23's owner access recovery, same event and listener).
+  field): password `null` plus a PROD-06 token. `service/security/AdminInvitationMailer` (`issue`, `compose`,
+  package-visible `body`) came out of `UserServiceImpl` so both use it with an explicit `Store`. Since IMP-06 the
+  e-mail is an `ADMIN_INVITATION_EMAIL` outbox row written in the onboarding transaction (it used to be an
+  `AFTER_COMMIT` listener, not durable): no row on rollback, delivered with retries after commit, and a POS retry
+  that returns the existing store queues nothing. If it fails for good, the platform sees it in
+  `/api/platform/access-emails/failed`; the owner can also use «¿Olvidaste tu contraseña?» (which closes the pending
+  invitation), and the platform can send a new one (PROD-23's owner access recovery).
 - **The initial catalog is pushed by the POS**, one `POST /api/sync/product` per product, with the token it
   generated — **sequentially** (two parallel creates can still collide on a unique constraint; the retry
   resolves it). The bulk path was hardened: product slugs are unique per store (`PosCatalogWriter.uniqueProductSlug`:
@@ -1320,7 +1345,7 @@ consumer is the UvoPOS backoffice; there is no screen.
     creation). The role is recreated if it was deleted; an existing role keeps its permissions.
   - The new e-mail must not belong to another admin of the store. The 5-minute cooldown applies only when the
     e-mail doesn't change.
-  - The invitation e-mail goes after commit through `StoreOwnerInvitedEvent`. Audit:
+  - The invitation e-mail is an outbox row written in the same transaction (IMP-06). Audit:
     `STORE_OWNER_ACCESS_RECOVERY`, never the token.
 - **Closing**, `POST /{id}/close` with `{confirmSlug, reason}`:
   - Preconditions: the store is suspended, the slug is typed correctly, and nothing is in flight. "In flight"
@@ -1419,6 +1444,7 @@ DELETE FROM settings WHERE store_id IN (SELECT id FROM purge_store);
 DELETE FROM store_settings WHERE store_id IN (SELECT id FROM purge_store);
 DELETE FROM payment_gateway_configs WHERE store_id IN (SELECT id FROM purge_store);
 DELETE FROM pos_connections WHERE store_id IN (SELECT id FROM purge_store);
+-- Cascades from users (and from stores): the access e-mail rows of outbox_messages (IMP-06).
 DELETE FROM user_roles WHERE user_id IN (SELECT id FROM users WHERE store_id IN (SELECT id FROM purge_store));
 DELETE FROM role_permissions WHERE role_id IN (SELECT id FROM roles WHERE store_id IN (SELECT id FROM purge_store));
 DELETE FROM users WHERE store_id IN (SELECT id FROM purge_store);
@@ -1476,7 +1502,8 @@ the `ORDER_STOCK_SHORTAGE_RELEASE` audit action (GAP-03: a paid order whose stoc
 be dispatched, and is unblocked by retrying the decrement or releasing it with a note), V33 `orders.tax_included`
 and `order_items.discount_amount` (GAP-05: IVA is computed after the coupon, and the coupon discount and the IVA are
 spread across the lines so they add up to the order; with tax-inclusive prices the order keeps the gross subtotal and
-the IVA is contained, not added). Migration comments must stay WIN1252-encodable (no `−` or `Σ`): the local
+the IVA is contained, not added), V36 the access e-mails in the outbox (IMP-06: `outbox_messages.store_id`,
+nullable `order_id`, `user_id` + `token_hash`, the "order XOR user" CHECK). Migration comments must stay WIN1252-encodable (no `−` or `Σ`): the local
 database's client encoding rejects them and Flyway fails.
 `spring.jpa.hibernate.ddl-auto=validate`, so any entity change must be paired with a new Flyway
 migration — **never edit an already-applied one**, add the next number (`V24__...sql`).
@@ -1917,7 +1944,7 @@ its PostgreSQL, S3). Runbook and evidence per checklist item: `docs/despliegue-b
     constructor — `PosPolicyFixture` has the three combinations that matter.
   - **Package-visible builder methods to assert outbound payloads** without SMTP or network:
     `MercadoPagoServiceImpl.buildPreferenceRequest`, `PaymentServiceImpl.buildSessionParams`,
-    `OrderEmailComposer.invitationBody`, `AdminInvitationMailer.body`. That's why those
+    `OrderEmailComposer.invitationBody`, `AdminInvitationMailer.body`, `PasswordResetMailer.body`. That's why those
     tests live in the service's own package.
   - **The outbox scheduler is off in tests** (`app.outbox.scheduler.enabled=false` in surefire,
     `pom.xml`): it runs every few seconds, and every cached context would dispatch over the shared

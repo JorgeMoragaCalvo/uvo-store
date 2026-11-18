@@ -8,34 +8,32 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.uvo.uvostore.entity.outbox.enums.OutboxStatus;
+import org.uvo.uvostore.entity.outbox.enums.OutboxType;
 import org.uvo.uvostore.entity.security.User;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.OrderRepository;
+import org.uvo.uvostore.repository.OutboxMessageRepository;
 import org.uvo.uvostore.repository.PermissionRepository;
 import org.uvo.uvostore.repository.RoleRepository;
 import org.uvo.uvostore.repository.StoreRepository;
 import org.uvo.uvostore.repository.UserRepository;
 import org.uvo.uvostore.service.platform.StoreLifecycleService;
-import org.uvo.uvostore.service.security.AdminInvitationMailer;
+import org.uvo.uvostore.service.outbox.AccessTokenHash;
 import org.uvo.uvostore.support.CommittedFixtures;
 import org.uvo.uvostore.support.WithPosIntegration;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
 
 /**
- * PROD-23. La invitación de la recuperación de acceso sale <b>después del commit</b>, igual que la del alta: si la
- * operación se deshiciera, el dueño recibiría un enlace con un token que no existe. Solo se ve con transacciones
- * confirmadas de verdad; {@link #cleanUp} borra lo que quedó.
+ * PROD-23. La invitación de la recuperación de acceso no puede salir si la operación se deshace: el dueño recibiría un
+ * enlace con un token que no existe. IMP-06: ahora es una fila del outbox escrita en la misma transacción, así que
+ * existe si y solo si la recuperación se confirmó. Solo se ve con transacciones confirmadas de verdad;
+ * {@link #cleanUp} borra lo que quedó.
  *
- * <p>Las mismas anotaciones y el mismo espía que {@code StoreOnboardingCommitTest}, para compartir su contexto.
+ * <p>Las mismas anotaciones que {@code StoreOnboardingCommitTest}, para compartir su contexto.
  */
 @WithPosIntegration
 @AutoConfigureMockMvc
@@ -59,8 +57,8 @@ class OwnerAccessRecoveryCommitTest {
     private OrderRepository orderRepository;
     @Autowired
     private PasswordEncoder passwordEncoder;
-    @MockitoSpyBean
-    private AdminInvitationMailer mailer;
+    @Autowired
+    private OutboxMessageRepository outboxRepository;
 
     private CommittedFixtures fixtures;
     private Store store;
@@ -81,14 +79,21 @@ class OwnerAccessRecoveryCommitTest {
     }
 
     @Test
-    @DisplayName("La invitación sale una vez, después del commit, con el token nuevo")
-    void theInvitationIsSentAfterCommit() {
+    @DisplayName("Con el commit queda una sola fila del correo, con la huella del token nuevo")
+    void theInvitationIsQueuedWithTheCommit() {
         lifecycle.recoverOwnerAccess(store.getId(), null);
 
         String token = userRepository.findById(owner.getId()).orElseThrow().getInvitationToken();
         assertThat(token).isNotNull();
-        verify(mailer, times(1)).send(argThat((User invited) -> invited.getId().equals(owner.getId())
-                && token.equals(invited.getInvitationToken())), argThat((Store target) -> target.getId().equals(store.getId())));
+        assertThat(outboxRepository.findByUserIdOrderByIdDesc(owner.getId())).singleElement().satisfies(message -> {
+            assertThat(message.getType()).isEqualTo(OutboxType.ADMIN_INVITATION_EMAIL);
+            assertThat(message.getStatus()).isEqualTo(OutboxStatus.PENDING);
+            assertThat(message.getTokenHash()).isEqualTo(AccessTokenHash.of(token)).isNotEqualTo(token);
+        });
+        // La fila no guarda el token en ninguna columna.
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM outbox_messages WHERE user_id = ? "
+                + "AND (dedup_key LIKE ? OR coalesce(last_error, '') LIKE ?)", Integer.class, owner.getId(),
+                "%" + token + "%", "%" + token + "%")).isZero();
     }
 
     @Test
@@ -99,7 +104,7 @@ class OwnerAccessRecoveryCommitTest {
             status.setRollbackOnly();
         });
 
-        verify(mailer, never()).send(any(), any());
+        assertThat(outboxRepository.findByUserIdOrderByIdDesc(owner.getId())).isEmpty();
         User unchanged = userRepository.findById(owner.getId()).orElseThrow();
         assertThat(unchanged.getPassword()).isNotNull();
         assertThat(unchanged.getInvitationToken()).isNull();

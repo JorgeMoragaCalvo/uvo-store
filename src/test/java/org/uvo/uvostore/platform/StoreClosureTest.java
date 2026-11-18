@@ -232,6 +232,7 @@ class StoreClosureTest extends IntegrationTestSupport {
         Order order = order(store, PaymentStatus.PAID, true);
         OutboxMessage message = new OutboxMessage();
         message.setOrder(order);
+        message.setStore(order.getStore());
         message.setType(OutboxType.POS_ORDER);
         message.setCompanyId(nextSeq());
         message.setDedupKey("close-test:" + nextSeq());

@@ -1101,7 +1101,7 @@
             "type" : "integer"
           },
           "channel" : {
-            "enum" : [ "POS", "MAIL" ],
+            "enum" : [ "POS", "MAIL", "ACCESS" ],
             "type" : "string"
           },
           "companyId" : {
@@ -1129,8 +1129,15 @@
           "orderNumber" : {
             "type" : "string"
           },
+          "recipientEmail" : {
+            "type" : "string"
+          },
+          "storeId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
           "type" : {
-            "enum" : [ "POS_ORDER", "ORDER_PLACED_EMAIL", "ORDER_CONFIRMATION_EMAIL", "CUSTOMER_INVITATION_EMAIL" ],
+            "enum" : [ "POS_ORDER", "ORDER_PLACED_EMAIL", "ORDER_CONFIRMATION_EMAIL", "CUSTOMER_INVITATION_EMAIL", "ADMIN_INVITATION_EMAIL", "PASSWORD_RESET_EMAIL" ],
             "type" : "string"
           },
           "uncertain" : {
@@ -1139,6 +1146,10 @@
           "updatedAt" : {
             "format" : "date-time",
             "type" : "string"
+          },
+          "userId" : {
+            "format" : "int64",
+            "type" : "integer"
           }
         },
         "type" : "object"

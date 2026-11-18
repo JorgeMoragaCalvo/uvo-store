@@ -23,9 +23,12 @@ function failure(overrides: Partial<OutboxFailure> = {}): OutboxFailure {
     id: 1,
     type: 'POS_ORDER',
     channel: 'POS',
+    storeId: 1,
     orderId: 10,
     orderNumber: 'ORD-10',
     companyId: 77,
+    userId: null,
+    recipientEmail: null,
     attempts: 1,
     lastError: 'Resultado incierto, la venta pudo haber llegado al POS: Read timed out',
     createdAt: '2026-11-01T00:00:00Z',
@@ -75,6 +78,34 @@ describe('OutboxFailures', () => {
     expect(screen.getByText('Correo de confirmación de pago')).toBeInTheDocument()
     expect(screen.getAllByText('Pudo haber llegado')).toHaveLength(1)
     expect(screen.getAllByRole('link', { name: 'ORD-10' })[0]).toHaveAttribute('href', '/admin/orders/10')
+  })
+
+  it('un correo de acceso muestra el destinatario en vez de la orden y explica qué hacer si el enlace venció', async () => {
+    const user = userEvent.setup()
+    await renderPage([
+      failure({ id: 3, orderNumber: 'ORD-OTRA' }),
+      failure({
+        id: 4,
+        type: 'ADMIN_INVITATION_EMAIL',
+        channel: 'ACCESS',
+        orderId: null,
+        orderNumber: null,
+        companyId: null,
+        userId: 9,
+        recipientEmail: 'invitada@test.local',
+        uncertain: false,
+        lastError: 'Sin éxito tras 48 h: Fallo de envío',
+      }),
+    ])
+
+    expect(screen.getByText('Correo de invitación al panel')).toBeInTheDocument()
+    expect(screen.getByText('invitada@test.local')).toBeInTheDocument()
+
+    await user.click(screen.getAllByRole('button', { name: 'Revisar' })[1])
+
+    expect(screen.getByText(/solo sale si el enlace sigue vigente/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Usuarios' })).toHaveAttribute('href', '/admin/users')
+    expect(screen.queryByText('Revisé en el POS que la venta no está')).not.toBeInTheDocument()
   })
 
   it('una venta incierta no se reintenta sin nota ni sin confirmar que se revisó el POS', async () => {

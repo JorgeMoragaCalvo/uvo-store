@@ -195,6 +195,9 @@ class OperationalBacklogMetricsTest extends IntegrationTestSupport {
         Mocks mocks = new Mocks();
         List<Object[]> rows = new ArrayList<>();
         rows.add(new Object[] {OutboxType.POS_ORDER, OutboxStatus.PENDING, 3L, Instant.parse("2026-10-25T11:50:00Z")});
+        // IMP-06. Los correos de acceso cuentan en su propio canal, que es lo que mira UvoStoreCorreosDeAccesoDetenidos.
+        rows.add(new Object[] {OutboxType.PASSWORD_RESET_EMAIL, OutboxStatus.PENDING, 1L,
+                Instant.parse("2026-10-25T11:55:00Z")});
         when(mocks.outbox.countBacklogByTypeAndStatus()).thenReturn(rows);
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         mocks.metrics(clock).bindTo(registry);
@@ -203,6 +206,7 @@ class OperationalBacklogMetricsTest extends IntegrationTestSupport {
         clock.advance(Duration.ofSeconds(30));
         assertThat(oldest(registry, "pos")).as("misma foto, más tarde").isEqualTo(630);
         assertThat(oldest(registry, "mail")).isZero();
+        assertThat(oldest(registry, "access")).isEqualTo(330);
         assertThat(registry.get(OperationalBacklogMetrics.OUTBOX_PENDING).tag("channel", "pos").gauge().value())
                 .isEqualTo(3);
     }
@@ -267,6 +271,7 @@ class OperationalBacklogMetricsTest extends IntegrationTestSupport {
         Instant createdAt = Instant.now().minus(age);
         outboxRepository.saveAndFlush(OutboxMessage.builder()
                 .order(order)
+                .store(order.getStore())
                 .type(type)
                 .companyId(type.channel() == OutboxChannel.POS ? 1L : null)
                 .dedupKey("backlog:" + nextSeq())

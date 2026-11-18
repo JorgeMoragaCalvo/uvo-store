@@ -1,6 +1,7 @@
 package org.uvo.uvostore.service.outbox;
 
 import org.springframework.stereotype.Component;
+import org.uvo.uvostore.entity.outbox.OutboxMessage;
 import org.uvo.uvostore.entity.outbox.enums.OutboxType;
 import org.uvo.uvostore.service.notification.EmailService;
 
@@ -8,8 +9,11 @@ import org.uvo.uvostore.service.notification.EmailService;
 @Component
 public class OrderConfirmationEmailHandler extends EmailOutboxHandler {
 
+    private final OrderEmailComposer composer;
+
     public OrderConfirmationEmailHandler(OrderEmailComposer composer, EmailService emailService) {
-        super(composer, emailService);
+        super(emailService);
+        this.composer = composer;
     }
 
     @Override
@@ -18,7 +22,7 @@ public class OrderConfirmationEmailHandler extends EmailOutboxHandler {
     }
 
     @Override
-    protected EmailDraft compose(Long orderId) {
-        return composer.orderConfirmation(orderId);
+    protected EmailDraft compose(OutboxMessage message) {
+        return composer.orderConfirmation(message.getOrder().getId());
     }
 }

@@ -1,6 +1,5 @@
 package org.uvo.uvostore.service.platform;
 
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.uvo.uvostore.entity.audit.enums.AuditAction;
@@ -15,6 +14,7 @@ import org.uvo.uvostore.service.BusinessException;
 import org.uvo.uvostore.service.audit.AuditDiff;
 import org.uvo.uvostore.service.audit.AuditEntry;
 import org.uvo.uvostore.service.audit.AuditTrail;
+import org.uvo.uvostore.service.outbox.OutboxService;
 import org.uvo.uvostore.service.security.AdminInvitationMailer;
 import org.uvo.uvostore.service.security.AdminInvitationPolicy;
 
@@ -38,14 +38,14 @@ public class StoreLifecycleServiceImpl implements StoreLifecycleService {
     private final AdminInvitationMailer invitationMailer;
     private final AdminInvitationPolicy invitationPolicy;
     private final TokenVersionService tokenVersionService;
-    private final ApplicationEventPublisher events;
+    private final OutboxService outboxService;
     private final AuditTrail auditTrail;
     private final PlatformStoreMapper mapper;
 
     public StoreLifecycleServiceImpl(StoreRepository storeRepository, UserRepository userRepository,
                                      StoreOwnerRole storeOwnerRole, AdminInvitationMailer invitationMailer,
                                      AdminInvitationPolicy invitationPolicy, TokenVersionService tokenVersionService,
-                                     ApplicationEventPublisher events, AuditTrail auditTrail,
+                                     OutboxService outboxService, AuditTrail auditTrail,
                                      PlatformStoreMapper mapper) {
         this.storeRepository = storeRepository;
         this.userRepository = userRepository;
@@ -53,7 +53,7 @@ public class StoreLifecycleServiceImpl implements StoreLifecycleService {
         this.invitationMailer = invitationMailer;
         this.invitationPolicy = invitationPolicy;
         this.tokenVersionService = tokenVersionService;
-        this.events = events;
+        this.outboxService = outboxService;
         this.auditTrail = auditTrail;
         this.mapper = mapper;
     }
@@ -120,8 +120,8 @@ public class StoreLifecycleServiceImpl implements StoreLifecycleService {
      * backoffice no mandan dos correos, el segundo invalidando el primero. Cambiar el correo no espera: es justo lo
      * que se hace cuando el anterior estaba mal.
      *
-     * <p>El correo sale <b>después del commit</b>, con el mismo evento y oyente que el alta
-     * ({@link StoreOwnerInvitedEvent}): si esto se deshiciera, el enlace llevaría un token que no existe.
+     * <p>IMP-06. El correo se encola en el outbox <b>en esta misma transacción</b>, como en el alta: si esto se
+     * deshiciera no quedaría fila, y si se confirma sale aunque el proceso caiga después.
      */
     @Override
     @Transactional
@@ -183,7 +183,7 @@ public class StoreLifecycleServiceImpl implements StoreLifecycleService {
                         .with("roleRestored", roleRestored)
                         .with("sessionsRevoked", true)));
 
-        events.publishEvent(new StoreOwnerInvitedEvent(saved.getId()));
+        outboxService.enqueueAdminInvitation(saved);
         return mapper.toDto(store);
     }
 

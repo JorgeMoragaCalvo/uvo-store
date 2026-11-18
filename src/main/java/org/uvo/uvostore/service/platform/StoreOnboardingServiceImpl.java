@@ -1,6 +1,5 @@
 package org.uvo.uvostore.service.platform;
 
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.ResultSetExtractor;
 import org.springframework.stereotype.Service;
@@ -22,6 +21,7 @@ import org.uvo.uvostore.service.BusinessException;
 import org.uvo.uvostore.service.audit.AuditDiff;
 import org.uvo.uvostore.service.audit.AuditEntry;
 import org.uvo.uvostore.service.audit.AuditTrail;
+import org.uvo.uvostore.service.outbox.OutboxService;
 import org.uvo.uvostore.service.pos.PosApiKey;
 import org.uvo.uvostore.service.pos.PosIntegrationPolicy;
 import org.uvo.uvostore.service.security.AdminInvitationMailer;
@@ -70,7 +70,7 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
     private final PosConnectionRepository posConnectionRepository;
     private final PosIntegrationPolicy posPolicy;
     private final AdminInvitationMailer invitationMailer;
-    private final ApplicationEventPublisher events;
+    private final OutboxService outboxService;
     private final JdbcTemplate jdbcTemplate;
     private final StorePublicUrlResolver publicUrls;
     private final AuditTrail auditTrail;
@@ -81,7 +81,7 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
                                       SettingRepository settingRepository,
                                       PosConnectionRepository posConnectionRepository,
                                       PosIntegrationPolicy posPolicy, AdminInvitationMailer invitationMailer,
-                                      ApplicationEventPublisher events, JdbcTemplate jdbcTemplate,
+                                      OutboxService outboxService, JdbcTemplate jdbcTemplate,
                                       StorePublicUrlResolver publicUrls, AuditTrail auditTrail) {
         this.storeRepository = storeRepository;
         this.userRepository = userRepository;
@@ -91,7 +91,7 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
         this.posConnectionRepository = posConnectionRepository;
         this.posPolicy = posPolicy;
         this.invitationMailer = invitationMailer;
-        this.events = events;
+        this.outboxService = outboxService;
         this.jdbcTemplate = jdbcTemplate;
         this.publicUrls = publicUrls;
         this.auditTrail = auditTrail;
@@ -164,9 +164,9 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
                         .with("origin", pos != null ? "POS" : "OPERATOR")
                         .with("posCompanyId", pos != null ? pos.companyId() : null)));
 
-        // El correo sale después del commit (StoreOwnerInvitationListener): si el alta se deshiciera, el dueño
-        // recibiría un enlace con un token que no existe.
-        events.publishEvent(new StoreOwnerInvitedEvent(savedAdmin.getId()));
+        // IMP-06. El correo va al outbox en esta misma transacción: si el alta se deshace, no queda fila (ni un enlace
+        // con un token que no existe), y si se confirma, sale aunque el proceso caiga justo después.
+        outboxService.enqueueAdminInvitation(savedAdmin);
         return toResponse(savedStore, savedAdmin, true);
     }
 

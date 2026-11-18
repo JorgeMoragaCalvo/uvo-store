@@ -394,6 +394,7 @@ class OutboxDispatcherTest {
         return OutboxMessage.builder()
                 .id(seq)
                 .order(order)
+                .store(order.getStore())
                 .type(type)
                 .companyId(companyId)
                 .dedupKey(type + ":" + seq)

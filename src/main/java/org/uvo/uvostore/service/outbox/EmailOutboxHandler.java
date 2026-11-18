@@ -9,8 +9,8 @@ import org.uvo.uvostore.entity.outbox.OutboxMessage;
 import org.uvo.uvostore.service.notification.EmailService;
 
 /**
- * PROD-13b. Lo común a los tres correos de una orden: armar el contenido (cada subclase dice cuál), enviarlo
- * y clasificar el resultado.
+ * PROD-13b. Lo común a los correos del outbox (los tres de una orden y, desde IMP-06, los dos de acceso): armar el
+ * contenido (cada subclase dice cuál), enviarlo y clasificar el resultado.
  *
  * <p>Un correo que no se sabe si salió se reintenta: un duplicado es una molestia, no un documento
  * tributario. Lo que no se reintenta es lo que no va a cambiar: una dirección que el servidor rechaza o un
@@ -21,21 +21,19 @@ abstract class EmailOutboxHandler implements OutboxHandler {
     /** Lo que queda en {@code last_error} de lo omitido por falta de SMTP; el SQL de V25 lo busca por esto. */
     static final String SMTP_NOT_CONFIGURED = "smtp-not-configured";
 
-    protected final OrderEmailComposer composer;
     private final EmailService emailService;
 
-    protected EmailOutboxHandler(OrderEmailComposer composer, EmailService emailService) {
-        this.composer = composer;
+    protected EmailOutboxHandler(EmailService emailService) {
         this.emailService = emailService;
     }
 
-    protected abstract EmailDraft compose(Long orderId);
+    protected abstract EmailDraft compose(OutboxMessage message);
 
     @Override
     public OutboxResult handle(OutboxMessage message) {
         EmailDraft draft;
         try {
-            draft = compose(message.getOrder().getId());
+            draft = compose(message);
         } catch (RuntimeException e) {
             // Falló antes de enviar nada.
             return OutboxResult.retryable("No se pudo preparar el correo: " + describe(e));

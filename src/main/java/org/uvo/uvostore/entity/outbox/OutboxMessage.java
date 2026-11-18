@@ -21,12 +21,19 @@ import lombok.Setter;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
 import org.uvo.uvostore.entity.order.Order;
+import org.uvo.uvostore.entity.outbox.enums.OutboxChannel;
 import org.uvo.uvostore.entity.outbox.enums.OutboxStatus;
 import org.uvo.uvostore.entity.outbox.enums.OutboxType;
+import org.uvo.uvostore.entity.security.User;
+import org.uvo.uvostore.entity.tenant.Store;
 
 /**
  * PROD-13b. Un efecto posterior al commit de una orden, escrito en la misma transacción que lo origina.
  * Ver {@code V25__outbox.sql} para el porqué y {@code OutboxDispatcher} para cómo se entrega.
+ *
+ * <p>IMP-06 (V36). También los correos de acceso del panel, que no cuelgan de una orden sino de un usuario: una fila es
+ * de una orden ({@link #order}) <b>o</b> de un usuario ({@link #user} + {@link #tokenHash}), según su tipo, y todas
+ * llevan su tienda ({@link #store}).
  *
  * <p>Los cambios de estado no pasan por esta entidad sino por los UPDATE condicionados de
  * {@code OutboxMessageRepository}: el estado leído puede estar viejo, y lo que decide es la fila.
@@ -46,10 +53,30 @@ public class OutboxMessage {
     @EqualsAndHashCode.Include
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "order_id", nullable = false)
+    /** Null en los correos de acceso. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "order_id")
     @OnDelete(action = OnDeleteAction.CASCADE)
     private Order order;
+
+    /** IMP-06. La tienda de la fila: la de su orden o la de su usuario. */
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "store_id", nullable = false)
+    @OnDelete(action = OnDeleteAction.CASCADE)
+    private Store store;
+
+    /** IMP-06. Solo en los correos de acceso: a quién va. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id")
+    @OnDelete(action = OnDeleteAction.CASCADE)
+    private User user;
+
+    /**
+     * IMP-06. Solo en los correos de acceso: el SHA-256 del token que se emitió con la fila, nunca el token. Al
+     * entregar se compara con el token vigente del usuario, y si cambió la fila se omite.
+     */
+    @Column(name = "token_hash", length = 64)
+    private String tokenHash;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -98,6 +125,11 @@ public class OutboxMessage {
      */
     @Column(name = "requeued_at")
     private Instant requeuedAt;
+
+    /** IMP-06. Un correo de acceso: cuelga de un usuario, no de una orden. */
+    public boolean isAccess() {
+        return type.channel() == OutboxChannel.ACCESS;
+    }
 
     /** GAP-04. Desde cuándo cuenta el plazo de abandono: el último reencolado manual o, si no hubo, la creación. */
     public Instant retryWindowStart() {

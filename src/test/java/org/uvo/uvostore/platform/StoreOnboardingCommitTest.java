@@ -1,30 +1,27 @@
 package org.uvo.uvostore.platform;
 
-import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.uvo.uvostore.entity.security.User;
+import org.uvo.uvostore.entity.outbox.OutboxMessage;
+import org.uvo.uvostore.entity.outbox.enums.OutboxStatus;
+import org.uvo.uvostore.entity.outbox.enums.OutboxType;
 import org.uvo.uvostore.entity.tenant.Store;
+import org.uvo.uvostore.repository.OutboxMessageRepository;
 import org.uvo.uvostore.repository.StoreRepository;
+import org.uvo.uvostore.repository.UserRepository;
 import org.uvo.uvostore.service.platform.StoreOnboardingCommand;
 import org.uvo.uvostore.service.platform.StoreOnboardingResponse;
 import org.uvo.uvostore.service.platform.StoreOnboardingService;
-import org.uvo.uvostore.service.platform.StoreOwnerInvitationListener;
-import org.uvo.uvostore.service.security.AdminInvitationMailer;
+import org.uvo.uvostore.service.outbox.AccessTokenHash;
 import org.uvo.uvostore.support.WithPosIntegration;
 
 import java.time.Duration;
@@ -38,25 +35,17 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * POS-6. Lo que del alta solo se ve con transacciones confirmadas de verdad: el correo del dueño, que sale después del
- * commit, y dos reintentos simultáneos del POS.
+ * POS-6. Lo que del alta solo se ve con transacciones confirmadas de verdad: el correo del dueño y dos reintentos
+ * simultáneos del POS. Aquí cada alta confirma, y {@link #cleanUp} borra lo que dejó.
  *
- * <p>Bajo {@code IntegrationTestSupport} la transacción se deshace al final, así que el oyente {@code AFTER_COMMIT}
- * no corre nunca y no hay con quién chocar. Aquí cada alta confirma, y {@link #cleanUp} borra lo que dejó.
- *
- * <p>El correo se observa con un espía sobre {@link AdminInvitationMailer}: en los tests no hay SMTP, y el envío
- * real solo registra que se omitió.
+ * <p>IMP-06. El correo del dueño ya no sale de un oyente {@code AFTER_COMMIT}: es una fila del outbox escrita en la
+ * transacción del alta, que existe si y solo si el alta se confirmó. Su entrega (y lo que pasa si el SMTP falla) la
+ * prueba {@code AccessEmailOutboxTest}.
  */
 @WithPosIntegration
 @AutoConfigureMockMvc
@@ -72,8 +61,10 @@ class StoreOnboardingCommitTest {
     private JdbcTemplate jdbc;
     @Autowired
     private MockMvc mockMvc;
-    @MockitoSpyBean
-    private AdminInvitationMailer mailer;
+    @Autowired
+    private OutboxMessageRepository outboxRepository;
+    @Autowired
+    private UserRepository userRepository;
 
     @Value("${app.platform-api-key}")
     private String platformKey;
@@ -101,21 +92,26 @@ class StoreOnboardingCommitTest {
     }
 
     @Test
-    @DisplayName("La invitación sale una vez, después del commit, y un reintento no manda otra")
-    void theInvitationIsSentOnceAfterCommitAndNotOnARetry() {
+    @DisplayName("La invitación queda en el outbox con el commit, una vez, y un reintento no encola otra")
+    void theInvitationIsQueuedOnceWithTheCommitAndNotOnARetry() {
         StoreOnboardingCommand alta = alta();
 
         StoreOnboardingResponse first = onboarding.createStore(alta);
 
         assertThat(first.created()).isTrue();
-        verify(mailer, times(1)).send(argThat((User owner) -> owner.getId().equals(first.adminUserId())
-                && owner.getInvitationToken() != null), argThat((Store store) -> store.getId().equals(first.storeId())));
+        String token = userRepository.findById(first.adminUserId()).orElseThrow().getInvitationToken();
+        assertThat(outboxRepository.findByUserIdOrderByIdDesc(first.adminUserId())).singleElement().satisfies(message -> {
+            assertThat(message.getType()).isEqualTo(OutboxType.ADMIN_INVITATION_EMAIL);
+            assertThat(message.getStatus()).isEqualTo(OutboxStatus.PENDING);
+            assertThat(message.getTokenHash()).isEqualTo(AccessTokenHash.of(token));
+            assertThat(message.getStore().getId()).isEqualTo(first.storeId());
+        });
 
         StoreOnboardingResponse retry = onboarding.createStore(alta);
 
         assertThat(retry.created()).isFalse();
         assertThat(retry.storeId()).isEqualTo(first.storeId());
-        verify(mailer, times(1)).send(any(), any());
+        assertThat(outboxRepository.findByUserIdOrderByIdDesc(first.adminUserId())).hasSize(1);
     }
 
     @Test
@@ -123,13 +119,16 @@ class StoreOnboardingCommitTest {
     void nothingIsSentWhenTheOnboardingRollsBack() {
         // Un correo enviado antes del commit llevaría un token que, deshecha el alta, no existe.
         StoreOnboardingCommand alta = alta();
+        Integer invitationsBefore = jdbc.queryForObject(
+                "SELECT count(*) FROM outbox_messages WHERE type = 'ADMIN_INVITATION_EMAIL'", Integer.class);
 
         new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
             onboarding.createStore(alta);
             status.setRollbackOnly();
         });
 
-        verify(mailer, never()).send(any(), any());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM outbox_messages WHERE type = 'ADMIN_INVITATION_EMAIL'",
+                Integer.class)).isEqualTo(invitationsBefore);
         assertThat(storeRepository.existsBySlug(alta.slug())).isFalse();
         // PROD-18. Ni la fila de auditoría del alta: va en la misma transacción.
         assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_events WHERE action = 'STORE_CREATE' "
@@ -137,20 +136,13 @@ class StoreOnboardingCommitTest {
     }
 
     @Test
-    @DisplayName("Con el envío fallando, el alta responde bien y el fallo queda atribuido al dueño")
-    void aFailingMailStillAnswersOkAndIsAttributed() throws Exception {
-        // El 200 no depende del oyente: Spring captura lo que lance un oyente AFTER_COMMIT (afterCompletion). Lo que
-        // aporta su try es la línea con el usuario (y el evento en Sentry), en vez del registro genérico de Spring.
-        doThrow(new IllegalStateException("SMTP caído")).when(mailer).send(any(), any());
+    @DisplayName("El alta por HTTP responde sin esperar al SMTP: el correo queda pendiente en el outbox")
+    void theHttpOnboardingAnswersWithoutWaitingForSmtp() throws Exception {
+        // Antes un oyente AFTER_COMMIT enviaba con la respuesta ya decidida, y un SMTP caído solo dejaba una línea de
+        // log. Ahora el alta no toca el SMTP: lo hace el despachador, que reintenta.
         StoreOnboardingCommand alta = alta();
         StoreOnboardingCommand.PosLink pos = alta.pos();
-        Logger logger = (Logger) LoggerFactory.getLogger(StoreOwnerInvitationListener.class);
-        ListAppender<ILoggingEvent> appender = new ListAppender<>();
-        appender.start();
-        logger.addAppender(appender);
-        String response;
-        try {
-            response = mockMvc.perform(post("/api/platform/stores")
+        String response = mockMvc.perform(post("/api/platform/stores")
                         .header("X-Platform-Key", platformKey)
                         .contentType("application/json")
                         .content("""
@@ -162,17 +154,12 @@ class StoreOnboardingCommitTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.created").value(true))
                     .andReturn().getResponse().getContentAsString();
-        } finally {
-            logger.detachAppender(appender);
-        }
 
-        verify(mailer, times(1)).send(any(), any());
         assertThat(storeRepository.existsBySlug(alta.slug())).isTrue();
         long ownerId = new ObjectMapper().readTree(response).get("adminUserId").asLong();
-        assertThat(appender.list).anySatisfy(event -> {
-            assertThat(event.getLevel()).isEqualTo(Level.ERROR);
-            assertThat(event.getFormattedMessage()).contains("Invitación del dueño sin enviar user_id=" + ownerId);
-        });
+        assertThat(outboxRepository.findByUserIdOrderByIdDesc(ownerId)).singleElement()
+                .extracting(OutboxMessage::getStatus, OutboxMessage::getAttempts)
+                .containsExactly(OutboxStatus.PENDING, 0);
     }
 
     @Test

@@ -7,5 +7,10 @@ package org.uvo.uvostore.entity.outbox.enums;
  */
 public enum OutboxChannel {
     POS,
-    MAIL
+    MAIL,
+    /**
+     * IMP-06. Los correos de acceso del panel (invitaciones y restablecimiento de contraseña). Aparte de {@link #MAIL}
+     * para que una tanda grande de correos de pedidos no retrase un enlace que vence en una hora.
+     */
+    ACCESS
 }

@@ -317,8 +317,12 @@ class ClosedStorePurgeProcedureTest {
                 couponId, orderId, customerId);
         jdbc.update("INSERT INTO order_refunds (order_id, amount, type, status, user_id) VALUES (?, 100, 'EXTERNAL', 'COMPLETED', ?)",
                 orderId, owner.getId());
-        jdbc.update("INSERT INTO outbox_messages (order_id, type, dedup_key, status, company_id) VALUES (?, 'POS_ORDER', ?, 'SENT', ?)",
-                orderId, "purga:" + seq, companyId);
+        jdbc.update("INSERT INTO outbox_messages (order_id, store_id, type, dedup_key, status, company_id) VALUES (?, ?, 'POS_ORDER', ?, 'SENT', ?)",
+                orderId, id, "purga:" + seq, companyId);
+        // IMP-06. Un correo de acceso, sin orden: lo borra la cascada desde users (y desde stores).
+        jdbc.update("INSERT INTO outbox_messages (user_id, store_id, type, dedup_key, status, token_hash) "
+                + "VALUES (?, ?, 'ADMIN_INVITATION_EMAIL', ?, 'SENT', ?)", owner.getId(), id, "purga-acceso:" + seq,
+                "0".repeat(64));
 
         // La auditoría la escriben la suspensión y el cierre, después.
         assertThat(storeTables()).filteredOn(table -> !table.equals("audit_events")).allSatisfy(table -> assertThat(

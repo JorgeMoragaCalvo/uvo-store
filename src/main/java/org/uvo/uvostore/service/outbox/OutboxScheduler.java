@@ -13,8 +13,8 @@ import org.uvo.uvostore.entity.outbox.enums.OutboxChannel;
  * cada pocos segundos: encendido, cada contexto de Spring que los tests guardan en caché despacharía sobre la
  * base compartida y se quedaría con las filas que un test está comprobando.
  *
- * <p>Dos métodos y no uno: con el pool del planificador a un hilo por trabajo, un POS que no contesta ocupa el
- * suyo y los correos siguen saliendo por el otro.
+ * <p>Un método por canal y no uno: con el pool del planificador a un hilo por trabajo, un POS que no contesta ocupa
+ * el suyo y los correos siguen saliendo por el otro.
  */
 @Component
 @ConditionalOnProperty(name = "app.outbox.scheduler.enabled", havingValue = "true", matchIfMissing = true)
@@ -36,5 +36,12 @@ public class OutboxScheduler {
             initialDelayString = "${app.outbox.interval-ms:10000}")
     public void dispatchMail() {
         dispatcher.dispatch(OutboxChannel.MAIL);
+    }
+
+    /** IMP-06. Los correos de acceso, en su hilo: un enlace de restablecimiento vence en una hora. */
+    @Scheduled(fixedDelayString = "${app.outbox.interval-ms:10000}",
+            initialDelayString = "${app.outbox.interval-ms:10000}")
+    public void dispatchAccess() {
+        dispatcher.dispatch(OutboxChannel.ACCESS);
     }
 }

@@ -9,6 +9,7 @@ import org.uvo.uvostore.entity.order.Order;
 import org.uvo.uvostore.entity.outbox.OutboxMessage;
 import org.uvo.uvostore.entity.outbox.enums.OutboxStatus;
 import org.uvo.uvostore.entity.outbox.enums.OutboxType;
+import org.uvo.uvostore.entity.security.User;
 import org.uvo.uvostore.repository.OutboxMessageRepository;
 import org.uvo.uvostore.service.customer.CustomerAccountsPolicy;
 import org.uvo.uvostore.service.pos.PosOrderNotifier;
@@ -72,10 +73,51 @@ public class OutboxService {
         enqueue(order, OutboxType.ORDER_CONFIRMATION_EMAIL, null, "email:confirmation:" + order.getId());
     }
 
+    /**
+     * IMP-06. La invitación de un administrador a elegir su contraseña, en la misma transacción que acaba de emitir su
+     * token ({@code AdminInvitationMailer.issue}): el alta, el reenvío, el dueño de una tienda nueva y la recuperación
+     * de acceso del dueño. El usuario ya tiene que estar guardado.
+     *
+     * <p>La clave de deduplicación es la huella del token: emitir otro da otra fila, y la vieja se omitirá al
+     * entregarse porque su token ya no es el vigente.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void enqueueAdminInvitation(User user) {
+        enqueueAccess(user, OutboxType.ADMIN_INVITATION_EMAIL, user.getInvitationToken());
+    }
+
+    /** IMP-06. El enlace de «¿Olvidaste tu contraseña?», en la misma transacción que emite el token. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void enqueuePasswordReset(User user) {
+        enqueueAccess(user, OutboxType.PASSWORD_RESET_EMAIL, user.getPasswordResetToken());
+    }
+
+    private void enqueueAccess(User user, OutboxType type, String token) {
+        if (user.getId() == null) {
+            throw new IllegalStateException("El usuario tiene que estar guardado antes de encolar su correo");
+        }
+        String tokenHash = AccessTokenHash.of(token);
+        Instant now = Instant.now();
+        repository.save(OutboxMessage.builder()
+                .store(user.getStore())
+                .user(user)
+                .tokenHash(tokenHash)
+                .type(type)
+                .dedupKey("access:" + type.name().toLowerCase() + ":" + tokenHash)
+                .status(OutboxStatus.PENDING)
+                .attempts(0)
+                .nextAttemptAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .requestId(LogContext.requestId())
+                .build());
+    }
+
     private void enqueue(Order order, OutboxType type, Long companyId, String dedupKey) {
         Instant now = Instant.now();
         repository.save(OutboxMessage.builder()
                 .order(order)
+                .store(order.getStore())
                 .type(type)
                 .companyId(companyId)
                 .dedupKey(dedupKey)

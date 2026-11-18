@@ -547,6 +547,7 @@ class PosReconciliationTest extends IntegrationTestSupport {
 
         OutboxMessage message = new OutboxMessage();
         message.setOrder(order);
+        message.setStore(order.getStore());
         message.setType(OutboxType.POS_ORDER);
         message.setCompanyId(mapped.mapping.getCompanyId());
         message.setDedupKey("pos4-test:" + seq);

@@ -1,4 +1,4 @@
-package org.uvo.uvostore.controller.auth;
+package org.uvo.uvostore.service.security;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -11,16 +11,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * PROD-04. El enlace de recuperación de contraseña lleva al panel de su propia tienda.
  *
- * <p>En este paquete porque {@code resetPasswordBody(...)} es visible solo en el paquete — la misma razón
- * por la que el cuerpo de la invitación de administrador se comprueba junto a {@code UserServiceImpl} y el
- * de la de cliente junto a su oyente. {@code PasswordResetTest} cubre el recorrido (token, caducidad, un
+ * <p>En este paquete porque {@code PasswordResetMailer.body(...)} es visible solo en el paquete, igual que el
+ * cuerpo de la invitación de administrador ({@code AdminInvitationMailerTest}). IMP-06: el cuerpo vivía en
+ * {@code AuthController}; ahora lo arma el mailer al entregar la fila del outbox. {@code PasswordResetTest} cubre el recorrido (token, caducidad, un
  * solo uso) leyendo la fila de la base; lo que no se podía comprobar hasta ahora es <b>a dónde apunta el
  * enlace</b>, que con una sola URL global era siempre el mismo panel para todas las tiendas.
  */
-class PasswordResetLinkTest extends IntegrationTestSupport {
+class PasswordResetMailerTest extends IntegrationTestSupport {
 
     @Autowired
-    private AuthController authController;
+    private PasswordResetMailer resetMailer;
 
     @Test
     @DisplayName("Dos tiendas reciben dos enlaces distintos, cada uno al suyo")
@@ -28,8 +28,8 @@ class PasswordResetLinkTest extends IntegrationTestSupport {
         Store first = createStore("reset-host-a");
         Store second = createStore("reset-host-b");
 
-        String firstBody = authController.resetPasswordBody(first, "token-a");
-        String secondBody = authController.resetPasswordBody(second, "token-b");
+        String firstBody = resetMailer.body(first, "token-a");
+        String secondBody = resetMailer.body(second, "token-b");
 
         assertThat(firstBody).contains("http://" + hostHeader(first) + "/admin/reset-password?token=token-a");
         assertThat(secondBody).contains("http://" + hostHeader(second) + "/admin/reset-password?token=token-b");
@@ -44,7 +44,7 @@ class PasswordResetLinkTest extends IntegrationTestSupport {
         store.setDomain("reset-" + nextSeq() + ".example");
         store.setDomainVerifiedAt(java.time.Instant.now());
 
-        assertThat(authController.resetPasswordBody(store, "tok"))
+        assertThat(resetMailer.body(store, "tok"))
                 .contains("http://" + store.getDomain() + "/admin/reset-password?token=tok");
     }
 }

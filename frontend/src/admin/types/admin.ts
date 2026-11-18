@@ -474,16 +474,27 @@ export interface AdminOrderStats {
   outboxFailed: number
 }
 
-export type OutboxType = 'POS_ORDER' | 'ORDER_PLACED_EMAIL' | 'ORDER_CONFIRMATION_EMAIL' | 'CUSTOMER_INVITATION_EMAIL'
+export type OutboxType =
+  | 'POS_ORDER'
+  | 'ORDER_PLACED_EMAIL'
+  | 'ORDER_CONFIRMATION_EMAIL'
+  | 'CUSTOMER_INVITATION_EMAIL'
+  // IMP-06: los correos de acceso del panel, que no cuelgan de una orden sino de un usuario.
+  | 'ADMIN_INVITATION_EMAIL'
+  | 'PASSWORD_RESET_EMAIL'
 
-// GAP-04. Una entrega del outbox que falló de forma definitiva (OutboxFailureDto).
+// GAP-04. Una entrega del outbox que falló de forma definitiva (OutboxFailureDto). IMP-06: también un correo de
+// acceso, que trae el destinatario en vez de la orden.
 export interface OutboxFailure {
   id: number
   type: OutboxType
-  channel: 'POS' | 'MAIL'
-  orderId: number
-  orderNumber: string
+  channel: 'POS' | 'MAIL' | 'ACCESS'
+  storeId: number
+  orderId: number | null
+  orderNumber: string | null
   companyId: number | null
+  userId: number | null
+  recipientEmail: string | null
   attempts: number
   lastError: string | null
   createdAt: string

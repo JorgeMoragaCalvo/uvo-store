@@ -164,9 +164,10 @@ jobs:
   # IMP-05 (paso 7). Construye staging desde cero en una máquina Ubuntu limpia, solo con los scripts de ops/ y los
   # artefactos armados como en release.yml, y comprueba lo que prometen: systemd con APP_ENVIRONMENT=staging (todas
   # las reglas de arranque, roles de base incluidos), nginx con hosts desconocidos rechazados, dos tiendas, una
-  # imagen en S3 (S3Mock) que sobrevive a reinicio, redespliegue y vuelta atrás, y un dominio propio con su cambio.
-  # Simulado: certificados autofirmados, S3Mock y Mailpit (detalle en ops/servidor/ensayo/ensayo.sh). El informe de
-  # verificar.sh queda como artefacto.
+  # imagen en S3 (S3Mock) que sobrevive a reinicio, redespliegue y vuelta atrás, un dominio propio con su cambio, y
+  # (IMP-06, C11) un correo de restablecimiento que sale solo tras una caída del SMTP y un reinicio, invalidando el
+  # anterior. Simulado: certificados autofirmados, S3Mock y Mailpit (detalle en ops/servidor/ensayo/ensayo.sh). El
+  # informe de verificar.sh queda como artefacto.
   ensayo-servidor:
     name: Staging rehearsal (clean server)
     runs-on: ubuntu-24.04
