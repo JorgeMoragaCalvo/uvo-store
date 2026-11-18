@@ -31,10 +31,10 @@ jobs:
           --health-retries 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
@@ -53,7 +53,7 @@ jobs:
           cp "$jar_file" "uvo-store-${{ github.ref_name }}.jar"
 
       - name: Upload backend artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: backend-jar
           path: uvo-store-${{ github.ref_name }}.jar
@@ -67,10 +67,10 @@ jobs:
         working-directory: frontend
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "24"
           cache: npm
@@ -117,10 +117,10 @@ jobs:
           fi
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "24"
           cache: npm
@@ -162,7 +162,7 @@ jobs:
         run: zip -r ../frontend-dist-${{ github.ref_name }}-${{ matrix.environment }}.zip dist
 
       - name: Upload frontend artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: frontend-dist-${{ matrix.environment }}
           path: frontend-dist-${{ github.ref_name }}-${{ matrix.environment }}.zip
@@ -184,12 +184,12 @@ jobs:
       contents: write
     steps:
       - name: Download backend artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: backend-jar
 
       - name: Download frontend artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: frontend-dist-*
           merge-multiple: true
@@ -198,7 +198,7 @@ jobs:
       # and deploys with the scripts of the version it installs (docs/despliegue-backend.md), never a newer
       # checkout. Only ops/ is checked out; owner and dates are fixed so the same commit gives the same tarball.
       - name: Checkout ops/
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: repo
           sparse-checkout: ops
@@ -215,7 +215,7 @@ jobs:
           cat SHA256SUMS
 
       - name: Create release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
           files: |
