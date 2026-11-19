@@ -63,5 +63,27 @@ export const E2E_PLATFORM_API_KEY = 'e2e-only-platform-key-for-local-browser-tes
 /** GAP-08. El secreto de los webhooks de Stripe es de la plataforma (STRIPE_WEBHOOK_SECRET), no de la tienda. */
 export const E2E_STRIPE_WEBHOOK_SECRET = 'whsec_e2e_only_for_local_browser_tests'
 
+/**
+ * IMP-07. La homologación (`npm run e2e:homologacion`): qué pasarelas hablan con el proveedor real en vez de con su
+ * doble. Vacío en el E2E de siempre. Ver playwright.homologacion.config.ts y docs/homologacion-pagos.md.
+ */
+export type HomologatedGateway = 'webpay' | 'mercadopago'
+export const HOMOLOGACION: HomologatedGateway[] = parseHomologacion(process.env.HOMOLOGACION)
+
+function parseHomologacion(value: string | undefined): HomologatedGateway[] {
+  if (!value?.trim()) return []
+  return value.split(',').map((raw) => {
+    const gateway = raw.trim()
+    if (gateway === 'webpay' || gateway === 'mercadopago') return gateway
+    throw new Error(`HOMOLOGACION admite webpay y mercadopago, separados por coma; llegó «${gateway}»`)
+  })
+}
+
+/**
+ * IMP-07. Con MercadoPago real, el aviso de pago tiene que llegar desde Internet: el host público de un túnel HTTPS
+ * hacia el backend (sin esquema), que la tienda usa como dominio. Vacío si no hay túnel.
+ */
+export const HOMOLOGACION_PUBLIC_HOST = process.env.HOMOLOGACION_PUBLIC_HOST?.trim() ?? ''
+
 /** La base de la red. El lanzador la borra y la crea en cada corrida, así que el nombre tiene que delatarla. */
 export const E2E_DB_NAME = process.env.E2E_DB_NAME ?? 'uvostore_e2e'

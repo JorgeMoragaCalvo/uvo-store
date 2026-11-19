@@ -19,6 +19,7 @@ import {
   createProduct,
   createShippingZone,
   disableShipping,
+  enableBankTransfer,
   expectStockInList,
   login,
   logout,
@@ -155,6 +156,8 @@ for (const store of [posStore, panelStore]) {
     await openPanel(page, store)
     await createShippingZone(page, store.slug, REGION)
     await disableShipping(page, store.slug)
+    // IMP-07. El pago manual es una transferencia que la tienda tiene que activar con sus datos.
+    await enableBankTransfer(page, store.slug)
   })
 }
 

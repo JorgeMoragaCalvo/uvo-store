@@ -5,10 +5,16 @@ import GeneralSettings from './GeneralSettings'
 import { toast } from 'sonner'
 import adminApi from '@/admin/services/adminApi'
 import { useAdminGeneralSettingsStore } from '@/admin/stores/useAdminGeneralSettingsStore'
-import type { GeneralSettingsDto, PosResyncSummary } from '@/admin/types/admin'
+import type { GeneralSettingsDto, GeneralSettingsUpdateRequest, PosResyncSummary } from '@/admin/types/admin'
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
-vi.mock('@/admin/services/adminApi', () => ({ default: { pos: { resync: vi.fn() } } }))
+vi.mock('@/admin/services/adminApi', () => ({
+  default: {
+    pos: { resync: vi.fn() },
+    // IMP-07. Lo que la plataforma deja activar; por defecto, todo.
+    paymentGateways: { availability: vi.fn(() => Promise.resolve([])) },
+  },
+}))
 
 /**
  * PROD-12. La pestaña del POS no puede ofrecer un interruptor que no decide nada.
@@ -181,5 +187,41 @@ describe('GeneralSettings: resincronizar con UvoPOS', () => {
     await waitFor(() => expect(toast.error).toHaveBeenCalled())
     expect(vi.mocked(toast.error).mock.calls[0][0]).toMatch(/HTTP 503/)
     expect(toast.success).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * IMP-07. Con STRIPE_ENABLED=false el backend rechaza activar Stripe y rechazaría el formulario entero: el interruptor
+ * queda bloqueado, el motivo se ve, y una tienda que lo tenía activado de antes guarda con Stripe apagado.
+ */
+describe('GeneralSettings: Stripe sin ofrecer en la plataforma', () => {
+  const REASON = 'Stripe no está disponible en esta plataforma. Elige otro medio de pago o consulta a quien opera la tienda.'
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(adminApi.paymentGateways.availability).mockResolvedValue([
+      { gateway: 'STRIPE', available: false, reason: REASON },
+    ])
+  })
+
+  it('locks the switch and says why', async () => {
+    renderWith(BASE)
+    await userEvent.click(screen.getByRole('tab', { name: /stripe/i }))
+
+    await waitFor(() => expect(screen.getByRole('note')).toHaveTextContent(REASON))
+    expect(screen.getByRole('switch', { name: /stripe habilitado/i })).toBeDisabled()
+  })
+
+  it('saves a store that had it on from before with Stripe off', async () => {
+    const update = vi.fn(async (settings: GeneralSettingsUpdateRequest) => ({ ...BASE, ...settings }))
+    renderWith({ ...BASE, stripeEnabled: true })
+    useAdminGeneralSettingsStore.setState({ update: update as never })
+    await userEvent.click(screen.getByRole('tab', { name: /stripe/i }))
+    await waitFor(() => expect(screen.getByRole('note')).toHaveTextContent(/se desactiva al guardar/i))
+
+    await userEvent.click(screen.getByRole('button', { name: /guardar/i }))
+
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
+    expect(update.mock.calls[0][0].stripeEnabled).toBe(false)
   })
 })

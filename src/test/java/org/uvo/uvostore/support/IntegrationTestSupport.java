@@ -127,7 +127,28 @@ public abstract class IntegrationTestSupport {
                 .slug(slugPrefix + "-" + nextSeq())
                 .status(status)
                 .build();
-        return storeRepository.save(store);
+        Store saved = storeRepository.save(store);
+        enableBankTransfer(saved);
+        return saved;
+    }
+
+    /**
+     * IMP-07. El pago manual es una transferencia que la tienda tiene que configurar; las tiendas de prueba la traen
+     * activada para que las pruebas que no son de pagos sigan comprando con {@code paymentMethod=manual}. Las que
+     * prueban la transferencia apagada usan {@link #disableBankTransfer}.
+     */
+    protected void enableBankTransfer(Store store) {
+        jdbcTemplate.update("""
+                INSERT INTO bank_transfer_settings (store_id, enabled, holder_name, holder_rut, bank_name,
+                    account_type, account_number, notice_email, payment_window_hours, created_at, updated_at)
+                VALUES (?, true, 'Tienda de Prueba SpA', '76123456-0', 'Banco de Prueba', 'CORRIENTE', '000123456',
+                    'pagos@test.local', 48, now(), now())
+                ON CONFLICT (store_id) DO UPDATE SET enabled = true
+                """, store.getId());
+    }
+
+    protected void disableBankTransfer(Store store) {
+        jdbcTemplate.update("UPDATE bank_transfer_settings SET enabled = false WHERE store_id = ?", store.getId());
     }
 
     /**

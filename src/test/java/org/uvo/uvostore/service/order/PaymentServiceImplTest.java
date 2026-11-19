@@ -56,7 +56,8 @@ class PaymentServiceImplTest {
 
         paymentService = new PaymentServiceImpl(
                 orderRepository, settingRepository, orderStatusService,
-                "sk_test_fallback", "whsec_fallback", "clp", TestPublicUrls.resolver(), 5000, 20000);
+                "sk_test_fallback", "whsec_fallback", "clp", TestPublicUrls.resolver(),
+                org.uvo.uvostore.service.payment.PaymentPlatformPolicy.of(true), 5000, 20000);
 
         store = Store.builder().id(1L).name("Tienda de prueba").slug("test").status(StoreStatus.ACTIVE).build();
         TenantContext.set(store);

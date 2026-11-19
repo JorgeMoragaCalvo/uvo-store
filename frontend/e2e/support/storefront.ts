@@ -26,18 +26,23 @@ export async function expectAvailableStock(page: Page, stock: number): Promise<v
   await expect(page.getByText(`${stock} disponibles`)).toBeVisible()
 }
 
-/** Agrega a carrito desde la ficha abierta y completa el checkout con «Pago contra entrega». Devuelve el número. */
+/**
+ * Agrega a carrito desde la ficha abierta y completa el checkout con «Transferencia bancaria» (IMP-07: el pago manual).
+ * La confirmación dice cómo pagar. Devuelve el número.
+ */
 export async function checkoutWithManualPayment(page: Page, buyer: Buyer): Promise<string> {
   await fillCheckoutUntilPayment(page, buyer)
 
-  await page.getByLabel('Pago contra entrega').check()
+  await page.getByLabel('Transferencia bancaria').check()
+  await expect(page.getByRole('heading', { name: 'Datos para la transferencia' })).toBeVisible()
   await page.getByRole('button', { name: 'Confirmar Pedido' }).click()
 
-  await expect(page).toHaveURL(/\/order-success\?order=/)
-  await expect(page.getByText('¡Gracias por tu compra!')).toBeVisible()
+  await expect(page).toHaveURL(/\/order-success\?order=.*&gateway=manual/)
+  await expect(page.getByRole('heading', { name: 'Recibimos tu pedido' })).toBeVisible()
+  await expect(page.getByText(/Tienes hasta el/)).toBeVisible()
   const orderNumber = new URL(page.url()).searchParams.get('order')
   if (!orderNumber) throw new Error('La página de confirmación no trae el número de pedido')
-  await expect(page.getByText(`Número de pedido: ${orderNumber}`)).toBeVisible()
+  await expect(page.getByText(`Número de pedido: ${orderNumber}`, { exact: false })).toBeVisible()
   return orderNumber
 }
 

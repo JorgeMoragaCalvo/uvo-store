@@ -2,7 +2,9 @@ package org.uvo.uvostore.service.payment;
 
 import org.uvo.uvostore.service.BusinessException;
 import cl.transbank.model.MallTransactionCreateDetails;
+import cl.transbank.webpay.exception.TransactionCommitException;
 import cl.transbank.webpay.exception.TransactionRefundException;
+import cl.transbank.webpay.exception.TransactionStatusException;
 import cl.transbank.webpay.exception.TransbankHttpApiException;
 import cl.transbank.webpay.exception.WebpayException;
 import cl.transbank.webpay.webpayplus.WebpayPlus;
@@ -35,7 +37,7 @@ public class WebpayServiceImpl implements WebpayService {
     private final OrderRepository orderRepository;
     private final PaymentGatewayConfigRepository configRepository;
     private final OrderStatusService orderStatusService;
-    private final WebpayPlatformPolicy platformPolicy;
+    private final PaymentPlatformPolicy platformPolicy;
     private final String parentCommerceCode;
     private final String apiKey;
     private final boolean production;
@@ -46,7 +48,7 @@ public class WebpayServiceImpl implements WebpayService {
             OrderRepository orderRepository,
             PaymentGatewayConfigRepository configRepository,
             OrderStatusService orderStatusService,
-            WebpayPlatformPolicy platformPolicy,
+            PaymentPlatformPolicy platformPolicy,
             @Value("${webpay.parent-commerce-code}") String parentCommerceCode,
             @Value("${webpay.api-key}") String apiKey,
             @Value("${webpay.environment}") String environment,
@@ -63,13 +65,16 @@ public class WebpayServiceImpl implements WebpayService {
         this.publicUrls = publicUrls;
     }
 
+    // IMP-07. Sin deshacer ante un BusinessException: refuseIfAlreadyCharged marca pagada la orden cuyo cobro anterior
+    // Transbank ya capturó, y después rechaza abrir otra transacción. Los demás BusinessException de este método salen
+    // antes de escribir nada.
     @Override
-    @Transactional
+    @Transactional(noRollbackFor = BusinessException.class)
     public WebpayCreateResult createTransaction(Long orderId) {
         // IMP-02. Solo el inicio mira el interruptor de plataforma. commitTransaction, reconcile y refund no: un
         // pago que Transbank ya cobró tiene que poder confirmarse o devolverse aunque la plataforma deje de
         // ofrecer Webpay.
-        platformPolicy.requireEnabled();
+        platformPolicy.requireEnabled(PaymentGatewayType.WEBPAY);
         Long storeId = TenantContext.requireStoreId();
         Order order = orderRepository.findById(orderId)
                 .filter(o -> o.getStore().getId().equals(storeId))
@@ -80,6 +85,7 @@ public class WebpayServiceImpl implements WebpayService {
         }
 
         String childCommerceCode = requireChildCommerceCode(storeId);
+        refuseIfAlreadyCharged(order);
 
         // CLP has no minor unit — Transbank rejects amounts with decimals for Chilean-peso
         // commerce accounts (matches the rounding PaymentServiceImpl already does for Stripe).
@@ -123,8 +129,12 @@ public class WebpayServiceImpl implements WebpayService {
         WebpayPlusMallTransactionCommitResponse response;
         try {
             response = transaction().commit(token);
+        } catch (TransactionCommitException e) {
+            throw commitFailure(order, e);
         } catch (Exception e) {
-            throw new IllegalStateException("Error al confirmar transacción Webpay: " + e.getMessage(), e);
+            // IMP-07. Un IOException es un timeout o una conexión cortada: Transbank pudo haber capturado el cobro.
+            throw new PaymentOutcomeUncertainException(order.getOrderNumber(),
+                    "Sin respuesta de Transbank al confirmar: " + e.getMessage(), e);
         }
 
         var detail = response.getDetails().get(0);
@@ -218,6 +228,61 @@ public class WebpayServiceImpl implements WebpayService {
             throw new BusinessException("Transbank rechazó el reembolso (código " + response.getResponseCode() + ")");
         }
         return response.getType();
+    }
+
+    /**
+     * IMP-07. Qué dijo Transbank al confirmar. Un 4xx asegura que no se confirmó: el token venció (Transbank aborta la
+     * transacción si no se confirma en unos segundos después del retorno; en integración, entre 30 y 55), se anuló o ya
+     * se había usado. Todo lo demás —5xx, timeout— puede haber cobrado.
+     */
+    private static RuntimeException commitFailure(Order order, TransactionCommitException e) {
+        Throwable cause = e.getCause();
+        if (cause instanceof TransbankHttpApiException http && GatewayRejection.isDefinitive(http.getCode())) {
+            return new BusinessException("Transbank no confirmó la transacción (HTTP " + http.getCode() + "): "
+                    + http.getMessage());
+        }
+        if (cause instanceof WebpayException rejection && !(cause instanceof TransbankHttpApiException)) {
+            return new BusinessException("Transbank no confirmó la transacción: " + rejection.getMessage());
+        }
+        String detail = cause != null ? cause.getMessage() : e.getMessage();
+        return new PaymentOutcomeUncertainException(order.getOrderNumber(),
+                "Transbank no dio una respuesta definitiva al confirmar: " + detail, e);
+    }
+
+    /**
+     * IMP-07. Antes de abrir otra transacción para la misma orden, se pregunta por la anterior. Si la confirmación
+     * anterior quedó incierta (Transbank cobró y la respuesta se perdió), abrir otra le cobraría dos veces al
+     * comprador y pisaría el token del primer cobro, que ya nadie podría conciliar ni devolver.
+     *
+     * <p>Un 4xx de {@code status()} (token viejo que Transbank ya no conoce) cuenta como «no cobrada». Sin respuesta no
+     * se abre otra: es preferible que el comprador reintente en unos minutos a cobrarle dos veces.
+     */
+    private void refuseIfAlreadyCharged(Order order) {
+        String previous = order.getPaymentId();
+        if (previous == null || previous.isBlank()) {
+            return;
+        }
+        WebpayPlusMallTransactionStatusResponse status;
+        try {
+            status = transaction().status(previous);
+        } catch (TransactionStatusException e) {
+            if (e.getCause() instanceof TransbankHttpApiException http && GatewayRejection.isDefinitive(http.getCode())) {
+                return;
+            }
+            throw new IllegalStateException("No se pudo verificar el pago anterior de esta orden en Transbank: "
+                    + e.getMessage(), e);
+        } catch (Exception e) {
+            throw new IllegalStateException("No se pudo verificar el pago anterior de esta orden en Transbank: "
+                    + e.getMessage(), e);
+        }
+        if (status.getDetails() == null || status.getDetails().isEmpty()) {
+            return;
+        }
+        var detail = status.getDetails().get(0);
+        if (detail.getResponseCode() == 0 && "AUTHORIZED".equals(detail.getStatus())) {
+            orderStatusService.markPaid(order.getId(), previous, java.math.BigDecimal.valueOf(detail.getAmount()));
+            throw new BusinessException("Esta orden ya fue pagada");
+        }
     }
 
     /**

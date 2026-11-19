@@ -41,6 +41,8 @@ class OrderEmailHandlersTest {
     private final OrderRepository orderRepository = mock(OrderRepository.class);
     private final EmailService emailService = mock(EmailService.class);
     private final StorePublicUrlResolver publicUrls = mock(StorePublicUrlResolver.class);
+    private final org.uvo.uvostore.repository.BankTransferSettingsRepository bankTransfers =
+            mock(org.uvo.uvostore.repository.BankTransferSettingsRepository.class);
 
     @Test
     @DisplayName("El acuse de recibo sale mientras el pago está pendiente")
@@ -150,7 +152,8 @@ class OrderEmailHandlersTest {
     }
 
     private OrderEmailComposer composer(boolean accountsEnabled) {
-        return new OrderEmailComposer(orderRepository, publicUrls, new CustomerAccountsPolicy(accountsEnabled));
+        return new OrderEmailComposer(orderRepository, publicUrls, new CustomerAccountsPolicy(accountsEnabled),
+                bankTransfers, new org.uvo.uvostore.service.report.ReportZone("America/Santiago"));
     }
 
     private OutboxMessage row(Order order, OutboxType type) {

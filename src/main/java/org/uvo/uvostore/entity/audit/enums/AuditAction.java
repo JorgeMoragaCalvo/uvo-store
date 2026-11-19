@@ -23,6 +23,8 @@ public enum AuditAction {
 
     // Dinero y credenciales.
     PAYMENT_GATEWAY_UPDATE,
+    // IMP-07. Los datos de la transferencia bancaria de la tienda (target STORE).
+    BANK_TRANSFER_UPDATE,
     SETTINGS_MONEY_UPDATE,
     SETTINGS_STRIPE_UPDATE,
     POS_CONNECTION_UPDATE,

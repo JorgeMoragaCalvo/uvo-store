@@ -1,3 +1,5 @@
+import type { BankAccountType } from '@/types/api'
+
 export interface AdminLoginResponse {
   token: string
   id: number
@@ -514,11 +516,25 @@ export interface PaymentGatewayConfigDto {
   credentialsSet: Record<string, boolean>
 }
 
-// IMP-02. Si la plataforma deja activar la pasarela (hoy, Webpay según WEBPAY_ENABLED). `reason` es null si está disponible.
+// IMP-02 / IMP-07. Si la plataforma deja activar la pasarela (WEBPAY_ENABLED, STRIPE_ENABLED, MERCADOPAGO_ENABLED).
+// `reason` es null si está disponible.
 export interface PaymentGatewayAvailability {
   gateway: PaymentGateway
   available: boolean
   reason: string | null
+}
+
+/** IMP-07. Lo que guarda el panel de la transferencia bancaria; vacío vale «sin dato». */
+export interface BankTransferUpdate {
+  enabled: boolean
+  holderName: string
+  holderRut: string
+  bankName: string
+  accountType: BankAccountType | null
+  accountNumber: string
+  noticeEmail: string
+  instructions: string
+  paymentWindowHours: number
 }
 
 export interface HomeBannerDto {

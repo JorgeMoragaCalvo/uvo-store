@@ -91,6 +91,19 @@ class AbandonedOrderJobTest {
         assertThat(captor.getValue()).isBetween(before.minusSeconds(30), before.plusSeconds(30));
     }
 
+    @Test
+    @DisplayName("IMP-07: también cancela las órdenes por transferencia que pasaron el plazo de su tienda")
+    void itCancelsExpiredBankTransfers() {
+        when(orderRepository.findAbandonedPending(any(), any())).thenReturn(List.of());
+        Order transfer = pendingOrder(7L);
+        when(orderRepository.findExpiredBankTransferIds(any(), eq(50))).thenReturn(List.of(7L));
+        when(orderRepository.findWithStoreByIdIn(List.of(7L))).thenReturn(List.of(transfer));
+
+        job.cancelAbandonedOrders();
+
+        verify(orderStatusService).markCancelled(7L);
+    }
+
     private Order pendingOrder(long id) {
         Order order = Order.builder()
                 .id(id)

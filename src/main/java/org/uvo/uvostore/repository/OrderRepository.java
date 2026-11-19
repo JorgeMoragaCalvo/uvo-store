@@ -91,9 +91,33 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
             where o.status = org.uvo.uvostore.entity.order.enums.OrderStatus.PENDING
               and o.paymentStatus = org.uvo.uvostore.entity.order.enums.PaymentStatus.PENDING
               and o.createdAt < :notAfter
+              and (o.paymentMethod is null
+                   or o.paymentMethod <> org.uvo.uvostore.entity.order.enums.PaymentMethodType.MANUAL)
             order by o.createdAt asc
             """)
     List<Order> findAbandonedPending(@Param("notAfter") Instant notAfter, Pageable pageable);
+
+    /**
+     * IMP-07. Las órdenes por transferencia cuyo plazo para pagar ya pasó: el de su tienda
+     * ({@code bank_transfer_settings.payment_window_hours}), o 48 horas si la tienda ya no tiene fila. Se cuentan
+     * aparte de {@link #findAbandonedPending} porque el plazo es por tienda y se le promete al comprador.
+     *
+     * <p>Nativa por el intervalo, que JPQL no sabe sumar a una columna; devuelve ids y la orden se carga con
+     * {@link #findWithStoreByIdIn}.
+     */
+    @Query(value = """
+            SELECT o.id FROM orders o
+            LEFT JOIN bank_transfer_settings b ON b.store_id = o.store_id
+            WHERE o.status = 'PENDING' AND o.payment_status = 'PENDING' AND o.payment_method = 'MANUAL'
+              AND o.created_at < CAST(:now AS timestamptz) - make_interval(hours => COALESCE(b.payment_window_hours, 48))
+            ORDER BY o.created_at
+            LIMIT :limit
+            """, nativeQuery = true)
+    List<Long> findExpiredBankTransferIds(@Param("now") Instant now, @Param("limit") int limit);
+
+    /** Las órdenes con su tienda, para un job sin sesión abierta que fija el tenant con ella. */
+    @Query("select o from Order o join fetch o.store where o.id in :ids order by o.createdAt asc")
+    List<Order> findWithStoreByIdIn(@Param("ids") java.util.Collection<Long> ids);
 
     /**
      * PROD-13a. El reclamo del descuento de stock de una orden: la marca se pone en la misma sentencia

@@ -69,6 +69,8 @@ class RepositoryTenantScopeTest {
                     "trabajo programado: recorre todas las tiendas y fija el tenant por orden"),
             Map.entry("OrderRepository.findAbandonedPending",
                     "trabajo programado: recorre todas las tiendas y fija el tenant por orden"),
+            Map.entry("OrderRepository.findExpiredBankTransferIds",
+                    "trabajo programado (AbandonedOrderJob, IMP-07): recorre todas las tiendas, cada una con su plazo"),
             Map.entry("OrderRepository.findPaidWithoutStockApplied",
                     "trabajo programado (StockRecoveryJob): recorre todas las tiendas y fija el tenant por orden"),
             Map.entry("OrderRepository.findProductsWithStockPending",

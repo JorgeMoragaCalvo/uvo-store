@@ -79,6 +79,11 @@ class ProductionConfigurationRulesTest {
                 // IMP-02: la decisión de ofrecer Webpay tiene que estar escrita, y bien escrita.
                 row("WEBPAY_ENABLED", "webpay.enabled", ""),
                 row("WEBPAY_ENABLED", "webpay.enabled", "si"),
+                // IMP-07: la misma regla para las otras dos pasarelas.
+                row("STRIPE_ENABLED", "stripe.enabled", ""),
+                row("STRIPE_ENABLED", "stripe.enabled", "on"),
+                row("MERCADOPAGO_ENABLED", "mercadopago.enabled", ""),
+                row("MERCADOPAGO_ENABLED", "mercadopago.enabled", "1"),
                 // IMP-02 (C15): superficies fuera del alcance de la salida.
                 row("CUSTOMER_ACCOUNTS_ENABLED", "app.customer-accounts.enabled", "true"),
                 row("SHIPPING_CARRIERS_ENABLED", "app.shipping.carriers.enabled", "CHILEXPRESS"));
@@ -214,12 +219,15 @@ class ProductionConfigurationRulesTest {
                 // IMP-02: sin WEBPAY_ENABLED no se sabe si Webpay va, así que se pide decidirlo en vez de revisar
                 // las credenciales; con WEBPAY_ENABLED=true saldrían los tres errores del sandbox (ver arriba).
                 .anySatisfy(error -> assertThat(error).startsWith("WEBPAY_ENABLED"))
+                // IMP-07: lo mismo con Stripe y MercadoPago.
+                .anySatisfy(error -> assertThat(error).startsWith("STRIPE_ENABLED"))
+                .anySatisfy(error -> assertThat(error).startsWith("MERCADOPAGO_ENABLED").contains("homologacion-pagos"))
                 .anySatisfy(error -> assertThat(error).startsWith("APP_UPLOAD_DIR"))
                 .anySatisfy(error -> assertThat(error).startsWith("MAIL_HOST"))
                 .anySatisfy(error -> assertThat(error).startsWith("SWAGGER_ENABLED"))
                 .anySatisfy(error -> assertThat(error).startsWith("FLYWAY_USER"))
                 .anySatisfy(error -> assertThat(error).contains("superusuario"))
-                .hasSize(9);
+                .hasSize(11);
     }
 
     @Test
@@ -234,6 +242,8 @@ class ProductionConfigurationRulesTest {
         // IMP-02: ni el ambiente ni la decisión sobre Webpay tienen valor por defecto.
         assertThat(defaults.getProperty("app.environment")).isEmpty();
         assertThat(defaults.getProperty("webpay.enabled")).isEmpty();
+        assertThat(defaults.getProperty("stripe.enabled")).isEmpty();
+        assertThat(defaults.getProperty("mercadopago.enabled")).isEmpty();
         // C15: lo diferido viene apagado.
         assertThat(defaults.getProperty("app.customer-accounts.enabled")).isEqualTo("false");
         assertThat(defaults.getProperty("app.shipping.carriers.enabled")).isEmpty();
@@ -436,6 +446,8 @@ class ProductionConfigurationRulesTest {
                 .withProperty("app.public-url.api", "https://{host}")
                 .withProperty("app.public-url.platform-domain", "uvostore.cl")
                 .withProperty("webpay.enabled", "true")
+                .withProperty("stripe.enabled", "false")
+                .withProperty("mercadopago.enabled", "true")
                 .withProperty("webpay.environment", "production")
                 .withProperty("webpay.parent-commerce-code", "597099999999")
                 .withProperty("webpay.api-key", "clave-de-produccion-de-transbank")

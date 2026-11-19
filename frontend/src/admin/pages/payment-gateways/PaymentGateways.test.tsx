@@ -9,6 +9,8 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/admin/services/adminApi', () => ({
   default: {
     paymentGateways: { list: vi.fn(), availability: vi.fn(), update: vi.fn() },
+    // IMP-07. La tarjeta de transferencia carga lo suyo; aquí no interesa.
+    bankTransfer: { get: vi.fn(() => new Promise(() => {})), update: vi.fn() },
   },
 }))
 

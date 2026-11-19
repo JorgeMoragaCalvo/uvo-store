@@ -20,11 +20,28 @@ export interface WebpayTransaction {
   amount: number
   commerceCode: string
   returnUrl: string
-  /** INITIALIZED hasta que el comprador actúa en la página de pago. */
+  /**
+   * Lo que responde `status()`. IMP-07, como Transbank en la homologación: sigue en INITIALIZED después de que el
+   * comprador autoriza en el banco, hasta que el comercio confirma (commit). Solo el commit lo pasa a AUTHORIZED o
+   * FAILED.
+   */
   status: 'INITIALIZED' | 'AUTHORIZED' | 'FAILED' | 'ABORTED'
+  /** Lo que decidió el comprador en el banco, que el commit hace efectivo. */
+  bankOutcome: 'approved' | 'rejected' | null
+  /** Cuándo volvió el navegador (o debió volver): el commit vale solo durante COMMIT_WINDOW_MS. */
+  returnedAt: number | null
+  /** IMP-07. Transbank captura, pero la respuesta del commit no llega: el backend no sabe si cobró. */
+  loseCommitResponse: boolean
   commits: number
+  statusQueries: number
   refunds: number[]
 }
+
+/**
+ * IMP-07. En la homologación, un commit 30 s después del retorno funcionó y a los 55 s Transbank respondió 422
+ * «invalid finished state: aborted». Sin commit a tiempo no hay cobro.
+ */
+const COMMIT_WINDOW_MS = 30_000
 
 export interface MercadoPagoPreference {
   id: string
@@ -159,7 +176,7 @@ function webpayDetail(tx: WebpayTransaction) {
 
 function webpayTransactionResponse(tx: WebpayTransaction) {
   return {
-    vci: tx.status === 'AUTHORIZED' ? 'TSY' : null,
+    vci: tx.bankOutcome === 'approved' ? 'TSY' : tx.bankOutcome === 'rejected' ? 'TSN' : null,
     buy_order: tx.buyOrder,
     session_id: tx.sessionId,
     card_detail: { card_number: '6623' },
@@ -200,7 +217,11 @@ async function handleWebpayApi(req: IncomingMessage, res: ServerResponse, path: 
       commerceCode: body.details[0].commerce_code,
       returnUrl: body.return_url,
       status: 'INITIALIZED',
+      bankOutcome: null,
+      returnedAt: null,
+      loseCommitResponse: false,
       commits: 0,
+      statusQueries: 0,
       refunds: [],
     }
     state.webpay.push(tx)
@@ -216,21 +237,29 @@ async function handleWebpayApi(req: IncomingMessage, res: ServerResponse, path: 
   }
 
   if (req.method === 'PUT' && !match[2]) {
-    // Como Transbank: un rechazo se confirma con su resultado; una transacción anulada, vencida o ya confirmada
-    // no se puede confirmar.
-    if (tx.status === 'INITIALIZED' || tx.status === 'ABORTED') {
+    // Como Transbank: un rechazo se confirma con su resultado; una transacción anulada, sin pasar por el banco o
+    // fuera de la ventana no se puede confirmar. IMP-07: confirmar dos veces una ya confirmada responde lo mismo.
+    if (tx.status === 'ABORTED' || tx.bankOutcome === null) {
       webpayError(res, 422, `Invalid status '${tx.status}' for transaction while authorizing`)
       return
     }
-    if (tx.commits > 0) {
-      webpayError(res, 422, 'Transaction already locked by another process')
+    if (tx.commits === 0 && tx.returnedAt !== null && Date.now() - tx.returnedAt > COMMIT_WINDOW_MS) {
+      tx.status = 'ABORTED'
+      webpayError(res, 422, 'Transaction has an invalid finished state: aborted')
       return
     }
     tx.commits += 1
+    tx.status = tx.bankOutcome === 'approved' ? 'AUTHORIZED' : 'FAILED'
+    if (tx.loseCommitResponse) {
+      // Transbank ya capturó; lo que se pierde es la respuesta.
+      webpayError(res, 503, 'Service Unavailable')
+      return
+    }
     sendJson(res, 200, webpayTransactionResponse(tx))
     return
   }
   if (req.method === 'GET' && !match[2]) {
+    tx.statusQueries += 1
     sendJson(res, 200, webpayTransactionResponse(tx))
     return
   }
@@ -273,7 +302,8 @@ ${buttonForm(action, { token_ws: token, outcome: 'pay' }, 'Pagar')}
 ${buttonForm(action, { token_ws: token, outcome: 'reject' }, 'Rechazar')}
 ${buttonForm(action, { token_ws: token, outcome: 'abort' }, 'Anular')}
 ${buttonForm(action, { token_ws: token, outcome: 'expire' }, 'Dejar expirar')}
-${buttonForm(action, { token_ws: token, outcome: 'pay-no-return' }, 'Pagar sin volver')}`,
+${buttonForm(action, { token_ws: token, outcome: 'pay-no-return' }, 'Pagar sin volver')}
+${buttonForm(action, { token_ws: token, outcome: 'pay-commit-lost' }, 'Pagar y perder la respuesta')}`,
     )
     return
   }
@@ -284,11 +314,19 @@ ${buttonForm(action, { token_ws: token, outcome: 'pay-no-return' }, 'Pagar sin v
   // métodos quedan cubiertos.
   switch (form.get('outcome')) {
     case 'pay':
-      tx.status = 'AUTHORIZED'
+      tx.bankOutcome = 'approved'
+      tx.returnedAt = Date.now()
+      redirectGet(res, tx.returnUrl, { token_ws: token })
+      return
+    case 'pay-commit-lost':
+      tx.bankOutcome = 'approved'
+      tx.returnedAt = Date.now()
+      tx.loseCommitResponse = true
       redirectGet(res, tx.returnUrl, { token_ws: token })
       return
     case 'reject':
-      tx.status = 'FAILED'
+      tx.bankOutcome = 'rejected'
+      tx.returnedAt = Date.now()
       redirectGet(res, tx.returnUrl, { token_ws: token })
       return
     case 'abort':
@@ -300,8 +338,10 @@ ${buttonForm(action, { token_ws: token, outcome: 'pay-no-return' }, 'Pagar sin v
       autoPost(res, tx.returnUrl, { TBK_ORDEN_COMPRA: tx.buyOrder, TBK_ID_SESION: tx.sessionId })
       return
     case 'pay-no-return':
-      // El cobro se autorizó y el navegador nunca vuelve: solo la conciliación puede enterarse.
-      tx.status = 'AUTHORIZED'
+      // IMP-07. El comprador autorizó en el banco y el navegador nunca vuelve. Como en Transbank: sin commit la
+      // transacción sigue INITIALIZED, y pasada la ventana ya no se puede confirmar. No hay cobro.
+      tx.bankOutcome = 'approved'
+      tx.returnedAt = Date.now()
       sendHtml(res, '<h1>Pago autorizado</h1><p>Puedes cerrar esta ventana.</p>')
       return
     default:

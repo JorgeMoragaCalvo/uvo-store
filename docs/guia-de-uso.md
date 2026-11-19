@@ -48,7 +48,7 @@ panel dice «No tienes permiso para ver esta sección».
 | 3    | Categorías                                   | Para poder clasificar los productos                   |
 | 4    | Productos                                    | El catálogo                                           |
 | 5    | Zonas, métodos y tarifas de envío            | **Sin esto no se puede comprar con despacho**         |
-| 6    | Pasarelas de pago y Config. general → Stripe | Cobrar en línea                                       |
+| 6    | Pasarelas de pago                            | Cobrar: transferencia bancaria y pasarelas en línea   |
 | 7    | Banners y cupones                            | Opcional                                              |
 | 8    | Compra de prueba                             | Revisar el flujo completo antes de anunciar la tienda |
 
@@ -78,7 +78,7 @@ Todo se guarda con **Guardar cambios**, al pie de la página, sin importar en qu
   - teléfono obligatorio;
   - empresa o razón social obligatoria.
 - **Stripe:** **Stripe habilitado**, **Public key** y **Secret key**. Para activarlo hacen falta las dos
-  claves.
+  claves, y que la plataforma ofrezca Stripe: si no, el interruptor aparece bloqueado con el motivo.
 - **POS:** ver la sección 12.
 - **SEO** y **Redes:** meta título, descripción y keywords; enlaces a Facebook, Instagram y X.
 
@@ -222,17 +222,37 @@ Si a una dirección le sirven varias tarifas, el comprador ve la **más barata**
 
 ## 8. Pagos
 
-| Medio                   | Dónde se activa                | Qué necesita                                                                                                            |
-|-------------------------|--------------------------------|-------------------------------------------------------------------------------------------------------------------------|
-| **Pago contra entrega** | Siempre aparece en el checkout | Nada. El pedido queda **pendiente de pago** hasta que lo marques como pagado.                                           |
-| **Stripe (tarjeta)**    | Config. general → Stripe       | La clave pública y la secreta de tu cuenta de Stripe                                                                    |
-| **Webpay Plus**         | Pasarelas de pago              | El **código de comercio hijo** que Transbank te asignó bajo el Mall de la plataforma. El Mall lo configura el operador. |
-| **MercadoPago**         | Pasarelas de pago              | El Access Token, la Public Key y el **secreto de webhook** de tu cuenta. Sin el secreto no se deja activar.             |
+| Medio                      | Dónde se activa          | Qué necesita                                                                                                            |
+|----------------------------|--------------------------|-------------------------------------------------------------------------------------------------------------------------|
+| **Transferencia bancaria** | Pasarelas de pago        | Titular, RUT, banco, tipo y número de cuenta, el correo donde recibes los comprobantes y el **plazo para pagar** (de 1 a 168 horas; 48 por defecto) |
+| **Stripe (tarjeta)**       | Config. general → Stripe | La clave pública y la secreta de tu cuenta de Stripe                                                                    |
+| **Webpay Plus**            | Pasarelas de pago        | El **código de comercio hijo** que Transbank te asignó bajo el Mall de la plataforma. El Mall lo configura el operador. |
+| **MercadoPago**            | Pasarelas de pago        | El Access Token, la Public Key y el **secreto de webhook** de tu cuenta. Sin el secreto no se deja activar.             |
 
-Cada medio en línea aparece en el checkout solo cuando está **Habilitado** y guardado.
+Cada medio aparece en el checkout solo cuando está **Habilitado** y guardado. Si no activas ninguno, el checkout
+avisa que la tienda todavía no tiene medios de pago y no deja confirmar.
+
+**Qué pasarelas puedes activar lo decide la plataforma.** Una pasarela que la plataforma no ofrece (porque no está
+homologada para salir) aparece con el interruptor bloqueado y el motivo. Si la tenías activada de antes, no se ofrece
+en el checkout; los pagos ya hechos se siguen confirmando y se pueden reembolsar.
+
+**Transferencia bancaria**
+- El comprador ve tus datos al elegirla en el checkout, y otra vez en la confirmación y en el correo «Recibimos tu
+  pedido», con el monto exacto, el número de pedido como referencia y la **fecha límite** para pagar.
+- La orden queda **pendiente de pago**. Cuando ves el dinero en tu banco, abre la orden y pon el estado de pago en
+  PAID: eso envía la confirmación de compra y, si hay POS, la venta. Hazlo solo con el abono a la vista en tu cuenta,
+  con el monto y la referencia correctos: un comprobante por correo no es el dinero. Solo pueden hacerlo los roles
+  con el permiso de gestionar órdenes (`orders.manage`).
+- **Conciliación bancaria:** una vez al día, compara los abonos de tu cartola con la pestaña **Pendientes** del panel.
+  Un abono que no calza con ninguna orden (monto distinto, sin referencia) se aclara con el comprador antes de marcar
+  nada.
+- Si nadie la marca pagada antes del plazo, la tienda la **cancela sola**, devuelve el stock y el cupón, y el pago
+  queda en FAILED. Si el dinero llega después, devuélvelo por tu banco o crea una orden nueva con el comprador.
+- Un cambio de los datos bancarios queda en la auditoría con el valor anterior y el nuevo.
 
 Los reembolsos se hacen desde cada orden. Un reembolso por pasarela puede quedar «Pendiente» si la pasarela no
-responde; en contra entrega el dinero se devuelve por fuera. Ver «Reembolsos» en la sección 10.
+responde; en una transferencia el dinero se devuelve por tu banco y se anota en el panel. Ver «Reembolsos» en la
+sección 10.
 
 ## 9. Cupones (`Cupones → Nuevo`)
 
@@ -276,11 +296,12 @@ En la lista puedes buscar por número de orden o por cliente, y filtrar con las 
 **Flujo típico**
 - **Pago en línea:** pago confirmado (la orden queda En proceso) → Enviada, con el número de seguimiento →
   Entregada.
-- **Contra entrega:** PENDING → **Marcar en proceso** → entregas y cobras → pago PAID → Enviada → Entregada.
+- **Transferencia bancaria:** PENDING → ves el abono en tu banco → pago PAID (la orden queda En proceso) → Enviada
+  → Entregada.
 
-**Contra entrega: márcala en proceso el mismo día.** Cada hora, la tienda cancela sola las órdenes que llevan
-más de 24 horas en PENDING con el pago pendiente, y deja el pago en FAILED. Lo hace también con las de contra
-entrega. «Marcar en proceso» la saca de ese estado.
+**Vencimiento.** Cada hora, la tienda cancela sola las órdenes con el pago pendiente que pasaron su plazo: 24 horas
+las de pasarela, y las de transferencia el plazo que configuraste, que es el que se le dijo al comprador. El pago
+queda en FAILED, y el stock y el cupón vuelven.
 
 ### Cancelar una orden
 
@@ -289,7 +310,7 @@ se devuelven.
 - **Orden ya pagada:** cancelar **no devuelve el dinero**. El pago sigue en PAID; reembolsa desde la tarjeta
   «Reembolsos».
 - **Orden con pago pendiente:** el pago pasa a FAILED. Si después la pasarela confirma el cobro, la orden no
-  revive: hay que devolver ese dinero desde el panel de la pasarela (ver la sección 14, punto 12).
+  revive: hay que devolver ese dinero desde el panel de la pasarela (ver la sección 14, punto 9).
 
 ### Reembolsos
 
@@ -307,8 +328,8 @@ La tarjeta **Reembolsos** del detalle de la orden aparece solo para roles con el
 - **Monto (vacío = todo el saldo)** y **Motivo**, y luego:
   - **Reembolsar:** devuelve el dinero por la pasarela de la orden. Se ejecuta sin pedir confirmación.
   - **Registrar reembolso hecho en la pasarela:** si devolviste el dinero por fuera del panel. El motivo es obligatorio.
-- **Contra entrega o transferencia:** no hay pasarela que devuelva el dinero. Devuélvelo por fuera y anótalo con
-  «Registrar reembolso hecho en la pasarela».
+- **Transferencia bancaria:** no hay pasarela que devuelva el dinero. Transfiérelo de vuelta desde tu banco y anótalo
+  con «Registrar reembolso hecho en la pasarela», con el número de operación del banco en el motivo.
 - Si el reembolso cubre todo el saldo, la orden y el pago pasan a REFUNDED, y se devuelven el stock y el cupón.
 
 **Lo que pasa según la pasarela**
@@ -457,22 +478,17 @@ revisión del código, no de pruebas en producción.
    Config. de tienda.
 5. **No hay variantes desde el panel,** como talla o color. Sin el POS, cada variante se carga como un
    producto aparte. Con el POS conectado, las variantes llegan desde él (sección 12).
-6. **Texto contradictorio sobre Stripe.** La página de Pasarelas de pago dice que Stripe se configura en la
-   plataforma, pero el checkout usa las claves de Config. general → Stripe de cada tienda.
-7. **No hay consola para el operador.** Listar y buscar tiendas, suspenderlas, reactivarlas, cerrarlas o
+6. **No hay consola para el operador.** Listar y buscar tiendas, suspenderlas, reactivarlas, cerrarlas o
    verificar su dominio solo se puede hacer llamando a la API de plataforma (`/api/platform/stores`). La
    única pantalla es la de alta.
-8. **Contra entrega siempre visible:** no se puede apagar desde el panel.
-9. **Las órdenes contra entrega se cancelan solas a las 24 horas** si siguen en PENDING con el pago pendiente,
-   igual que un pago en línea abandonado. Márcalas en proceso antes (sección 10).
-10. **Un reembolso pendiente aparece recién al recargar la página.** Cuando la pasarela no responde, el panel
+7. **Un reembolso pendiente aparece recién al recargar la página.** Cuando la pasarela no responde, el panel
     muestra el aviso pero no actualiza la tarjeta de Reembolsos hasta que recargas.
-11. **El historial de la orden no se ve en el panel.** Las notas que la tienda agrega (cambios de estado,
+8. **El historial de la orden no se ve en el panel.** Las notas que la tienda agrega (cambios de estado,
     reembolsos resueltos, envíos reintentados, stock faltante) se guardan, pero el detalle de la orden no las muestra.
-12. **Un cobro que llega sobre una orden ya cancelada no se ve ni se puede reembolsar desde el panel.** Pasa
+9. **Un cobro que llega sobre una orden ya cancelada no se ve ni se puede reembolsar desde el panel.** Pasa
     cuando cancelas una orden con el pago pendiente y la pasarela confirma el cobro después. La orden sigue
     cancelada, el aviso queda en el historial (que no se ve) y lo recibe el operador. El pago queda en FAILED,
     así que el panel no deja reembolsarlo: la devolución se hace directamente en el panel de la pasarela.
-13. **El texto fijo de las páginas legales espera la revisión de asesoría legal,** y no se puede cambiar desde el
+10. **El texto fijo de las páginas legales espera la revisión de asesoría legal,** y no se puede cambiar desde el
     panel. Una política propia (cambios por talla, productos que no se aceptan de vuelta, plazos de preparación)
     hoy no tiene dónde escribirse.

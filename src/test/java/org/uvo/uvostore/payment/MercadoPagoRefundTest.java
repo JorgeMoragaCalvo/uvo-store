@@ -52,7 +52,7 @@ class MercadoPagoRefundTest {
 
     private final MercadoPagoServiceImpl service = new MercadoPagoServiceImpl(
             orderRepository, configRepository, mock(OrderStatusService.class),
-            mock(MercadoPagoWebhookSignature.class), TestPublicUrls.resolver(), 5000, 20000) {
+            mock(MercadoPagoWebhookSignature.class), org.uvo.uvostore.service.payment.PaymentPlatformPolicy.of(false), TestPublicUrls.resolver(), 5000, 20000) {
         @Override
         protected PaymentRefundClient refundClient() {
             return refundClient;

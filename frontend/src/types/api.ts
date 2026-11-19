@@ -242,7 +242,25 @@ export interface CheckoutConfig {
   taxRate: number
   currency: string
   currencySymbol: string
+  /** IMP-07. El pago manual: los datos de la transferencia y el plazo, o null si la tienda no la ofrece. */
+  bankTransfer: BankTransfer | null
 }
+
+/** IMP-07. Los datos que la tienda publica para que le paguen por transferencia. */
+export interface BankTransfer {
+  enabled: boolean
+  holderName: string | null
+  holderRut: string | null
+  bankName: string | null
+  accountType: BankAccountType | null
+  accountTypeLabel: string | null
+  accountNumber: string | null
+  noticeEmail: string | null
+  instructions: string | null
+  paymentWindowHours: number
+}
+
+export type BankAccountType = 'CORRIENTE' | 'VISTA' | 'AHORRO' | 'RUT'
 
 export interface CheckoutSessionResult {
   sessionId: string

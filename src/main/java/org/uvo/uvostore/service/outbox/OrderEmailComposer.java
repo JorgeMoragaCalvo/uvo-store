@@ -30,12 +30,18 @@ public class OrderEmailComposer {
     private final OrderRepository orderRepository;
     private final StorePublicUrlResolver publicUrls;
     private final CustomerAccountsPolicy accountsPolicy;
+    private final org.uvo.uvostore.repository.BankTransferSettingsRepository bankTransfers;
+    private final org.uvo.uvostore.service.report.ReportZone zone;
 
     public OrderEmailComposer(OrderRepository orderRepository, StorePublicUrlResolver publicUrls,
-                              CustomerAccountsPolicy accountsPolicy) {
+                              CustomerAccountsPolicy accountsPolicy,
+                              org.uvo.uvostore.repository.BankTransferSettingsRepository bankTransfers,
+                              org.uvo.uvostore.service.report.ReportZone zone) {
         this.orderRepository = orderRepository;
         this.publicUrls = publicUrls;
         this.accountsPolicy = accountsPolicy;
+        this.bankTransfers = bankTransfers;
+        this.zone = zone;
     }
 
     /**
@@ -110,12 +116,43 @@ public class OrderEmailComposer {
         appendItems(sb, order);
         sb.append("\nTotal: $").append(order.getTotal()).append("\n\n");
         if (order.getPaymentMethod() == PaymentMethodType.MANUAL) {
-            sb.append("Queda pendiente de pago: en cuanto confirmemos la transferencia te enviamos la "
-                    + "confirmación de compra.");
+            appendBankTransfer(sb, order);
         } else {
             sb.append("Te confirmaremos la compra en cuanto se acredite el pago.");
         }
         return sb.toString();
+    }
+
+    /**
+     * IMP-07. Cómo pagar una orden por transferencia: los datos de la tienda, el monto exacto, la referencia y hasta
+     * cuándo. Es lo único que tiene el comprador para pagar después de cerrar la página de confirmación.
+     */
+    private void appendBankTransfer(StringBuilder sb, Order order) {
+        var settings = bankTransfers.findByStoreId(order.getStore().getId()).orElse(null);
+        if (settings == null || !settings.isEnabled()) {
+            // La tienda dejó de ofrecerla después de crear la orden: no se inventan datos.
+            sb.append("Queda pendiente de pago. La tienda te indicará cómo completarlo.");
+            return;
+        }
+        java.time.Instant deadline = org.uvo.uvostore.service.payment.transfer.BankTransferService
+                .deadline(order.getCreatedAt() == null ? java.time.Instant.now() : order.getCreatedAt(),
+                        settings.getPaymentWindowHours());
+        String when = java.time.format.DateTimeFormatter
+                .ofPattern("d 'de' MMMM 'a las' HH:mm", java.util.Locale.forLanguageTag("es-CL"))
+                .withZone(zone.zone()).format(deadline);
+        sb.append("Para completar tu compra, transfiere $").append(order.getTotal()).append(" a:\n\n");
+        sb.append("  Titular: ").append(settings.getHolderName()).append("\n");
+        sb.append("  RUT: ").append(settings.getHolderRut()).append("\n");
+        sb.append("  Banco: ").append(settings.getBankName()).append("\n");
+        sb.append("  ").append(settings.getAccountType().label()).append(": ").append(settings.getAccountNumber())
+                .append("\n");
+        sb.append("  Referencia: ").append(order.getOrderNumber()).append("\n\n");
+        sb.append("Envía el comprobante a ").append(settings.getNoticeEmail()).append(". ");
+        if (settings.getInstructions() != null) {
+            sb.append(settings.getInstructions()).append(" ");
+        }
+        sb.append("Tienes hasta el ").append(when).append(" para pagar; después el pedido se cancela. En cuanto "
+                + "confirmemos la transferencia te enviamos la confirmación de compra.");
     }
 
     String confirmationBody(Order order) {

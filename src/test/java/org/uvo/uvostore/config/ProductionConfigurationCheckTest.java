@@ -55,9 +55,11 @@ class ProductionConfigurationCheckTest {
         assertThatThrownBy(() -> new ProductionConfigurationCheck(properties, name -> null,
                 databaseWith(new DatabaseRole("uvostore", true, true, true))))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageStartingWith("La configuración no sirve para APP_ENVIRONMENT=production (9 problemas):")
+                .hasMessageStartingWith("La configuración no sirve para APP_ENVIRONMENT=production (11 problemas):")
                 .hasMessageContaining("\n  - PUBLIC_STOREFRONT_URL")
                 .hasMessageContaining("\n  - WEBPAY_ENABLED")
+                .hasMessageContaining("\n  - STRIPE_ENABLED")
+                .hasMessageContaining("\n  - MERCADOPAGO_ENABLED")
                 .hasMessageContaining("\n  - MAIL_HOST")
                 .hasMessageContaining("superusuario");
     }
@@ -90,8 +92,8 @@ class ProductionConfigurationCheckTest {
             assertThat(event.getLevel()).isEqualTo(Level.INFO);
             assertThat(event.getFormattedMessage()).contains("APP_ENVIRONMENT=development")
                     .contains("no se aplican")
-                    // WEBPAY_ENABLED vacío vale true solo en development.
-                    .contains("Webpay activado");
+                    // Los *_ENABLED vacíos valen true solo en development.
+                    .contains("Pasarelas: Stripe activada, Webpay activada, MercadoPago activada");
         });
     }
 
@@ -114,7 +116,7 @@ class ProductionConfigurationCheckTest {
                 .singleElement().extracting(ILoggingEvent::getFormattedMessage).asString()
                 .contains("APP_ENVIRONMENT=production")
                 .contains("1 advertencias")
-                .contains("Webpay activado");
+                .contains("Stripe desactivada, Webpay activada, MercadoPago activada");
     }
 
     @Test
@@ -136,7 +138,7 @@ class ProductionConfigurationCheckTest {
         assertThat(logs.list).filteredOn(event -> event.getLevel() == Level.INFO)
                 .singleElement().extracting(ILoggingEvent::getFormattedMessage).asString()
                 .contains("APP_ENVIRONMENT=production")
-                .contains("Webpay desactivado");
+                .contains("Webpay desactivada");
     }
 
     @SuppressWarnings("unchecked")

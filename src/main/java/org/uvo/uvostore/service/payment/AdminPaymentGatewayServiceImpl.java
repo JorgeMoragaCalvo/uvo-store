@@ -22,13 +22,13 @@ public class AdminPaymentGatewayServiceImpl implements AdminPaymentGatewayServic
 
     private final PaymentGatewayConfigRepository repository;
     private final AuditTrail auditTrail;
-    private final WebpayPlatformPolicy webpayPolicy;
+    private final PaymentPlatformPolicy gatewayPolicy;
 
     public AdminPaymentGatewayServiceImpl(PaymentGatewayConfigRepository repository, AuditTrail auditTrail,
-                                          WebpayPlatformPolicy webpayPolicy) {
+                                          PaymentPlatformPolicy gatewayPolicy) {
         this.repository = repository;
         this.auditTrail = auditTrail;
-        this.webpayPolicy = webpayPolicy;
+        this.gatewayPolicy = gatewayPolicy;
     }
 
     @Override
@@ -40,19 +40,20 @@ public class AdminPaymentGatewayServiceImpl implements AdminPaymentGatewayServic
     @Override
     public List<PaymentGatewayAvailabilityDto> availability() {
         return Arrays.stream(PaymentGatewayType.values())
-                .map(gateway -> gateway == PaymentGatewayType.WEBPAY && !webpayPolicy.isEnabled()
-                        ? new PaymentGatewayAvailabilityDto(gateway.name(), false, WebpayPlatformPolicy.UNAVAILABLE_REASON)
-                        : new PaymentGatewayAvailabilityDto(gateway.name(), true, null))
+                .map(gateway -> gatewayPolicy.isEnabled(gateway)
+                        ? new PaymentGatewayAvailabilityDto(gateway.name(), true, null)
+                        : new PaymentGatewayAvailabilityDto(gateway.name(), false,
+                                PaymentPlatformPolicy.unavailableReason(gateway)))
                 .toList();
     }
 
     @Override
     @Transactional
     public PaymentGatewayConfigDto upsert(PaymentGatewayType gateway, PaymentGatewayConfigCommand command) {
-        // IMP-02. Con Webpay apagado en la plataforma no se puede activar. Sí se puede guardar desactivado: es lo
-        // que hace una tienda que lo tenía activado de antes para dejar de verlo como activo en el panel.
-        if (gateway == PaymentGatewayType.WEBPAY && command.enabled()) {
-            webpayPolicy.requireEnabled();
+        // IMP-02 / IMP-07. Una pasarela apagada en la plataforma no se puede activar. Sí se puede guardar desactivada:
+        // es lo que hace una tienda que la tenía activada de antes para dejar de verla como activa en el panel.
+        if (command.enabled()) {
+            gatewayPolicy.requireEnabled(gateway);
         }
         Long storeId = TenantContext.requireStoreId();
         PaymentGatewayConfig config = repository.findByStoreIdAndGateway(storeId, gateway).orElseGet(() -> {

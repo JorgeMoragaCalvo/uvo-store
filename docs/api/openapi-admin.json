@@ -530,6 +530,91 @@
         },
         "type" : "object"
       },
+      "BankTransferCommand" : {
+        "properties" : {
+          "accountNumber" : {
+            "maxLength" : 30,
+            "minLength" : 0,
+            "type" : "string"
+          },
+          "accountType" : {
+            "enum" : [ "CORRIENTE", "VISTA", "AHORRO", "RUT" ],
+            "type" : "string"
+          },
+          "bankName" : {
+            "maxLength" : 80,
+            "minLength" : 0,
+            "type" : "string"
+          },
+          "enabled" : {
+            "type" : "boolean"
+          },
+          "holderName" : {
+            "maxLength" : 120,
+            "minLength" : 0,
+            "type" : "string"
+          },
+          "holderRut" : {
+            "maxLength" : 20,
+            "minLength" : 0,
+            "type" : "string"
+          },
+          "instructions" : {
+            "maxLength" : 1000,
+            "minLength" : 0,
+            "type" : "string"
+          },
+          "noticeEmail" : {
+            "maxLength" : 255,
+            "minLength" : 0,
+            "type" : "string"
+          },
+          "paymentWindowHours" : {
+            "format" : "int32",
+            "maximum" : 168,
+            "minimum" : 1,
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "BankTransferDto" : {
+        "properties" : {
+          "accountNumber" : {
+            "type" : "string"
+          },
+          "accountType" : {
+            "enum" : [ "CORRIENTE", "VISTA", "AHORRO", "RUT" ],
+            "type" : "string"
+          },
+          "accountTypeLabel" : {
+            "type" : "string"
+          },
+          "bankName" : {
+            "type" : "string"
+          },
+          "enabled" : {
+            "type" : "boolean"
+          },
+          "holderName" : {
+            "type" : "string"
+          },
+          "holderRut" : {
+            "type" : "string"
+          },
+          "instructions" : {
+            "type" : "string"
+          },
+          "noticeEmail" : {
+            "type" : "string"
+          },
+          "paymentWindowHours" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
       "CategoryDto" : {
         "properties" : {
           "active" : {
@@ -3215,7 +3300,7 @@
         "tags" : [ "Atributos (admin)" ]
       },
       "put" : {
-        "operationId" : "update_13",
+        "operationId" : "update_14",
         "parameters" : [ {
           "in" : "path",
           "name" : "id",
@@ -3437,7 +3522,7 @@
         "tags" : [ "Categorías (admin)" ]
       },
       "get" : {
-        "operationId" : "show_10",
+        "operationId" : "show_11",
         "parameters" : [ {
           "in" : "path",
           "name" : "id",
@@ -3465,7 +3550,7 @@
         "tags" : [ "Categorías (admin)" ]
       },
       "put" : {
-        "operationId" : "update_12",
+        "operationId" : "update_13",
         "parameters" : [ {
           "in" : "path",
           "name" : "id",
@@ -3630,7 +3715,7 @@
         "tags" : [ "Cupones (admin)" ]
       },
       "get" : {
-        "operationId" : "show_9",
+        "operationId" : "show_10",
         "parameters" : [ {
           "in" : "path",
           "name" : "id",
@@ -3658,7 +3743,7 @@
         "tags" : [ "Cupones (admin)" ]
       },
       "put" : {
-        "operationId" : "update_11",
+        "operationId" : "update_12",
         "parameters" : [ {
           "in" : "path",
           "name" : "id",
@@ -3893,7 +3978,7 @@
         "tags" : [ "Clientes (admin)" ]
       },
       "get" : {
-        "operationId" : "show_12",
+        "operationId" : "show_13",
         "parameters" : [ {
           "in" : "path",
           "name" : "id",
@@ -4067,7 +4152,7 @@
         "tags" : [ "Banners (admin)" ]
       },
       "get" : {
-        "operationId" : "show_8",
+        "operationId" : "show_9",
         "parameters" : [ {
           "in" : "path",
           "name" : "id",
@@ -4095,7 +4180,7 @@
         "tags" : [ "Banners (admin)" ]
       },
       "put" : {
-        "operationId" : "update_10",
+        "operationId" : "update_11",
         "parameters" : [ {
           "in" : "path",
           "name" : "id",
@@ -4254,7 +4339,7 @@
     },
     "/api/admin/orders/{id}" : {
       "get" : {
-        "operationId" : "show_11",
+        "operationId" : "show_12",
         "parameters" : [ {
           "in" : "path",
           "name" : "id",
@@ -4867,7 +4952,7 @@
     },
     "/api/admin/payment-gateways/{gateway}" : {
       "put" : {
-        "operationId" : "update_9",
+        "operationId" : "update_10",
         "parameters" : [ {
           "in" : "path",
           "name" : "gateway",
@@ -4893,6 +4978,56 @@
               "*/*" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/PaymentGatewayConfigDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Pasarelas de pago (admin)" ]
+      }
+    },
+    "/api/admin/payment-methods/bank-transfer" : {
+      "get" : {
+        "operationId" : "show_8",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/BankTransferDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Pasarelas de pago (admin)" ]
+      },
+      "put" : {
+        "operationId" : "update_9",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/BankTransferCommand"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/BankTransferDto"
                 }
               }
             },
