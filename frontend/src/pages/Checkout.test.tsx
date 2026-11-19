@@ -83,6 +83,19 @@ const baseConfig: CheckoutConfig = {
   freeShippingThreshold: null,
   allowGuestCheckout: true,
   requirePhone: true,
+  // IMP-07. El pago manual es una transferencia que la tienda configura.
+  bankTransfer: {
+    enabled: true,
+    holderName: 'Comercial Ejemplo SpA',
+    holderRut: '76123456-0',
+    bankName: 'Banco Estado',
+    accountType: 'VISTA',
+    accountTypeLabel: 'Cuenta vista',
+    accountNumber: '12345678',
+    noticeEmail: 'pagos@ejemplo.cl',
+    instructions: null,
+    paymentWindowHours: 48,
+  },
 } as CheckoutConfig
 
 // Catálogo de comunas: la cobertura trae siempre las comunas elegibles, con su nombre canónico.
@@ -343,7 +356,35 @@ describe('Checkout page', () => {
     expect(screen.getByLabelText(/webpay/i)).toBeInTheDocument()
     expect(screen.queryByLabelText(/tarjeta \(stripe\)/i)).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/mercadopago/i)).not.toBeInTheDocument()
-    expect(screen.getByLabelText(/pago contra entrega/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/transferencia bancaria/i)).toBeInTheDocument()
+  })
+
+  it('IMP-07: shows the transfer details when the buyer picks it', async () => {
+    const api = (await import('@/services/api')).default
+    vi.mocked(api.checkout.getConfig).mockResolvedValue(baseConfig)
+
+    const user = userEvent.setup()
+    renderCheckout()
+    await fillContactStep(user)
+    await fillAddressStep(user)
+
+    await user.click(screen.getByLabelText(/transferencia bancaria/i))
+    expect(screen.getByRole('heading', { name: /datos para la transferencia/i })).toBeInTheDocument()
+    expect(screen.getByText('Banco Estado')).toBeInTheDocument()
+    expect(screen.getByText(/tendrás 48 horas para pagar/i)).toBeInTheDocument()
+  })
+
+  it('IMP-07: without transfers or gateways there is nothing to pick, and it says so', async () => {
+    const api = (await import('@/services/api')).default
+    vi.mocked(api.checkout.getConfig).mockResolvedValue({ ...baseConfig, bankTransfer: null })
+
+    const user = userEvent.setup()
+    renderCheckout()
+    await fillContactStep(user)
+    await fillAddressStep(user)
+    expect(screen.queryByLabelText(/transferencia bancaria/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent(/no tiene medios de pago/i)
+    expect(screen.getByRole('button', { name: /confirmar pedido/i })).toBeDisabled()
   })
 
   it('sends the destination with the order — the field that used to be missing', async () => {
@@ -401,7 +442,7 @@ describe('Checkout page', () => {
     await fillAddressStep(user)
     await user.click(screen.getByRole('button', { name: /confirmar pedido/i }))
 
-    await vi.waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/order-success?order=ORD-1'))
+    await vi.waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/order-success?order=ORD-1&gateway=manual'))
   })
 
   it('builds and submits the hidden Webpay form when the webpay method is chosen', async () => {

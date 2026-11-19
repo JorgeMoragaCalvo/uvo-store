@@ -186,6 +186,19 @@ function GeneralSettingsForm({ initial }: { initial: GeneralSettingsDto }) {
   })
   const [form, setForm] = useState<GeneralSettingsUpdateRequest>(toUpdateRequest(initial))
   const [saving, setSaving] = useState(false)
+  // IMP-07. Si la plataforma no ofrece Stripe (STRIPE_ENABLED=false), el motivo; null si se puede activar.
+  const [stripeUnavailable, setStripeUnavailable] = useState<string | null>(null)
+
+  useEffect(() => {
+    adminApi.paymentGateways
+      .availability()
+      .then((list) => {
+        const stripe = list.find((a) => a.gateway === 'STRIPE')
+        setStripeUnavailable(stripe && !stripe.available ? stripe.reason : null)
+      })
+      // Sin la respuesta se deja como estaba: el backend rechaza igual activarlo y lo dice.
+      .catch(() => setStripeUnavailable(null))
+  }, [])
 
   function set<K extends keyof GeneralSettingsUpdateRequest>(key: K, value: GeneralSettingsUpdateRequest[K]) {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -195,7 +208,10 @@ function GeneralSettingsForm({ initial }: { initial: GeneralSettingsDto }) {
     event.preventDefault()
     setSaving(true)
     try {
-      const updated = await update(form)
+      // Una tienda que tenía Stripe activado de antes guarda el formulario con Stripe apagado: la plataforma ya no
+      // lo ofrece y el backend rechazaría el formulario entero.
+      const updated = await update(stripeUnavailable ? { ...form, stripeEnabled: false } : form)
+      if (stripeUnavailable) set('stripeEnabled', false)
       toast.success('Configuración guardada')
       setConfigured({
         stripeSecretKey: updated.stripeSecretKeyConfigured,
@@ -327,7 +343,19 @@ function GeneralSettingsForm({ initial }: { initial: GeneralSettingsDto }) {
           <TabsContent value="stripe">
             <Card>
               <CardContent className="grid grid-cols-1 gap-4 pt-6 sm:grid-cols-2">
-                <Toggle id="stripeEnabled" label="Stripe habilitado" checked={form.stripeEnabled} onChange={(v) => set('stripeEnabled', v)} />
+                {stripeUnavailable && (
+                  <p role="note" className="rounded-md border border-border bg-muted p-3 text-sm text-muted-foreground sm:col-span-2">
+                    {stripeUnavailable}
+                    {form.stripeEnabled && ' Aunque figure como habilitado, no se ofrece en el checkout y se desactiva al guardar.'}
+                  </p>
+                )}
+                <Toggle
+                  id="stripeEnabled"
+                  label="Stripe habilitado"
+                  checked={form.stripeEnabled}
+                  onChange={(v) => set('stripeEnabled', v)}
+                  disabled={stripeUnavailable !== null && !form.stripeEnabled}
+                />
                 <Field id="stripePublicKey" label="Public key" value={form.stripePublicKey} onChange={(v) => set('stripePublicKey', v)} />
                 <SecretField
                   id="stripeSecretKey"

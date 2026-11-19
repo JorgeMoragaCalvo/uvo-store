@@ -125,6 +125,18 @@ interface CheckoutState {
   reset: () => void
 }
 
+/**
+ * El medio que viene marcado: Stripe si está (como antes), si no la transferencia, y si no la primera pasarela. IMP-07:
+ * el pago manual ya no está siempre, así que marcarlo sin que la tienda lo ofrezca dejaría un pedido imposible.
+ */
+function defaultPaymentMethod(config: CheckoutConfig): PaymentMethod {
+  if (config.stripeEnabled) return 'stripe'
+  if (config.bankTransfer) return 'manual'
+  if (config.webpayEnabled) return 'webpay'
+  if (config.mercadopagoEnabled) return 'mercadopago'
+  return 'manual'
+}
+
 export const useCheckoutStore = create<CheckoutState>((set, get) => ({
   config: null,
   customer: EMPTY_CUSTOMER,
@@ -139,7 +151,7 @@ export const useCheckoutStore = create<CheckoutState>((set, get) => ({
       const config = await api.checkout.getConfig()
       // Si se retomó un pago, se respeta el medio que el comprador había elegido.
       const resumed = loadPendingPayment()
-      set({ config, paymentMethod: resumed?.paymentMethod ?? (config.stripeEnabled ? 'stripe' : 'manual') })
+      set({ config, paymentMethod: resumed?.paymentMethod ?? defaultPaymentMethod(config) })
     } catch (error) {
       console.error('Error loading checkout config', error)
     }

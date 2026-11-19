@@ -40,14 +40,10 @@ import java.util.NoSuchElementException;
 // Checkout Pro: create a Preference (a shopping-cart-like resource), redirect the buyer to its
 // initPoint, then react to an async webhook notification once they pay.
 //
-// SECURITY NOTE (untested — no live MercadoPago account to validate against): unlike Stripe's
-// Webhook.constructEvent and Webpay's request-signing, this implementation does NOT verify a
-// webhook signature — MercadoPago's signature scheme needs a merchant-specific webhook secret
-// from their dashboard that we don't have yet. As a partial mitigation, the webhook handler never
-// trusts the notification payload's own claims about payment status: it only reads the payment id
-// out of the payload, then re-fetches that payment from MercadoPago's API using our own access
-// token, and acts on THAT authenticated response. Add proper x-signature verification (see
-// MercadoPago's "Webhooks" docs) once real credentials are available to test against.
+// El webhook se verifica en dos capas. Primero la firma x-signature con el secreto de la tienda
+// (MercadoPagoWebhookSignature, M3), antes de cualquier llamada saliente. Después, el aviso no se cree: solo se toma
+// el id del pago y se vuelve a pedir a MercadoPago con el access token de la tienda, y se actúa sobre esa respuesta
+// autenticada. La homologación contra el sandbox real está en docs/homologacion-pagos.md (IMP-07).
 @Service
 public class MercadoPagoServiceImpl implements MercadoPagoService {
 
@@ -55,6 +51,7 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final MercadoPagoWebhookSignature webhookSignature;
+    private final PaymentPlatformPolicy platformPolicy;
     private final OrderRepository orderRepository;
     private final PaymentGatewayConfigRepository configRepository;
     private final OrderStatusService orderStatusService;
@@ -67,6 +64,7 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
             PaymentGatewayConfigRepository configRepository,
             OrderStatusService orderStatusService,
             MercadoPagoWebhookSignature webhookSignature,
+            PaymentPlatformPolicy platformPolicy,
             StorePublicUrlResolver publicUrls,
             @Value("${app.gateway.connect-timeout-ms:5000}") int gatewayConnectTimeoutMs,
             @Value("${app.gateway.read-timeout-ms:20000}") int gatewayReadTimeoutMs) {
@@ -74,6 +72,7 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
         this.configRepository = configRepository;
         this.orderStatusService = orderStatusService;
         this.webhookSignature = webhookSignature;
+        this.platformPolicy = platformPolicy;
         this.publicUrls = publicUrls;
         this.gatewayConnectTimeoutMs = gatewayConnectTimeoutMs;
         this.gatewayReadTimeoutMs = gatewayReadTimeoutMs;
@@ -108,6 +107,9 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
     @Override
     @Transactional
     public MercadoPagoPreferenceResult createPreference(Long orderId) {
+        // IMP-07. Solo el inicio mira el interruptor de plataforma, como en Webpay: el webhook, la conciliación y la
+        // devolución de un pago ya cobrado tienen que funcionar aunque la plataforma deje de ofrecer MercadoPago.
+        platformPolicy.requireEnabled(PaymentGatewayType.MERCADOPAGO);
         Long storeId = TenantContext.requireStoreId();
         Order order = orderRepository.findById(orderId)
                 .filter(o -> o.getStore().getId().equals(storeId))

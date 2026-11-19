@@ -51,6 +51,43 @@
         },
         "type" : "object"
       },
+      "BankTransferDto" : {
+        "properties" : {
+          "accountNumber" : {
+            "type" : "string"
+          },
+          "accountType" : {
+            "enum" : [ "CORRIENTE", "VISTA", "AHORRO", "RUT" ],
+            "type" : "string"
+          },
+          "accountTypeLabel" : {
+            "type" : "string"
+          },
+          "bankName" : {
+            "type" : "string"
+          },
+          "enabled" : {
+            "type" : "boolean"
+          },
+          "holderName" : {
+            "type" : "string"
+          },
+          "holderRut" : {
+            "type" : "string"
+          },
+          "instructions" : {
+            "type" : "string"
+          },
+          "noticeEmail" : {
+            "type" : "string"
+          },
+          "paymentWindowHours" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
       "CartCalculateRequest" : {
         "properties" : {
           "commune" : {
@@ -292,6 +329,9 @@
         "properties" : {
           "allowGuestCheckout" : {
             "type" : "boolean"
+          },
+          "bankTransfer" : {
+            "$ref" : "#/components/schemas/BankTransferDto"
           },
           "currency" : {
             "type" : "string"

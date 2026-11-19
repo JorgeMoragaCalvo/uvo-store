@@ -15,6 +15,9 @@ public record CheckoutConfigDto(
         boolean requirePhone,
         BigDecimal taxRate,
         String currency,
-        String currencySymbol
+        String currencySymbol,
+        // IMP-07. El pago manual: los datos de la transferencia y el plazo para pagar, o null si la tienda no la
+        // ofrece (entonces el checkout no muestra la opción).
+        org.uvo.uvostore.service.payment.transfer.BankTransferDto bankTransfer
 ) {
 }

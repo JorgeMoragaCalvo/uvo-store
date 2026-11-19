@@ -263,6 +263,8 @@ class ClosedStorePurgeProcedureTest {
                 + "text_color, overlay_opacity, active, sort_order) VALUES (?, 'B', 'banners/b.png', 'banners/mobile/b.png', "
                 + "'Ver', false, 'left', '#ffffff', 0, true, 0)", id);
         jdbc.update("INSERT INTO payment_gateway_configs (store_id, gateway, enabled, credentials) VALUES (?, 'WEBPAY', true, 'x')", id);
+        // IMP-07. La transferencia bancaria (V37).
+        jdbc.update("INSERT INTO bank_transfer_settings (store_id, enabled) VALUES (?, false) ON CONFLICT (store_id) DO NOTHING", id);
 
         long companyId = 860_000_000L + (seq % 1_000_000);
         jdbc.update("INSERT INTO pos_connections (store_id, company_name, company_id, api_url, api_key, webhook_secret, is_active) "

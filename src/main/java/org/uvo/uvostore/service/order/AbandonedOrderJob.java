@@ -31,8 +31,12 @@ import java.util.List;
  * <p><b>Activado por defecto</b>, al revés que el reintento del POS: aquí no hay documentos tributarios
  * que duplicar. Cancelar reutiliza {@code markCancelled}, que ya devuelve cupón y stock y es idempotente.
  *
- * <p>El plazo es generoso a propósito (24 h): una transferencia legítima tarda en llegar, y cancelar una
- * compra buena es bastante peor que retener un cupón un día más.
+ * <p>El plazo es generoso a propósito (24 h): cancelar una compra buena es bastante peor que retener un cupón un día
+ * más.
+ *
+ * <p>IMP-07. Las órdenes por transferencia bancaria no usan esas 24 h sino el plazo que su tienda le muestra al
+ * comprador ({@code bank_transfer_settings.payment_window_hours}): vencen cuando se le dijo que vencían, ni antes ni
+ * después.
  */
 @Component
 @ConditionalOnProperty(name = "app.abandoned-orders.enabled", havingValue = "true", matchIfMissing = true)
@@ -57,15 +61,19 @@ public class AbandonedOrderJob {
     @Scheduled(fixedDelayString = "${app.abandoned-orders.interval-ms:3600000}",
             initialDelayString = "${app.abandoned-orders.interval-ms:3600000}")
     public void cancelAbandonedOrders() {
-        Instant notAfter = Instant.now().minus(Duration.ofHours(afterHours));
-        List<Order> abandoned = orderRepository.findAbandonedPending(notAfter, PageRequest.of(0, batchSize));
-        if (abandoned.isEmpty()) {
-            return;
+        Instant now = Instant.now();
+        List<Order> abandoned = orderRepository.findAbandonedPending(now.minus(Duration.ofHours(afterHours)),
+                PageRequest.of(0, batchSize));
+        if (!abandoned.isEmpty()) {
+            log.info("Cancelando {} órdenes pendientes abandonadas (más de {} h sin pagar)", abandoned.size(), afterHours);
+            abandoned.forEach(this::cancelOne);
         }
 
-        log.info("Cancelando {} órdenes pendientes abandonadas (más de {} h sin pagar)", abandoned.size(), afterHours);
-        for (Order order : abandoned) {
-            cancelOne(order);
+        List<Long> expiredIds = orderRepository.findExpiredBankTransferIds(now, batchSize);
+        if (!expiredIds.isEmpty()) {
+            List<Order> expired = orderRepository.findWithStoreByIdIn(expiredIds);
+            log.info("Cancelando {} órdenes por transferencia que pasaron el plazo de pago de su tienda", expired.size());
+            expired.forEach(this::cancelOne);
         }
     }
 

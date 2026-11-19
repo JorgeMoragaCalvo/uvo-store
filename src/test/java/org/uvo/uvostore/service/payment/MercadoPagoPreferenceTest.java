@@ -46,6 +46,7 @@ class MercadoPagoPreferenceTest {
             mock(PaymentGatewayConfigRepository.class),
             mock(OrderStatusService.class),
             mock(MercadoPagoWebhookSignature.class),
+            PaymentPlatformPolicy.of(true),
             TestPublicUrls.resolver(), 5000, 20000);
 
     // PROD-04: la orden tiene que llevar tienda, porque de ella salen las cuatro URLs de la preferencia.

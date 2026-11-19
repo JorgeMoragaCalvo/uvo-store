@@ -14,7 +14,14 @@ import { expect, test, type Page, type TestInfo } from '@playwright/test'
 import { queryE2e } from '../support/database.ts'
 import { storeUrl } from '../support/env.ts'
 import { linkIn, waitForMail } from '../support/mail.ts'
-import { acceptInvitation, createBanner, createProduct, createShippingZone, disableShipping } from '../support/panel.ts'
+import {
+  acceptInvitation,
+  createBanner,
+  createProduct,
+  createShippingZone,
+  disableShipping,
+  enableBankTransfer,
+} from '../support/panel.ts'
 import { createStoreViaApi } from '../support/platform.ts'
 import { fillCheckoutForms, openProduct, trackOrder, type Buyer } from '../support/storefront.ts'
 
@@ -78,6 +85,7 @@ test.beforeAll(async ({ browser }) => {
 
     await createShippingZone(page, SLUG, REGION)
     await disableShipping(page, SLUG)
+    await enableBankTransfer(page, SLUG)
     await createProduct(page, SLUG, PRODUCT)
     // Dos banners: con uno solo no hay flechas, puntos ni botón de pausa.
     await createBanner(page, SLUG, 'Temporada de té', 0)
@@ -127,9 +135,10 @@ test('checkout: errores de campo, pago y confirmación', async ({ page }, testIn
   await fillCheckoutForms(page, BUYER)
   await expectAccessible(page, testInfo, 'checkout-pago')
 
-  await page.getByLabel('Pago contra entrega').check()
+  await page.getByLabel('Transferencia bancaria').check()
   await page.getByRole('button', { name: 'Confirmar Pedido' }).click()
-  await expect(page.getByText('¡Gracias por tu compra!')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Recibimos tu pedido' })).toBeVisible()
+  await expect(page.getByText(/Tienes hasta el/)).toBeVisible()
   shop.orderNumber = new URL(page.url()).searchParams.get('order') ?? ''
   expect(shop.orderNumber).toMatch(/^ORD-/)
   await expectAccessible(page, testInfo, 'confirmacion')

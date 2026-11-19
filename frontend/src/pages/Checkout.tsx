@@ -7,6 +7,7 @@ import { cartLineKey, useCartStore } from '../stores/useCartStore'
 import { clearPendingPayment, loadPendingPayment, useCheckoutStore } from '../stores/useCheckoutStore'
 import OrderSummary from '../components/cart/OrderSummary'
 import PaymentInProcess from '../components/PaymentInProcess'
+import BankTransferInstructions from '../components/BankTransferInstructions'
 import api from '../services/api'
 import { useStoreTitle } from '../hooks/useDocumentTitle'
 import type { ShippingCoverage } from '../types/api'
@@ -99,7 +100,7 @@ export default function Checkout() {
   const validateCart = useCartStore((state) => state.validateCart)
   const clearCart = useCartStore((state) => state.clearCart)
 
-  const { config, customer, shippingAddress, customerNotes, loading, error } = useCheckoutStore()
+  const { config, customer, shippingAddress, customerNotes, loading, error, paymentMethod } = useCheckoutStore()
   const fetchConfig = useCheckoutStore((state) => state.fetchConfig)
   const setCustomer = useCheckoutStore((state) => state.setCustomer)
   const setShippingAddress = useCheckoutStore((state) => state.setShippingAddress)
@@ -224,6 +225,15 @@ export default function Checkout() {
   // A7: the store ships but doesn't reach the chosen address. Distinct from free shipping, which is
   // how it used to look — and used to be priced.
   const shippingUnavailable = totals.shippingEnabled && !totals.shippingAvailable
+  // IMP-07. El pago manual ya no se ofrece siempre: es una transferencia que la tienda tiene que configurar.
+  const offered: Record<typeof paymentMethod, boolean> = {
+    stripe: Boolean(config?.stripeEnabled),
+    webpay: Boolean(config?.webpayEnabled),
+    mercadopago: Boolean(config?.mercadopagoEnabled),
+    manual: Boolean(config?.bankTransfer),
+  }
+  const hasPaymentMethod = Object.values(offered).some(Boolean)
+  const methodAvailable = offered[paymentMethod]
 
   const cartProblems = items
     .filter((item) => lineErrors[cartLineKey(item)])
@@ -274,7 +284,8 @@ export default function Checkout() {
       return
     }
 
-    navigate(`/order-success?order=${result.orderNumber}`)
+    // IMP-07. La marca le dice a la confirmación que muestre cómo pagar la transferencia.
+    navigate(`/order-success?order=${result.orderNumber}&gateway=manual`)
   }
 
   // Webpay Plus's redirect isn't a simple GET like Stripe/MercadoPago — Transbank requires an
@@ -501,9 +512,18 @@ export default function Checkout() {
                 {config?.stripeEnabled && <PaymentOption value="stripe" label="Tarjeta (Stripe)" />}
                 {config?.webpayEnabled && <PaymentOption value="webpay" label="Webpay" />}
                 {config?.mercadopagoEnabled && <PaymentOption value="mercadopago" label="MercadoPago" />}
-                <PaymentOption value="manual" label="Pago contra entrega" />
+                {config?.bankTransfer && <PaymentOption value="manual" label="Transferencia bancaria" />}
               </div>
+              {config && !hasPaymentMethod && (
+                <p role="alert" className="mt-2 rounded bg-red-50 p-3 text-sm text-red-700">
+                  Esta tienda todavía no tiene medios de pago disponibles. Vuelve a intentarlo más tarde.
+                </p>
+              )}
             </fieldset>
+
+            {paymentMethod === 'manual' && config?.bankTransfer && (
+              <BankTransferInstructions transfer={config.bankTransfer} />
+            )}
 
             <Field id="customerNotes" label="Notas del pedido (opcional)">
               <textarea
@@ -522,7 +542,7 @@ export default function Checkout() {
               </button>
               <button
                 type="button"
-                disabled={loading || shippingUnavailable || totalsError}
+                disabled={loading || shippingUnavailable || totalsError || !methodAvailable}
                 onClick={handleConfirm}
                 className="rounded bg-primary px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
               >

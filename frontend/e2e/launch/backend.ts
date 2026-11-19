@@ -25,6 +25,8 @@ import {
   E2E_MODE,
   E2E_PLATFORM_API_KEY,
   E2E_STRIPE_WEBHOOK_SECRET,
+  HOMOLOGACION,
+  HOMOLOGACION_PUBLIC_HOST,
   NGINX_UPSTREAM_ADDRESS,
   VITE_PORT,
 } from '../support/env.ts'
@@ -84,7 +86,11 @@ async function main(): Promise<void> {
     PUBLIC_STOREFRONT_URL: `http://{host}:${VITE_PORT}`,
     // IMP-04. En `dist`, la API y las imágenes por el mismo origen que la tienda, detrás de nginx, como en
     // producción (ops/nginx/uvostore.conf.template): la CSP del build (img-src 'self') no deja cargar otra cosa sobre http.
-    PUBLIC_API_URL: `http://{host}:${E2E_MODE === 'dist' ? VITE_PORT : BACKEND_PORT}`,
+    // IMP-07. Con MercadoPago real, la notification_url tiene que llegar desde Internet: el túnel HTTPS hacia este
+    // backend, escrito tal cual (la tienda usa su host como dominio; ver e2e/homologacion/mercadopago.spec.ts).
+    PUBLIC_API_URL: HOMOLOGACION.includes('mercadopago') && HOMOLOGACION_PUBLIC_HOST
+      ? `https://${HOMOLOGACION_PUBLIC_HOST}`
+      : `http://{host}:${E2E_MODE === 'dist' ? VITE_PORT : BACKEND_PORT}`,
     APP_UPLOAD_DIR: path.join(workDir, 'uploads'),
     // El POS en el circuito: encendido, y el outbox despachando cada segundo para que la venta llegue pronto.
     POS_ENABLED: 'true',
@@ -103,9 +109,12 @@ async function main(): Promise<void> {
     RATE_LIMIT_TRUSTED_PROXIES: E2E_MODE === 'dist' ? NGINX_UPSTREAM_ADDRESS : '',
     // GAP-08. Las tres pasarelas van a sus dobles (frontend/e2e/doubles/gateways.ts). El backend solo lo acepta
     // con APP_ENVIRONMENT=development.
+    //
+    // IMP-07. En la homologación (HOMOLOGACION=webpay,mercadopago) esas pasarelas hablan con el ambiente de pruebas
+    // real del proveedor: sin desvío, el backend usa el de integración de Transbank y la API de MercadoPago.
     STRIPE_API_BASE: `http://127.0.0.1:${DOUBLES_HTTP_PORT}/stripe`,
-    WEBPAY_API_BASE: `http://127.0.0.1:${DOUBLES_HTTP_PORT}/webpay`,
-    MERCADOPAGO_API_BASE: `http://127.0.0.1:${DOUBLES_HTTP_PORT}/mercadopago`,
+    WEBPAY_API_BASE: HOMOLOGACION.includes('webpay') ? '' : `http://127.0.0.1:${DOUBLES_HTTP_PORT}/webpay`,
+    MERCADOPAGO_API_BASE: HOMOLOGACION.includes('mercadopago') ? '' : `http://127.0.0.1:${DOUBLES_HTTP_PORT}/mercadopago`,
     STRIPE_WEBHOOK_SECRET: E2E_STRIPE_WEBHOOK_SECRET,
     // GAP-08. La conciliación encendida para el retorno perdido de Webpay: mira las órdenes con pago pendiente
     // de más de un minuto, así que no se adelanta a los webhooks que mandan los otros casos. Las de pago manual

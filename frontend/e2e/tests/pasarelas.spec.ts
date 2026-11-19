@@ -303,7 +303,10 @@ test('4 · Webpay: la sesión expira, el retorno viejo no cambia nada y el reint
   expect((await webpayTransactions(orderNumber)).map((tx) => tx.commits)).toEqual([0, 1])
 })
 
-test('5 · Webpay: el comprador paga y no vuelve; la conciliación confirma la orden', async ({ page }) => {
+test('5 · Webpay: el comprador autoriza en el banco y no vuelve; sin commit no hay cobro ni pedido pagado', async ({ page }) => {
+  // IMP-07. Lo que mostró la homologación con Transbank: sin el commit del comercio, la transacción sigue
+  // INITIALIZED y a los pocos segundos ya no se puede confirmar. La conciliación pregunta, ve que no hay cobro y deja la
+  // orden pendiente (la cancela el job de abandonadas). Antes el doble la daba por cobrada y este caso esperaba PAID.
   // La conciliación del E2E mira las órdenes pendientes de más de un minuto (ver el lanzador).
   test.setTimeout(180_000)
   const who = buyer('05')
@@ -314,11 +317,33 @@ test('5 · Webpay: el comprador paga y no vuelve; la conciliación confirma la o
   await expect(page.getByText('Pago autorizado')).toBeVisible()
   await page.close()
 
+  await expect
+    .poll(async () => (await webpayTransactions(orderNumber))[0].statusQueries, { message: 'la conciliación pregunta', timeout: 150_000 })
+    .toBeGreaterThan(0)
   expect((await tracking(orderNumber)).paymentStatus).toBe('PENDING')
+  await expectNothingConfirmed(who.email, orderNumber)
+  // status, nunca commit: la conciliación pregunta, no confirma.
+  expect(await webpayTransactions(orderNumber)).toMatchObject([{ status: 'INITIALIZED', commits: 0 }])
+})
+
+test('5b · Webpay: Transbank cobra y la respuesta del commit se pierde; «en proceso», y la conciliación lo confirma', async ({ page }) => {
+  // IMP-07. Antes un error al confirmar decía «el pago fue rechazado» y devolvía al checkout, donde el reintento abría
+  // otra transacción sobre la misma orden: dos cobros. Ahora es incierto: el comprador ve «en proceso», no puede pagar
+  // otra vez, y la conciliación (status) encuentra el cobro y confirma la orden una sola vez.
+  test.setTimeout(180_000)
+  const who = buyer('05b')
+  await startCheckout(page, who)
+  const orderNumber = await confirmWith(page, 'Webpay')
+
+  await page.getByRole('button', { name: 'Pagar y perder la respuesta' }).click()
+  await expect(page).toHaveURL(/\/checkout\?pending=1$/)
+  await expect(page.getByText(REJECTED)).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Confirmar Pedido' })).toHaveCount(0)
+  expect((await tracking(orderNumber)).paymentStatus).toBe('PENDING')
+
   await expectPayment(orderNumber, 'PAID', 150_000)
   await expectConfirmedOnce(who.email, orderNumber)
-  // status, nunca commit: la conciliación pregunta, no confirma.
-  expect((await webpayTransactions(orderNumber))[0].commits).toBe(0)
+  expect(await webpayTransactions(orderNumber)).toMatchObject([{ status: 'AUTHORIZED', commits: 1 }])
 })
 
 // ---------------------------------------------------------------------------------------------- MercadoPago

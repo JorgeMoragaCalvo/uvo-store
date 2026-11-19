@@ -4,7 +4,8 @@ import cl.transbank.common.IntegrationApiKeys;
 import cl.transbank.common.IntegrationCommerceCodes;
 import org.springframework.core.env.PropertyResolver;
 import org.uvo.uvostore.security.IpRanges;
-import org.uvo.uvostore.service.payment.WebpayPlatformPolicy;
+import org.uvo.uvostore.entity.payment.enums.PaymentGatewayType;
+import org.uvo.uvostore.service.payment.PaymentPlatformPolicy;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -33,7 +34,9 @@ import java.util.regex.Pattern;
  *
  * <p>IMP-02. Las credenciales de Webpay solo se exigen si la plataforma lo ofrece ({@code WEBPAY_ENABLED=true}): salir
  * sin Webpay ya no obliga a rellenarlas con valores ficticios, y el mismo interruptor impide que una tienda lo active
- * ({@link WebpayPlatformPolicy}). La matriz completa por ambiente está en {@code docs/configuracion-ambientes.md}.
+ * ({@link PaymentPlatformPolicy}). IMP-07 extendió el interruptor a Stripe y MercadoPago ({@code STRIPE_ENABLED},
+ * {@code MERCADOPAGO_ENABLED}), con la misma exigencia de estar escrito. La matriz completa por ambiente está en
+ * {@code docs/configuracion-ambientes.md}.
  *
  * <p>Es una función pura a propósito, como {@code SentryBootstrap}: recibe las propiedades, el entorno del
  * proceso (los {@code SENTRY_*} se leen con {@code System.getenv} y Spring no los ve) y la base por un
@@ -76,7 +79,9 @@ public final class ProductionConfigurationRules {
         }
 
         publicUrls(properties, errors);
-        boolean webpayEnabled = webpaySwitch(properties, errors);
+        boolean webpayEnabled = gatewaySwitch(PaymentGatewayType.WEBPAY, properties, errors);
+        gatewaySwitch(PaymentGatewayType.STRIPE, properties, errors);
+        gatewaySwitch(PaymentGatewayType.MERCADOPAGO, properties, errors);
         if (environment == AppEnvironment.PRODUCTION && webpayEnabled) {
             webpay(properties, errors);
         }
@@ -154,22 +159,27 @@ public final class ProductionConfigurationRules {
     }
 
     /**
-     * IMP-02. Si la plataforma ofrece Webpay es una decisión de alcance: fuera de development tiene que estar
-     * escrita. Devuelve si está activado; vacío o mal escrito es un error y cuenta como apagado.
+     * IMP-02 / IMP-07. Si la plataforma ofrece una pasarela es una decisión de alcance: fuera de development tiene que
+     * estar escrita. Devuelve si está activada; vacío o mal escrito es un error y cuenta como apagada.
      */
-    private static boolean webpaySwitch(PropertyResolver properties, List<String> errors) {
-        String configured = text(properties, "webpay.enabled", "");
+    private static boolean gatewaySwitch(PaymentGatewayType gateway, PropertyResolver properties, List<String> errors) {
+        String envVar = PaymentPlatformPolicy.envVar(gateway);
+        String label = PaymentPlatformPolicy.label(gateway);
+        String configured = text(properties, PaymentPlatformPolicy.property(gateway), "");
         try {
-            Optional<Boolean> explicit = WebpayPlatformPolicy.parse(configured);
+            Optional<Boolean> explicit = PaymentPlatformPolicy.parse(gateway, configured);
             if (explicit.isEmpty()) {
-                errors.add("WEBPAY_ENABLED está vacío: fuera de development hay que decir si la plataforma ofrece "
-                        + "Webpay. Pon WEBPAY_ENABLED=true (y las credenciales de producción de Transbank) o "
-                        + "WEBPAY_ENABLED=false (ninguna tienda podrá activarlo ni cobrar con él).");
+                String whenTrue = gateway == PaymentGatewayType.WEBPAY
+                        ? " (y las credenciales de producción de Transbank)"
+                        : " (solo con la pasarela homologada: docs/homologacion-pagos.md)";
+                errors.add(envVar + " está vacío: fuera de development hay que decir si la plataforma ofrece "
+                        + label + ". Pon " + envVar + "=true" + whenTrue + " o " + envVar + "=false (ninguna "
+                        + "tienda podrá activarla ni cobrar con ella).");
                 return false;
             }
             return explicit.get();
         } catch (IllegalArgumentException e) {
-            errors.add(e.getMessage() + " Pon WEBPAY_ENABLED=true o WEBPAY_ENABLED=false.");
+            errors.add(e.getMessage() + " Pon " + envVar + "=true o " + envVar + "=false.");
             return false;
         }
     }

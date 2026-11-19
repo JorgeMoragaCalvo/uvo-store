@@ -7,7 +7,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
-import org.uvo.uvostore.service.payment.WebpayPlatformPolicy;
+import org.uvo.uvostore.entity.payment.enums.PaymentGatewayType;
+import org.uvo.uvostore.service.payment.PaymentPlatformPolicy;
 
 import java.util.function.UnaryOperator;
 
@@ -48,13 +49,20 @@ public class ProductionConfigurationCheck {
                     + " (" + findings.errors().size() + " problemas):\n  - "
                     + String.join("\n  - ", findings.errors()));
         }
-        String webpay = WebpayPlatformPolicy.resolve(springEnvironment.getProperty("webpay.enabled"), environment)
-                ? "activado" : "desactivado";
+        // IMP-07. Qué pasarelas ofrece la plataforma, en una línea: es lo primero que se mira al homologar.
+        StringBuilder gateways = new StringBuilder();
+        for (PaymentGatewayType gateway : PaymentGatewayType.values()) {
+            boolean on = PaymentPlatformPolicy.resolve(gateway,
+                    springEnvironment.getProperty(PaymentPlatformPolicy.property(gateway)), environment);
+            gateways.append(gateways.isEmpty() ? "" : ", ").append(PaymentPlatformPolicy.label(gateway))
+                    .append(on ? " activada" : " desactivada");
+        }
         if (environment.isStrict()) {
-            log.info("APP_ENVIRONMENT={}: configuración de producción verificada, {} advertencias. Webpay {}.",
-                    environment.label(), findings.warnings().size(), webpay);
+            log.info("APP_ENVIRONMENT={}: configuración de producción verificada, {} advertencias. Pasarelas: {}.",
+                    environment.label(), findings.warnings().size(), gateways);
         } else {
-            log.info("APP_ENVIRONMENT=development: las comprobaciones de producción no se aplican. Webpay {}.", webpay);
+            log.info("APP_ENVIRONMENT=development: las comprobaciones de producción no se aplican. Pasarelas: {}.",
+                    gateways);
         }
     }
 }

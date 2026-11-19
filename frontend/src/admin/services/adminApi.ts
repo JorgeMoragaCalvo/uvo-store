@@ -1,8 +1,9 @@
 import axios from 'axios'
-import type { Page } from '@/types/api'
+import type { BankTransfer, Page } from '@/types/api'
 import { useAdminAuthStore } from '@/admin/stores/useAdminAuthStore'
 import { handleAdminApiError } from '@/admin/services/handleAdminApiError'
 import type {
+  BankTransferUpdate,
   AdminCustomerDetailDto,
   AdminCustomerStatsDto,
   AdminCustomerSummaryDto,
@@ -319,6 +320,11 @@ export const adminApi = {
     availability: (): Promise<PaymentGatewayAvailability[]> => client.get('/payment-gateways/availability'),
     update: (gateway: PaymentGateway, enabled: boolean, credentials: Record<string, string>): Promise<PaymentGatewayConfigDto> =>
       client.put(`/payment-gateways/${gateway}`, { enabled, credentials }),
+  },
+  // IMP-07. El pago manual: transferencia bancaria con los datos de la tienda.
+  bankTransfer: {
+    get: (): Promise<BankTransfer> => client.get('/payment-methods/bank-transfer'),
+    update: (body: BankTransferUpdate): Promise<BankTransfer> => client.put('/payment-methods/bank-transfer', body),
   },
   banners: {
     list: (search?: string): Promise<HomeBannerDto[]> => client.get('/home/banners', { params: { search } }),

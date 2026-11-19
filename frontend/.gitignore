@@ -16,6 +16,7 @@ dist-ssr
 # PROD-14a: salidas de Playwright y el log del backend de la red
 /test-results/
 /playwright-report/
+/playwright-report-homologacion/
 /blob-report/
 /e2e/.logs/
 

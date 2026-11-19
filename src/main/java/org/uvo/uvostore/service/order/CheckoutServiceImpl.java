@@ -26,7 +26,7 @@ import org.uvo.uvostore.repository.ShippingRateRepository;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.service.customer.CustomerService;
 import org.uvo.uvostore.service.geo.GeoCatalog;
-import org.uvo.uvostore.service.payment.WebpayPlatformPolicy;
+import org.uvo.uvostore.service.payment.PaymentPlatformPolicy;
 import org.uvo.uvostore.service.outbox.OutboxService;
 import org.uvo.uvostore.service.pos.PosSaleCoverage;
 import org.uvo.uvostore.service.settings.SettingValues;
@@ -68,7 +68,8 @@ public class CheckoutServiceImpl implements CheckoutService {
     private final GeoCatalog geoCatalog;
     private final PosSaleCoverage posSaleCoverage;
     private final OrderStatusService orderStatusService;
-    private final WebpayPlatformPolicy webpayPolicy;
+    private final PaymentPlatformPolicy gatewayPolicy;
+    private final org.uvo.uvostore.service.payment.transfer.BankTransferService bankTransferService;
     private final int retryWindowMinutes;
 
     public CheckoutServiceImpl(
@@ -87,7 +88,8 @@ public class CheckoutServiceImpl implements CheckoutService {
             GeoCatalog geoCatalog,
             PosSaleCoverage posSaleCoverage,
             OrderStatusService orderStatusService,
-            WebpayPlatformPolicy webpayPolicy,
+            PaymentPlatformPolicy gatewayPolicy,
+            org.uvo.uvostore.service.payment.transfer.BankTransferService bankTransferService,
             @org.springframework.beans.factory.annotation.Value("${app.abandoned-orders.retry-window-minutes:60}") int retryWindowMinutes) {
         this.cartPricingService = cartPricingService;
         this.cartService = cartService;
@@ -104,7 +106,8 @@ public class CheckoutServiceImpl implements CheckoutService {
         this.geoCatalog = geoCatalog;
         this.posSaleCoverage = posSaleCoverage;
         this.orderStatusService = orderStatusService;
-        this.webpayPolicy = webpayPolicy;
+        this.gatewayPolicy = gatewayPolicy;
+        this.bankTransferService = bankTransferService;
         this.retryWindowMinutes = retryWindowMinutes;
     }
 
@@ -114,11 +117,14 @@ public class CheckoutServiceImpl implements CheckoutService {
         if (command.lines() == null || command.lines().isEmpty()) {
             throw new IllegalArgumentException("El carrito no puede estar vacío");
         }
-        // IMP-02. Con Webpay apagado en la plataforma el checkout no lo ofrece, pero una llamada directa a la API
-        // podía crear la orden igual y dejarla esperando un pago que nunca se puede iniciar. Solo la regla de
-        // plataforma: si la tienda tiene Webpay activado lo sigue comprobando WebpayServiceImpl al iniciar el pago.
-        if ("webpay".equalsIgnoreCase(command.paymentMethod())) {
-            webpayPolicy.requireEnabled();
+        // IMP-02 / IMP-07. Con una pasarela apagada en la plataforma el checkout no la ofrece, pero una llamada directa
+        // a la API podía crear la orden igual y dejarla esperando un pago que nunca se puede iniciar. Solo la regla de
+        // plataforma: si la tienda la tiene activada lo sigue comprobando su servicio al iniciar el pago.
+        gatewayOf(command.paymentMethod()).ifPresent(gatewayPolicy::requireEnabled);
+        // IMP-07. El pago manual es una transferencia que la tienda tiene que haber configurado: sin sus datos el
+        // comprador no sabría a dónde pagar.
+        if ("manual".equalsIgnoreCase(command.paymentMethod())) {
+            bankTransferService.requireEnabled(TenantContext.requireStoreId());
         }
 
         // C5: the checkout used to create the order without looking at stock at all — the only
@@ -291,12 +297,14 @@ public class CheckoutServiceImpl implements CheckoutService {
         Long storeId = TenantContext.requireStoreId();
         return new CheckoutConfigDto(
                 stringSetting("stripe_public_key", ""),
-                boolSetting("stripe_enabled", false),
-                // IMP-02: una tienda que lo dejó activado antes de que la plataforma lo apagara no lo ofrece.
-                webpayPolicy.isEnabled() && paymentGatewayConfigRepository
+                // IMP-02 / IMP-07: una tienda que dejó activada una pasarela antes de que la plataforma la apagara no
+                // la ofrece.
+                gatewayPolicy.isEnabled(PaymentGatewayType.STRIPE) && boolSetting("stripe_enabled", false),
+                gatewayPolicy.isEnabled(PaymentGatewayType.WEBPAY) && paymentGatewayConfigRepository
                         .findByStoreIdAndGateway(storeId, PaymentGatewayType.WEBPAY)
                         .map(PaymentGatewayConfig::isEnabled).orElse(false),
-                paymentGatewayConfigRepository.findByStoreIdAndGateway(storeId, PaymentGatewayType.MERCADOPAGO)
+                gatewayPolicy.isEnabled(PaymentGatewayType.MERCADOPAGO) && paymentGatewayConfigRepository
+                        .findByStoreIdAndGateway(storeId, PaymentGatewayType.MERCADOPAGO)
                         .map(PaymentGatewayConfig::isEnabled).orElse(false),
                 boolSetting("shipping_enabled", true),
                 decimalSetting("default_shipping_cost", BigDecimal.ZERO),
@@ -306,8 +314,22 @@ public class CheckoutServiceImpl implements CheckoutService {
                 boolSetting("require_phone", false),
                 decimalSetting("tax_rate", BigDecimal.valueOf(19)),
                 stringSetting("currency", "CLP"),
-                stringSetting("currency_symbol", "$")
+                stringSetting("currency_symbol", "$"),
+                bankTransferService.offered(storeId).orElse(null)
         );
+    }
+
+    /** La pasarela detrás de un medio de pago del checkout; vacío para el pago manual. */
+    private static java.util.Optional<PaymentGatewayType> gatewayOf(String paymentMethod) {
+        if (paymentMethod == null) {
+            return java.util.Optional.empty();
+        }
+        return switch (paymentMethod.toLowerCase(java.util.Locale.ROOT)) {
+            case "webpay" -> java.util.Optional.of(PaymentGatewayType.WEBPAY);
+            case "stripe" -> java.util.Optional.of(PaymentGatewayType.STRIPE);
+            case "mercadopago" -> java.util.Optional.of(PaymentGatewayType.MERCADOPAGO);
+            default -> java.util.Optional.empty();
+        };
     }
 
     // Same tenant-scoped lookup buildOrderItem does, without building anything — used to keep the

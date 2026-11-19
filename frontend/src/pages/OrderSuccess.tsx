@@ -5,6 +5,8 @@ import { useCartStore } from '../stores/useCartStore'
 import { clearPendingPayment } from '../stores/useCheckoutStore'
 import { useStoreTitle } from '../hooks/useDocumentTitle'
 import PaymentInProcess from '../components/PaymentInProcess'
+import BankTransferInstructions from '../components/BankTransferInstructions'
+import type { BankTransfer, OrderTracking } from '../types/api'
 
 /** GAP-08. Cuánto espera la página de éxito de MercadoPago a que el webhook confirme el pago: unos 20 s. */
 const CONFIRM_POLL_MS = 2000
@@ -33,7 +35,10 @@ export default function OrderSuccess() {
 
   const [view, setView] = useState<View>(sessionId ? 'verifying' : confirmOrder ? 'confirming' : 'ok')
   const [orderNumber, setOrderNumber] = useState<string | null>(orderParam)
-  useStoreTitle(TITLES[view])
+  // IMP-07. Pago por transferencia: la orden existe pero no está pagada; la página dice cómo pagarla.
+  const manual = searchParams.get('gateway') === 'manual' && orderParam !== null
+  const [transfer, setTransfer] = useState<{ settings: BankTransfer | null; order: OrderTracking | null } | null>(null)
+  useStoreTitle(manual ? 'Pedido recibido' : TITLES[view])
 
   // El carrito y la orden guardada se vacían solo cuando ya no hay nada que reintentar: pago confirmado, o en
   // camino. Con un pago rechazado se vuelve al checkout con los dos intactos.
@@ -87,6 +92,22 @@ export default function OrderSuccess() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [confirmOrder])
 
+  useEffect(() => {
+    if (!manual) return
+    let cancelled = false
+    // Los datos salen de la tienda y el monto y la fecha, de la orden. Si algo falla, la página igual da el número de
+    // pedido y el correo trae los datos.
+    Promise.all([
+      api.checkout.getConfig().then((config) => config.bankTransfer, () => null),
+      api.orders.track(orderParam as string).then((order) => order, () => null),
+    ]).then(([settings, order]) => {
+      if (!cancelled) setTransfer({ settings, order })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [manual, orderParam])
+
   // El pago manual y Webpay (que solo llega aquí pagado) no tienen nada que confirmar.
   useEffect(() => {
     if (!orderParam || confirmOrder) return
@@ -125,6 +146,38 @@ export default function OrderSuccess() {
           <Link to="/" className="rounded bg-primary px-4 py-2 text-sm font-medium text-white">
             Volver al inicio
           </Link>
+        </div>
+      </div>
+    )
+  }
+
+  if (manual) {
+    return (
+      <div className="mx-auto max-w-lg p-4 py-8 text-center sm:p-8">
+        <h1 className="mb-2 text-2xl font-semibold text-dark">Recibimos tu pedido</h1>
+        <p className="mb-4 text-secondary">
+          Número de pedido: <strong>{orderNumber}</strong>. Queda pendiente hasta que la tienda confirme tu transferencia.
+        </p>
+        {transfer === null ? (
+          <p role="status" className="mb-6 text-secondary">Cargando los datos para pagar...</p>
+        ) : transfer.settings ? (
+          <div className="mb-6">
+            <BankTransferInstructions
+              transfer={transfer.settings}
+              order={transfer.order ? { orderNumber: transfer.order.orderNumber, total: transfer.order.total, createdAt: transfer.order.createdAt } : undefined}
+            />
+          </div>
+        ) : (
+          <p className="mb-6 text-secondary">Te enviamos un correo con los datos para pagar.</p>
+        )}
+        <div className="flex flex-wrap justify-center gap-3">
+          <Link
+            to={`/track-order?order=${encodeURIComponent(orderParam as string)}`}
+            className="rounded border border-gray-400 px-4 py-2 text-sm font-medium text-dark"
+          >
+            Seguir mi pedido
+          </Link>
+          <Link to="/shop" className="rounded bg-primary px-4 py-2 text-sm font-medium text-white">Seguir comprando</Link>
         </div>
       </div>
     )

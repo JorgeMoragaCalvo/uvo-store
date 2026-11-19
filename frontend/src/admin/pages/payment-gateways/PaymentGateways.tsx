@@ -7,6 +7,7 @@ import { Switch } from '@/components/ui/switch'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAdminPaymentGatewaysStore } from '@/admin/stores/useAdminPaymentGatewaysStore'
 import type { PaymentGateway, PaymentGatewayAvailability, PaymentGatewayConfigDto } from '@/admin/types/admin'
+import BankTransferCard from './BankTransferCard'
 
 interface CredentialField {
   key: string
@@ -54,7 +55,8 @@ function GatewayCard({
 }) {
   const update = useAdminPaymentGatewaysStore((state) => state.update)
   const [enabled, setEnabled] = useState(config?.enabled ?? false)
-  // IMP-02. La plataforma no deja activarla: el interruptor solo sirve para apagar una que quedó activada de antes.
+  // IMP-02 / IMP-07. La plataforma no deja activarla: el interruptor solo sirve para apagar una que quedó activada de
+  // antes.
   const unavailable = availability?.available === false
   const [values, setValues] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
@@ -144,7 +146,7 @@ export default function PaymentGateways() {
       <div>
         <h1 className="text-2xl font-semibold">Pasarelas de pago</h1>
         <p className="text-sm text-muted-foreground">
-          Stripe se configura a nivel de plataforma (variables de entorno) y no requiere credenciales acá.
+          Stripe se configura en Configuración general, pestaña Stripe.
         </p>
       </div>
 
@@ -160,6 +162,7 @@ export default function PaymentGateways() {
               availability={availability.find((a) => a.gateway === definition.gateway)}
             />
           ))}
+          <BankTransferCard />
         </div>
       )}
     </div>

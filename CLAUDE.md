@@ -1130,18 +1130,59 @@ constructor, like the other startup validators. **All errors come out together**
   unchanged. One exception: a `PUBLIC_PLATFORM_DOMAIN` that looks real logs a `WARN` saying
   `APP_ENVIRONMENT=development` looks like a deployment.
 - **The startup `INFO` line is the pre-traffic check** (IMP-02): `APP_ENVIRONMENT=production: configuración de
-  producción verificada, N advertencias. Webpay activado|desactivado.` Nothing exposes the environment over HTTP.
-- **Webpay platform switch (IMP-02).** `WEBPAY_ENABLED` → `webpay.enabled`, read only by `WebpayPlatformPolicy`
-  (blank = enabled in development only; a value other than `true`/`false` refuses to start everywhere). Off, it
-  blocks every way *into* Webpay: enabling it in the panel (`AdminPaymentGatewayServiceImpl.upsert`, 400; saving
-  it *disabled* is still allowed), offering it at checkout even if a store's row was enabled before
-  (`CheckoutServiceImpl.getConfig`), creating an order with `paymentMethod=webpay` (`CheckoutServiceImpl.checkout`,
-  400 — before this nothing checked the method at all), and starting a payment (`WebpayServiceImpl.createTransaction`,
-  400). It deliberately does **not** gate the way *out*: return, reconciliation and refund keep working, because a
-  payment Transbank already charged must still be confirmable and refundable. The panel reads
-  `GET /api/admin/payment-gateways/availability` (`payments.view`) and disables the Webpay switch with the reason
-  (`PaymentGateways.tsx`). Tests: `WebpayPlatformPolicyTest`, `WebpayPlatformSwitchTest` (a context with
-  `webpay.enabled=false`), and `WebpayRefundTest`/`WebpayReconcileTest` now build the service with the switch off.
+  producción verificada, N advertencias. Pasarelas: Stripe desactivada, Webpay activada, MercadoPago activada.`
+  Nothing exposes the environment over HTTP.
+- **Gateway platform switches (IMP-02 for Webpay, IMP-07 for the other two).** `WEBPAY_ENABLED`, `STRIPE_ENABLED`,
+  `MERCADOPAGO_ENABLED` → `<gateway>.enabled`, read only by `PaymentPlatformPolicy` (blank = enabled in development
+  only; staging/production refuse to start blank; a value other than `true`/`false` refuses to start everywhere).
+  Off, a gateway is blocked on every way *in*: enabling it (`AdminPaymentGatewayServiceImpl.upsert` for Webpay and
+  MercadoPago; `SettingsServiceImpl.requireStripeCredentials` for Stripe, which lives in the general settings), 400;
+  saving it *disabled* is still allowed; offering it at checkout even if a store enabled it before
+  (`CheckoutServiceImpl.getConfig`); creating an order with that `paymentMethod` (`CheckoutServiceImpl.checkout`);
+  and starting a payment (`WebpayServiceImpl.createTransaction`, `PaymentServiceImpl.createCheckoutSession`,
+  `MercadoPagoServiceImpl.createPreference`). It deliberately does **not** gate the way *out*: return, webhook,
+  reconciliation and refund keep working. The panel reads `GET /api/admin/payment-gateways/availability` and locks
+  the switch with the reason (`PaymentGateways.tsx`, and the Stripe tab of `GeneralSettings.tsx`, which saves a store
+  that had Stripe on with it off). Tests: `PaymentPlatformPolicyTest`, `PaymentPlatformSwitchTest` (a context with
+  the three off); `WebpayRefundTest`/`WebpayReconcileTest`/`MercadoPagoRefundTest` build their services with the
+  switch off. `ops/servidor/uvostore.env.example` ships `STRIPE_ENABLED=false` (Stripe is out of the first release)
+  and `MERCADOPAGO_ENABLED=false` until its homologation (`docs/homologacion-pagos.md`).
+- **Manual payment is a bank transfer the store configures** (IMP-07, V37 `bank_transfer_settings`, one row per
+  store). It used to be "contra entrega": always offered, no instructions, cancelled at 24 h. Now:
+  - `BankTransferService` + `AdminBankTransferController` (`/api/admin/payment-methods/bank-transfer`,
+    `payments.view`/`payments.manage`) refuse to enable it without holder, RUT (`ChileanRut`), bank, account type
+    and number and receipt e-mail. The V37 CHECK repeats that, and changes are audited as `BANK_TRANSFER_UPDATE` (target
+    `STORE`) with from/to values.
+  - `CheckoutConfigDto.bankTransfer` is null when off: the checkout doesn't offer it, and an order with
+    `paymentMethod=manual` is a 400.
+  - The buyer sees the data in the checkout, in `OrderSuccess` (`?gateway=manual`: amount, reference, deadline) and
+    in the "Recibimos tu pedido" e-mail (`OrderEmailComposer.appendBankTransfer`, deadline in `ReportZone`).
+  - `AbandonedOrderJob` cancels MANUAL orders at the store's `payment_window_hours`
+    (`OrderRepository.findExpiredBankTransferIds`, native for the per-store interval), and gateway orders at 24 h as
+    before (`findAbandonedPending` now excludes MANUAL).
+  - Test stores come with it on: `IntegrationTestSupport.createStore` inserts the row, and `disableBankTransfer`
+    turns it off. The E2E turns it on through the panel (`support/panel.ts` `enableBankTransfer`).
+- **Webpay: what the homologation against Transbank showed** (IMP-07, `docs/homologacion-pagos.md`).
+  - After the buyer authorizes at the bank, `status()` says `INITIALIZED`, not `AUTHORIZED`, until the merchant's
+    commit. The commit window is 30 to 55 s after the return; later it is a 422 "aborted". So a buyer whose browser
+    never comes back is **not charged**, and reconciliation correctly leaves the order pending. The E2E double used to
+    report `AUTHORIZED` without a commit; now it mirrors Transbank (window, a repeated commit answering 200, a
+    `pay-commit-lost` outcome).
+  - **Fixed: an uncertain commit used to read as a rejection.** A timeout or 5xx after Transbank captured led the
+    buyer to "rechazado", and the retry opened a second transaction on the same order (two charges, the first token
+    overwritten). Now `commitTransaction` throws `PaymentOutcomeUncertainException` for anything but a 4xx, and the
+    return redirects to `/checkout?pending=1` with a Sentry warning.
+  - `createTransaction` (`noRollbackFor = BusinessException`) asks for the order's previous token first. If it is
+    `AUTHORIZED`, it marks the order paid and refuses ("Esta orden ya fue pagada"); with no answer it refuses too.
+    Tests: `WebpayUncertainCommitTest`, `pasarelas.spec.ts` 5 and 5b.
+- **Homologation script** (IMP-07): `frontend/playwright.homologacion.config.ts`, `npm run e2e:homologacion`,
+  `HOMOLOGACION=webpay|mercadopago`.
+  - `e2e/launch/backend.ts` drops that gateway's `*_API_BASE`, so it talks to the real sandbox; with MercadoPago and
+    `HOMOLOGACION_PUBLIC_HOST`, `PUBLIC_API_URL` becomes the tunnel.
+  - Specs: `e2e/homologacion/webpay.spec.ts` (W1-W9, real Transbank form) and `mercadopago.spec.ts` (needs `MP_*`
+    env vars; the payment is done by a person in `--headed`).
+  - Evidence without secrets goes to `e2e/.logs/homologacion/` (`acta.ts`).
+  - Not in CI.
 - **Secrets and rotation:** see `docs/configuracion-ambientes.md`. `APP_ENCRYPTION_KEY` cannot be rotated today —
   a new key makes the stored gateway credentials unreadable — so its custody is a requirement and rotation with
   re-encryption is pending; provisioning real secrets and roles belongs to IMP-05.
@@ -1443,6 +1484,7 @@ DELETE FROM home_banners WHERE store_id IN (SELECT id FROM purge_store);
 DELETE FROM settings WHERE store_id IN (SELECT id FROM purge_store);
 DELETE FROM store_settings WHERE store_id IN (SELECT id FROM purge_store);
 DELETE FROM payment_gateway_configs WHERE store_id IN (SELECT id FROM purge_store);
+DELETE FROM bank_transfer_settings WHERE store_id IN (SELECT id FROM purge_store);
 DELETE FROM pos_connections WHERE store_id IN (SELECT id FROM purge_store);
 -- Cascades from users (and from stores): the access e-mail rows of outbox_messages (IMP-06).
 DELETE FROM user_roles WHERE user_id IN (SELECT id FROM users WHERE store_id IN (SELECT id FROM purge_store));
@@ -1503,7 +1545,8 @@ be dispatched, and is unblocked by retrying the decrement or releasing it with a
 and `order_items.discount_amount` (GAP-05: IVA is computed after the coupon, and the coupon discount and the IVA are
 spread across the lines so they add up to the order; with tax-inclusive prices the order keeps the gross subtotal and
 the IVA is contained, not added), V36 the access e-mails in the outbox (IMP-06: `outbox_messages.store_id`,
-nullable `order_id`, `user_id` + `token_hash`, the "order XOR user" CHECK). Migration comments must stay WIN1252-encodable (no `−` or `Σ`): the local
+nullable `order_id`, `user_id` + `token_hash`, the "order XOR user" CHECK), V37 `bank_transfer_settings` (IMP-07: the
+manual payment as a bank transfer, plus `BANK_TRANSFER_UPDATE` in the audit CHECK). Migration comments must stay WIN1252-encodable (no `−` or `Σ`): the local
 database's client encoding rejects them and Flyway fails.
 `spring.jpa.hibernate.ddl-auto=validate`, so any entity change must be paired with a new Flyway
 migration — **never edit an already-applied one**, add the next number (`V24__...sql`).
@@ -1787,11 +1830,12 @@ stores; steps 8 onward use `tienda-pos`.
 2. **`tienda-panel` signs up** through `/plataforma/nueva-tienda`.
 3. **Owner access.** The owner opens the **invitation email's link**, sets a password, logs out and
    logs in again.
-4. **Configuration in the panel.** A shipping zone, and "Envío habilitado" turned off. This is a
-   full settings PUT, and the later POS sale proves it didn't switch POS sync off.
+4. **Configuration in the panel.** A shipping zone, "Envío habilitado" turned off, and the bank transfer
+   turned on with its details (IMP-07: the manual payment is no longer always there). The settings save is a
+   full PUT, and the later POS sale proves it didn't switch POS sync off.
 5. **Products.** The POS pushes `tienda-pos`'s product; `tienda-panel`'s is created in the panel form.
-6. **Purchase.** Find the product in `/shop`, then cart → 3-step checkout with "Pago contra
-   entrega". The "Recibimos tu pedido" email arrives.
+6. **Purchase.** Find the product in `/shop`, then cart → 3-step checkout with "Transferencia
+   bancaria"; the confirmation shows how to pay and the deadline. The "Recibimos tu pedido" email arrives.
 7. **Payment in the panel.** The order is set to `PAID` in its detail page. The stock drops in
    `/admin/products` and the confirmation email arrives.
 8. **The sale reaches the POS double.**

@@ -17,6 +17,7 @@ vi.mock('@/services/api', () => ({
   default: {
     payment: { verify: vi.fn() },
     orders: { track: vi.fn() },
+    checkout: { getConfig: vi.fn() },
   },
 }))
 
@@ -149,5 +150,54 @@ describe('OrderSuccess', () => {
     expect(api.orders.track).not.toHaveBeenCalled()
     expect(api.payment.verify).not.toHaveBeenCalled()
     expect(clearCart).toHaveBeenCalled()
+  })
+})
+
+/**
+ * IMP-07. Un pedido por transferencia no está pagado: la página no da las gracias por una compra, dice cómo pagarla
+ * (datos, monto, referencia y fecha límite) y deja el carrito vacío, porque la orden ya existe.
+ */
+describe('OrderSuccess: pago por transferencia', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    useCartStore.setState({ clearCart: vi.fn() })
+  })
+
+  it('shows how to pay, with the amount, the reference and the deadline', async () => {
+    vi.mocked(api.checkout.getConfig).mockResolvedValue({
+      bankTransfer: {
+        enabled: true,
+        holderName: 'Comercial Ejemplo SpA',
+        holderRut: '76123456-0',
+        bankName: 'Banco Estado',
+        accountType: 'VISTA',
+        accountTypeLabel: 'Cuenta vista',
+        accountNumber: '12345678',
+        noticeEmail: 'pagos@ejemplo.cl',
+        instructions: null,
+        paymentWindowHours: 48,
+      },
+    } as never)
+    vi.mocked(api.orders.track).mockResolvedValue(tracking('PENDING'))
+
+    renderAt('/order-success?order=ORD-7&gateway=manual')
+
+    expect(await screen.findByRole('heading', { name: /recibimos tu pedido/i })).toBeInTheDocument()
+    expect(await screen.findByText('Banco Estado')).toBeInTheDocument()
+    expect(screen.getByText('12345678')).toBeInTheDocument()
+    expect(screen.getByText('$9.990')).toBeInTheDocument()
+    expect(screen.getByText(/tienes hasta el/i)).toHaveTextContent(/de noviembre/)
+    expect(screen.queryByText(/gracias por tu compra/i)).not.toBeInTheDocument()
+    expect(useCartStore.getState().clearCart).toHaveBeenCalled()
+  })
+
+  it('still gives the order number if the store no longer offers transfers', async () => {
+    vi.mocked(api.checkout.getConfig).mockResolvedValue({ bankTransfer: null } as never)
+    vi.mocked(api.orders.track).mockResolvedValue(tracking('PENDING'))
+
+    renderAt('/order-success?order=ORD-7&gateway=manual')
+
+    expect(await screen.findByText(/te enviamos un correo con los datos para pagar/i)).toBeInTheDocument()
+    expect(screen.getByText('ORD-7')).toBeInTheDocument()
   })
 })

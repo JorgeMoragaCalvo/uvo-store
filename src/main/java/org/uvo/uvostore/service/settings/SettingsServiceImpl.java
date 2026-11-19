@@ -23,13 +23,16 @@ public class SettingsServiceImpl implements SettingsService {
     private final SettingRepository settingRepository;
     private final PosConnectionRepository posConnectionRepository;
     private final PosIntegrationPolicy posPolicy;
+    private final org.uvo.uvostore.service.payment.PaymentPlatformPolicy gatewayPolicy;
     private final AuditTrail auditTrail;
 
     public SettingsServiceImpl(SettingRepository settingRepository, PosConnectionRepository posConnectionRepository,
-                               PosIntegrationPolicy posPolicy, AuditTrail auditTrail) {
+                               PosIntegrationPolicy posPolicy, AuditTrail auditTrail,
+                               org.uvo.uvostore.service.payment.PaymentPlatformPolicy gatewayPolicy) {
         this.settingRepository = settingRepository;
         this.posConnectionRepository = posConnectionRepository;
         this.posPolicy = posPolicy;
+        this.gatewayPolicy = gatewayPolicy;
         this.auditTrail = auditTrail;
     }
 
@@ -214,6 +217,8 @@ public class SettingsServiceImpl implements SettingsService {
         if (!command.stripeEnabled()) {
             return;
         }
+        // IMP-07. Stripe se activa aquí y no en «Pasarelas de pago», pero la regla de plataforma es la misma.
+        gatewayPolicy.requireEnabled(org.uvo.uvostore.entity.payment.enums.PaymentGatewayType.STRIPE);
         boolean hasSecret = notBlank(command.stripeSecretKey()) || isSet("stripe_secret_key");
         boolean hasPublicKey = notBlank(command.stripePublicKey());
         if (!hasSecret || !hasPublicKey) {

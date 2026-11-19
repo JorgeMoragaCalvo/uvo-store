@@ -78,6 +78,14 @@ public class WebpayController {
                 return redirectTo(publicUrls.storefrontUrl(store, "/checkout?error=webpay"));
             }
             return redirectTo(publicUrls.storefrontUrl(store, "/order-success?order=" + result.orderNumber()));
+        } catch (org.uvo.uvostore.service.payment.PaymentOutcomeUncertainException e) {
+            // IMP-07. Transbank pudo haber cobrado: no se le dice al comprador que se rechazó ni se le deja pagar otra
+            // vez. La SPA muestra «pago en proceso» y la conciliación pregunta el estado y confirma o no la orden.
+            log.warn("Confirmación Webpay incierta store_id={} order={} token_prefix={} error={}",
+                    store.getId(), e.orderNumber(), tokenPrefix(tokenWs), e.getMessage());
+            io.sentry.Sentry.captureMessage("Confirmación Webpay incierta en la orden " + e.orderNumber()
+                    + ": la conciliación la resolverá", io.sentry.SentryLevel.WARNING);
+            return redirectTo(publicUrls.storefrontUrl(store, "/checkout?pending=1"));
         } catch (Exception e) {
             // PROD-17a. El token_ws completo NO se registra. Es la credencial de esa transacción frente a
             // Transbank y este endpoint es público, así que escribirlo lo deja en cada agregador y copia

@@ -355,7 +355,7 @@ describe('useCheckoutStore.fetchConfig', () => {
     expect(useCheckoutStore.getState().paymentMethod).toBe('stripe')
   })
 
-  it('defaults the payment method to manual when stripe is disabled', async () => {
+  it('defaults the payment method to manual when stripe is disabled and the store takes transfers', async () => {
     const { api, useCheckoutStore } = await setup()
     vi.mocked(api.checkout.getConfig).mockResolvedValue({
       stripePublicKey: null,
@@ -368,10 +368,26 @@ describe('useCheckoutStore.fetchConfig', () => {
       freeShippingThreshold: null,
       allowGuestCheckout: true,
       requirePhone: false,
+      bankTransfer: { enabled: true, paymentWindowHours: 48 },
     } as never)
 
     await useCheckoutStore.getState().fetchConfig()
 
     expect(useCheckoutStore.getState().paymentMethod).toBe('manual')
+  })
+
+  // IMP-07. El pago manual ya no está siempre: sin transferencia, viene marcada la primera pasarela que haya.
+  it('defaults to the first gateway when the store takes no transfers', async () => {
+    const { api, useCheckoutStore } = await setup()
+    vi.mocked(api.checkout.getConfig).mockResolvedValue({
+      stripeEnabled: false,
+      webpayEnabled: true,
+      mercadopagoEnabled: true,
+      bankTransfer: null,
+    } as never)
+
+    await useCheckoutStore.getState().fetchConfig()
+
+    expect(useCheckoutStore.getState().paymentMethod).toBe('webpay')
   })
 })

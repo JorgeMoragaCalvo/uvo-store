@@ -43,6 +43,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final String fallbackWebhookSecret;
     private final String defaultCurrency;
     private final StorePublicUrlResolver publicUrls;
+    private final org.uvo.uvostore.service.payment.PaymentPlatformPolicy platformPolicy;
     private final int gatewayConnectTimeoutMs;
     private final int gatewayReadTimeoutMs;
 
@@ -54,6 +55,7 @@ public class PaymentServiceImpl implements PaymentService {
             @Value("${stripe.webhook-secret}") String fallbackWebhookSecret,
             @Value("${stripe.default-currency}") String defaultCurrency,
             StorePublicUrlResolver publicUrls,
+            org.uvo.uvostore.service.payment.PaymentPlatformPolicy platformPolicy,
             @Value("${app.gateway.connect-timeout-ms:5000}") int gatewayConnectTimeoutMs,
             @Value("${app.gateway.read-timeout-ms:20000}") int gatewayReadTimeoutMs) {
         this.gatewayConnectTimeoutMs = gatewayConnectTimeoutMs;
@@ -65,11 +67,15 @@ public class PaymentServiceImpl implements PaymentService {
         this.fallbackWebhookSecret = fallbackWebhookSecret;
         this.defaultCurrency = defaultCurrency;
         this.publicUrls = publicUrls;
+        this.platformPolicy = platformPolicy;
     }
 
     @Override
     @Transactional
     public CheckoutSessionResult createCheckoutSession(Long orderId) {
+        // IMP-07. Solo el inicio mira el interruptor de plataforma: verificar, el webhook y la devolución de un pago
+        // ya cobrado siguen funcionando aunque la plataforma deje de ofrecer Stripe.
+        platformPolicy.requireEnabled(org.uvo.uvostore.entity.payment.enums.PaymentGatewayType.STRIPE);
         Order order = orderRepository.findById(orderId)
                 .filter(o -> o.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(() -> new NoSuchElementException("Order " + orderId + " not found"));

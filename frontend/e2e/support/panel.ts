@@ -81,6 +81,26 @@ export async function disableShipping(page: Page, slug: string): Promise<void> {
   await expect(page.getByText('Configuración guardada')).toBeVisible()
 }
 
+/**
+ * IMP-07. El pago manual es una transferencia que la tienda activa con sus datos en «Pasarelas de pago»; sin eso el
+ * checkout no lo ofrece.
+ */
+export async function enableBankTransfer(page: Page, slug: string): Promise<void> {
+  await page.goto(storeUrl(slug, '/admin/payment-gateways'))
+  await page.getByLabel('Titular de la cuenta').fill('Comercial E2E SpA')
+  await page.getByLabel('RUT del titular').fill('76.123.456-0')
+  await page.getByLabel('Banco', { exact: true }).fill('Banco de Prueba')
+  await page.getByLabel('Tipo de cuenta').selectOption('CORRIENTE')
+  await page.getByLabel('Número de cuenta').fill('000123456')
+  await page.getByLabel('Correo para el comprobante').fill('pagos@e2e.test')
+  const toggle = page.locator('#bank-enabled')
+  await toggle.click()
+  await expect(toggle).toBeChecked()
+  const card = page.locator('[data-slot="card"]').filter({ hasText: 'Transferencia bancaria' })
+  await card.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByText('Transferencia bancaria actualizada')).toBeVisible()
+}
+
 export interface PanelProduct {
   name: string
   sku: string

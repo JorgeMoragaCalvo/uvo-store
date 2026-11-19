@@ -72,7 +72,7 @@ export default defineConfig([
   {
     // PROD-14a: the Playwright suite runs under Node, not in the browser bundle. The React rules don't
     // apply there, and rules-of-hooks would flag the `use(...)` that Playwright fixtures call.
-    files: ['e2e/**/*.ts', 'playwright.config.ts'],
+    files: ['e2e/**/*.ts', 'playwright.config.ts', 'playwright.homologacion.config.ts'],
     languageOptions: {
       globals: globals.node,
     },
