@@ -1,0 +1,29 @@
+{
+  "source": "uvostore",
+  "order_number": "UVO-20261120-0003",
+  "idempotency_key": "UVO-20261120-0003:12",
+  "subtotal": 24960,
+  "discount_amount": 2496,
+  "shipping_cost": 4990,
+  "tax_amount": 3587,
+  "tax_included": true,
+  "total": 27454,
+  "items": [
+    {
+      "product_id": 501,
+      "quantity": 1,
+      "price": 9990,
+      "subtotal": 9990,
+      "discount_amount": 999,
+      "tax_amount": 1436
+    },
+    {
+      "product_id": 502,
+      "quantity": 3,
+      "price": 4990,
+      "subtotal": 14970,
+      "discount_amount": 1497,
+      "tax_amount": 2151
+    }
+  ]
+}

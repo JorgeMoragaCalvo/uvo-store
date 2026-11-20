@@ -1,0 +1,12 @@
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION",
+    "message": "El total no cuadra con las lineas",
+    "details": {
+      "field": "total",
+      "expected": 23970,
+      "received": 23980
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "event": "product.updated",
+  "productId": 501,
+  "sku": "CAF-001",
+  "companyId": 12,
+  "version": 15,
+  "changedFields": [
+    "price"
+  ],
+  "data": {
+    "price": 10490
+  }
+}

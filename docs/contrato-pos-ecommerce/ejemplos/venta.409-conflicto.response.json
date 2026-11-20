@@ -1,0 +1,11 @@
+{
+  "success": false,
+  "error": {
+    "code": "IDEMPOTENCY_CONFLICT",
+    "message": "La clave ya se uso con un cuerpo distinto",
+    "details": {
+      "idempotency_key": "UVO-20261120-0001:12",
+      "sale_id": 88231
+    }
+  }
+}

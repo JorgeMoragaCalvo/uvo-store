@@ -1,0 +1,10 @@
+{
+  "success": false,
+  "error": {
+    "code": "NOT_PROCESSED",
+    "message": "El POS no registro ninguna venta con esta clave",
+    "details": {
+      "idempotency_key": "UVO-20261120-0001:12"
+    }
+  }
+}

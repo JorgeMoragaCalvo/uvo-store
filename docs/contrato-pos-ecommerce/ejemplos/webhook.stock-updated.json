@@ -1,0 +1,11 @@
+{
+  "event": "stock.updated",
+  "productId": 501,
+  "sku": "CAF-001",
+  "companyId": 12,
+  "warehouseId": 3,
+  "version": 16,
+  "oldStock": 7,
+  "newStock": 6,
+  "stockWeb": 6
+}

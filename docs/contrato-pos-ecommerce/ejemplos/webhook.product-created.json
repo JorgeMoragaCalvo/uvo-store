@@ -1,0 +1,13 @@
+{
+  "event": "product.created",
+  "version": 1,
+  "productId": 778,
+  "sku": "POL-AZ-L",
+  "companyId": 12,
+  "data": {
+    "name": "Polera azul L",
+    "price": 14990,
+    "tax_exempt": false,
+    "stock_web": 5
+  }
+}

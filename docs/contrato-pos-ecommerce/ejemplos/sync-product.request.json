@@ -1,0 +1,11 @@
+{
+  "companyId": 12,
+  "externalId": 501,
+  "sku": "CAF-001",
+  "name": "Cafe de grano 250 g",
+  "price": 9990,
+  "stock": 7,
+  "warehouseId": 3,
+  "active": true,
+  "version": 14
+}
