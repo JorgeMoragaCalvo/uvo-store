@@ -1,0 +1,15 @@
+{
+  "success": true,
+  "data": {
+    "status": "REGISTERED",
+    "sale_id": 88231,
+    "idempotency_key": "UVO-20261120-0001:12",
+    "registered_at": "2026-11-20T15:04:05-03:00",
+    "body_sha256": "609bbb49f2f8d89ca9ee71c56a2b5e2609331ba6735350316d0c3577d5c8918e",
+    "document": {
+      "tipo": 999,
+      "folio": 45012,
+      "estado_sii": "NO_APLICA"
+    }
+  }
+}

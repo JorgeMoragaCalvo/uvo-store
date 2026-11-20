@@ -1,0 +1,9 @@
+{
+  "event": "stock.alert",
+  "productId": 502,
+  "sku": "TAZ-010",
+  "companyId": 12,
+  "currentStock": 0,
+  "currentStockWeb": 0,
+  "alertType": "out_of_stock"
+}

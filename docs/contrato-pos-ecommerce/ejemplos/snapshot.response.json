@@ -1,0 +1,35 @@
+{
+  "success": true,
+  "data": [
+    {
+      "product_id": 501,
+      "sku": "CAF-001",
+      "version": 14,
+      "name": "Cafe de grano 250 g",
+      "price": 9990,
+      "tax_exempt": false,
+      "stock_web": 7
+    },
+    {
+      "product_id": 502,
+      "sku": "TAZ-010",
+      "version": 3,
+      "name": "Taza de ceramica",
+      "price": 4990,
+      "tax_exempt": false,
+      "stock_web": 20
+    },
+    {
+      "product_id": 777,
+      "sku": "POL-AZ-M",
+      "version": 6,
+      "name": "Polera azul M",
+      "price": 14990,
+      "tax_exempt": false,
+      "stock_web": 4
+    }
+  ],
+  "missing": [
+    999999
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "success": true,
+  "data": {
+    "sale_id": 88231,
+    "idempotency_key": "UVO-20261120-0001:12",
+    "duplicate": false,
+    "document": {
+      "tipo": 999,
+      "folio": 45012,
+      "estado_sii": "NO_APLICA"
+    },
+    "results": [
+      {
+        "product_id": 501,
+        "success": true,
+        "new_stock_web": 7
+      }
+    ]
+  }
+}

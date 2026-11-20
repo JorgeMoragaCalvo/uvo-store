@@ -1,0 +1,45 @@
+{
+  "_nota": "Secreto, timestamp y nonce FICTICIOS, los mismos de FirmaIntegracionTest de AlfozApi. Nunca usar en un ambiente.",
+  "secret_base64": "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWYwMTIzNDU2Nzg5YWJjZGVm",
+  "timestamp": 1763391780,
+  "nonce": "3q2-7wEXAMPLEnonce_base64url",
+  "control_alfozapi": {
+    "method": "POST",
+    "path": "/api/v1/integraciones/uvocms/cotizaciones",
+    "key_id": "uvocms-test",
+    "body": "{\"version\":1,\"referencia\":\"COT-000123\"}",
+    "signature": "v1=ea8fa7aa7ab02c799c450466dc166f039fab81c19da6c1041f92de2c8873f30d"
+  },
+  "casos": [
+    {
+      "caso": "venta",
+      "method": "POST",
+      "path": "/api/v1/orders/external",
+      "key_id": "pos-12-tienda",
+      "body": "{\"source\":\"uvostore\",\"order_number\":\"UVO-20261120-0001\",\"idempotency_key\":\"UVO-20261120-0001:12\",\"subtotal\":19980,\"discount_amount\":0,\"shipping_cost\":3990,\"tax_amount\":3190,\"tax_included\":true,\"total\":23970,\"items\":[{\"product_id\":501,\"quantity\":2,\"price\":9990,\"subtotal\":19980,\"discount_amount\":0,\"tax_amount\":3190}]}",
+      "body_sha256": "609bbb49f2f8d89ca9ee71c56a2b5e2609331ba6735350316d0c3577d5c8918e",
+      "canonical": "UVO-HMAC-SHA256\nPOST\n/api/v1/orders/external\n1763391780\n3q2-7wEXAMPLEnonce_base64url\npos-12-tienda\n609bbb49f2f8d89ca9ee71c56a2b5e2609331ba6735350316d0c3577d5c8918e",
+      "signature": "v1=99bb349738135ebd452ae175836f9f7baea02360b3fb7a87f513e2649c1a9b78"
+    },
+    {
+      "caso": "consulta",
+      "method": "GET",
+      "path": "/api/v1/orders/external/UVO-20261120-0001%3A12",
+      "key_id": "pos-12-tienda",
+      "body": "",
+      "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "canonical": "UVO-HMAC-SHA256\nGET\n/api/v1/orders/external/UVO-20261120-0001%3A12\n1763391780\n3q2-7wEXAMPLEnonce_base64url\npos-12-tienda\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "signature": "v1=6eff86a6e7801e6244797534eda2f1abfd18c40c8f7f53e2ef91f166851b3b96"
+    },
+    {
+      "caso": "webhook",
+      "method": "POST",
+      "path": "/api/webhooks/pos/stock-updated",
+      "key_id": "pos-12-pos",
+      "body": "{\"event\":\"stock.updated\",\"productId\":501,\"sku\":\"CAF-001\",\"companyId\":12,\"warehouseId\":3,\"version\":16,\"oldStock\":7,\"newStock\":6,\"stockWeb\":6}",
+      "body_sha256": "5b531b178112df485ef8b7d307ab7d77d08e04f6cc1a7b4d9e3ca47606ce7d43",
+      "canonical": "UVO-HMAC-SHA256\nPOST\n/api/webhooks/pos/stock-updated\n1763391780\n3q2-7wEXAMPLEnonce_base64url\npos-12-pos\n5b531b178112df485ef8b7d307ab7d77d08e04f6cc1a7b4d9e3ca47606ce7d43",
+      "signature": "v1=35a3adcb2c24422bc327cb1015db7dffecf0a74b147a9afcf304f61d39aa81f8"
+    }
+  ]
+}
