@@ -173,6 +173,40 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public Optional<org.uvo.uvostore.service.payment.ProviderPaymentView> inspect(Long orderId) {
+        Long storeId = TenantContext.requireStoreId();
+        Order order = orderRepository.findById(orderId)
+                .filter(o -> o.getStore().getId().equals(storeId))
+                .orElseThrow(() -> new NoSuchElementException("Order " + orderId + " not found"));
+        String sessionId = order.getStripeCheckoutSessionId();
+        if (sessionId == null || sessionId.isBlank()) {
+            return Optional.empty();
+        }
+
+        Session session;
+        try {
+            // El cargo viene expandido para leer lo devuelto en la misma llamada.
+            session = Session.retrieve(sessionId,
+                    com.stripe.param.checkout.SessionRetrieveParams.builder()
+                            .addExpand("payment_intent.latest_charge")
+                            .build(),
+                    requestOptions());
+        } catch (StripeException e) {
+            throw new IllegalStateException("Error al consultar la sesión de Stripe: " + e.getMessage(), e);
+        }
+
+        boolean charged = "paid".equals(session.getPaymentStatus());
+        java.math.BigDecimal refunded = null;
+        PaymentIntent intent = session.getPaymentIntentObject();
+        if (charged && intent != null && intent.getLatestChargeObject() != null) {
+            refunded = stripeAmount(intent.getLatestChargeObject().getAmountRefunded());
+        }
+        return Optional.of(new org.uvo.uvostore.service.payment.ProviderPaymentView(session.getPaymentStatus(), charged,
+                charged ? stripeAmount(session.getAmountTotal()) : null, refunded, sessionId));
+    }
+
+    @Override
     @Transactional
     public String refund(Long orderId, java.math.BigDecimal amount, String idempotencyKey) {
         Long storeId = TenantContext.requireStoreId();

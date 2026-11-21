@@ -193,6 +193,48 @@ public class WebpayServiceImpl implements WebpayService {
         return orderRepository.findById(orderId).orElseThrow().getPaymentStatus() == PaymentStatus.PAID;
     }
 
+    /** Los estados de un detalle en que Transbank llegó a capturar el dinero, lo haya devuelto después o no. */
+    private static final java.util.Set<String> CHARGED_STATUSES =
+            java.util.Set.of("AUTHORIZED", "CAPTURED", "NULLIFIED", "PARTIALLY_NULLIFIED", "REVERSED");
+
+    @Override
+    @Transactional(readOnly = true)
+    public java.util.Optional<ProviderPaymentView> inspect(Long orderId) {
+        Long storeId = TenantContext.requireStoreId();
+        Order order = orderRepository.findById(orderId)
+                .filter(o -> o.getStore().getId().equals(storeId))
+                .orElseThrow(() -> new NoSuchElementException("Order " + orderId + " not found"));
+        String token = order.getPaymentId();
+        if (token == null || token.isBlank()) {
+            return java.util.Optional.empty();
+        }
+
+        WebpayPlusMallTransactionStatusResponse response;
+        try {
+            // status(), como reconcile: nunca commit().
+            response = transaction().status(token);
+        } catch (Exception e) {
+            throw new IllegalStateException("Error al consultar estado de transacción Webpay: " + e.getMessage(), e);
+        }
+        if (response.getDetails() == null || response.getDetails().isEmpty()) {
+            return java.util.Optional.of(new ProviderPaymentView("SIN_DETALLE", false, null, null, token));
+        }
+        var detail = response.getDetails().get(0);
+        boolean charged = detail.getResponseCode() == 0 && CHARGED_STATUSES.contains(detail.getStatus());
+        java.math.BigDecimal amount = charged ? java.math.BigDecimal.valueOf(detail.getAmount()) : null;
+        java.math.BigDecimal refunded = null;
+        if (charged) {
+            if ("REVERSED".equals(detail.getStatus())) {
+                refunded = amount;
+            } else if (detail.getBalance() != null) {
+                refunded = amount.subtract(java.math.BigDecimal.valueOf(detail.getBalance()));
+            } else if ("AUTHORIZED".equals(detail.getStatus()) || "CAPTURED".equals(detail.getStatus())) {
+                refunded = java.math.BigDecimal.ZERO;
+            }
+        }
+        return java.util.Optional.of(new ProviderPaymentView(detail.getStatus(), charged, amount, refunded, token));
+    }
+
     @Override
     @Transactional
     public String refund(Long orderId, java.math.BigDecimal amount) {

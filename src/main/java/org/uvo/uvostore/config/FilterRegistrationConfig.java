@@ -93,6 +93,17 @@ public class FilterRegistrationConfig {
         return registration;
     }
 
+    /**
+     * IMP-09. Justo después del id de petición (para que el 503 lo lleve) y antes que todo lo demás, incluida la cadena
+     * de Security: con el modo recuperación encendido, una escritura no tiene que llegar ni a resolver la tienda.
+     */
+    @Bean
+    public FilterRegistrationBean<RecoveryModeFilter> recoveryModeFilterRegistration(RecoveryModePolicy policy) {
+        FilterRegistrationBean<RecoveryModeFilter> registration = new FilterRegistrationBean<>(new RecoveryModeFilter(policy));
+        registration.setOrder(Ordered.HIGHEST_PRECEDENCE + 1);
+        return registration;
+    }
+
     private static <T extends Filter> FilterRegistrationBean<T> disableAutoRegistration(T filter) {
         FilterRegistrationBean<T> registration = new FilterRegistrationBean<>(filter);
         registration.setEnabled(false);

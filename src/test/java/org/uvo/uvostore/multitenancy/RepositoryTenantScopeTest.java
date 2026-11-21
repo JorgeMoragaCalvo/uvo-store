@@ -82,6 +82,12 @@ class RepositoryTenantScopeTest {
             Map.entry("OrderRepository.countPaidWithoutStockApplied",
                     "métrica PROD-15b (OperationalBacklogMetrics): un conteo de todo el sistema, sin la tienda como "
                             + "etiqueta, que solo lee /actuator/prometheus"),
+            // IMP-09: el informe de recuperación es de plataforma (X-Platform-Key) y agrupa por tienda; cada consulta a la
+            // pasarela va con el tenant de la orden (TenantContext.runWithin). La retención solo toca el outbox.
+            Map.entry("OrderRepository.findForRecoveryReport",
+                    "informe de recuperación IMP-09: API de plataforma, solo en modo recuperación, agrupa por tienda"),
+            Map.entry("OutboxMessageRepository.findUnfinishedForRecovery",
+                    "informe de recuperación IMP-09: API de plataforma, solo en modo recuperación, agrupa por tienda"),
             Map.entry("OrderRepository.countPendingCreatedBefore",
                     "métrica PROD-15b (OperationalBacklogMetrics): un conteo de todo el sistema"),
             // IMP-06: con store_id (V36), OutboxMessage pasó a ser entidad de tienda y su repositorio entra en la regla.

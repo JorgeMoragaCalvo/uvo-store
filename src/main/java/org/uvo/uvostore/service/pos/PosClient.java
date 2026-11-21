@@ -2,6 +2,7 @@ package org.uvo.uvostore.service.pos;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Component;
@@ -9,6 +10,7 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClient.RequestHeadersSpec.ConvertibleClientHttpResponse;
 import org.uvo.uvostore.config.LogContext;
+import org.uvo.uvostore.config.RecoveryModePolicy;
 import org.uvo.uvostore.config.RequestIdFilter;
 import org.uvo.uvostore.entity.pos.PosConnection;
 
@@ -33,9 +35,17 @@ public class PosClient {
     private static final Pattern TRAILING_API_VERSION = Pattern.compile("/api/v\\d+$");
 
     private final RestClient restClient;
+    private final RecoveryModePolicy recoveryMode;
 
+    public PosClient(int connectTimeoutMs, int readTimeoutMs) {
+        this(connectTimeoutMs, readTimeoutMs, RecoveryModePolicy.inactive());
+    }
+
+    @Autowired
     public PosClient(@Value("${app.pos.connect-timeout-ms:5000}") int connectTimeoutMs,
-                     @Value("${app.pos.read-timeout-ms:20000}") int readTimeoutMs) {
+                     @Value("${app.pos.read-timeout-ms:20000}") int readTimeoutMs,
+                     RecoveryModePolicy recoveryMode) {
+        this.recoveryMode = recoveryMode;
         this.restClient = RestClient.builder()
                 .requestFactory(clientRequestFactory(connectTimeoutMs, readTimeoutMs))
                 .requestInterceptor((request, body, execution) -> {
@@ -62,6 +72,10 @@ public class PosClient {
     // sabe aquí: con SimpleClientHttpRequestFactory, lo que falla antes de llegar a la respuesta (conectar)
     // sale como ResourceAccessException, y lo que falla al leerla, dentro del exchange.
     public PosDelivery notifyOrder(PosConnection connection, PosOrderPayload payload) {
+        // IMP-09. Lanza a propósito, en vez de devolver un PosDelivery: con el modo recuperación nadie debería llegar
+        // aquí (el outbox no corre), y si alguien llega, la venta no puede salir con un resultado que parezca normal.
+        // La lectura del catálogo sí se permite: no tiene efectos en el POS.
+        recoveryMode.requireInactive("la venta al POS");
         String url = buildEndpointUrl(connection, "orders/external");
 
         try {

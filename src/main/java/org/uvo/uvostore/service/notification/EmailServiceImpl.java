@@ -2,10 +2,12 @@ package org.uvo.uvostore.service.notification;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
+import org.uvo.uvostore.config.RecoveryModePolicy;
 
 // One shared SMTP relay for the whole platform (same criterion as Stripe/S3: shared
 // infrastructure, not something each store configures) — see spring.mail.* in
@@ -24,13 +26,21 @@ public class EmailServiceImpl implements EmailService {
     private final JavaMailSender mailSender;
     private final String mailHost;
     private final String fromAddress;
+    private final RecoveryModePolicy recoveryMode;
 
+    public EmailServiceImpl(JavaMailSender mailSender, String mailHost, String fromAddress) {
+        this(mailSender, mailHost, fromAddress, RecoveryModePolicy.inactive());
+    }
+
+    @Autowired
     public EmailServiceImpl(JavaMailSender mailSender,
                              @Value("${spring.mail.host:}") String mailHost,
-                             @Value("${app.mail.from:no-reply@uvostore.cl}") String fromAddress) {
+                             @Value("${app.mail.from:no-reply@uvostore.cl}") String fromAddress,
+                             RecoveryModePolicy recoveryMode) {
         this.mailSender = mailSender;
         this.mailHost = mailHost;
         this.fromAddress = fromAddress;
+        this.recoveryMode = recoveryMode;
     }
 
     @Override
@@ -44,6 +54,9 @@ public class EmailServiceImpl implements EmailService {
 
     @Override
     public Delivery deliver(String to, String subject, String body) {
+        // IMP-09. Antes que el "no configurado": en una restauración aislada el SMTP apunta a un buzón de prueba, y
+        // aun así no tiene que salir nada. Lanza también desde send(), que lo traga y lo deja en el log.
+        recoveryMode.requireInactive("el envío de correo");
         if (mailHost == null || mailHost.isBlank()) {
             log.warn("Correo no enviado (SMTP no configurado) to={} subject={}", to, subject);
             return Delivery.NOT_CONFIGURED;

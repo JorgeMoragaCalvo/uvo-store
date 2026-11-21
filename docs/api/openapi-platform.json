@@ -23,6 +23,16 @@
         "required" : [ "reason" ],
         "type" : "object"
       },
+      "HoldRequest" : {
+        "properties" : {
+          "restoredAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          }
+        },
+        "required" : [ "restoredAt" ],
+        "type" : "object"
+      },
       "OutboxFailureDto" : {
         "properties" : {
           "attempts" : {
@@ -690,6 +700,67 @@
         "tags" : [ "Diagnóstico (plataforma)" ]
       }
     },
+    "/api/platform/recovery/outbox/hold" : {
+      "post" : {
+        "operationId" : "hold",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/HoldRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "platformApiKey" : [ ]
+        } ],
+        "tags" : [ "Recuperación (plataforma)" ]
+      }
+    },
+    "/api/platform/recovery/report" : {
+      "get" : {
+        "operationId" : "report",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "from",
+          "required" : true,
+          "schema" : {
+            "format" : "date-time",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "platformApiKey" : [ ]
+        } ],
+        "tags" : [ "Recuperación (plataforma)" ]
+      }
+    },
     "/api/platform/stores" : {
       "get" : {
         "operationId" : "index",
@@ -1122,6 +1193,9 @@
   }, {
     "description" : "Comprobaciones de operación del ambiente desplegado; header X-Platform-Key, solo desde la red privada",
     "name" : "Diagnóstico (plataforma)"
+  }, {
+    "description" : "Informe de conciliación y retención del outbox después de restaurar un respaldo; solo en modo recuperación; header X-Platform-Key, solo desde la red privada",
+    "name" : "Recuperación (plataforma)"
   }, {
     "description" : "Lista, suspensión, cierre, acceso del dueño y auditoría de las tiendas; header X-Platform-Key, solo desde la red privada",
     "name" : "Operación de tiendas (plataforma)"

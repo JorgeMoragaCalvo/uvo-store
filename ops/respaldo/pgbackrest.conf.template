@@ -1,0 +1,25 @@
+# IMP-09. Configuración de pgBackRest del clúster de la plataforma. La genera instalar-respaldo.sh desde
+# /etc/uvostore/respaldo.env; no editar /etc/pgbackrest/pgbackrest.conf a mano (se sobrescribe).
+#
+# Completo semanal + diferencial diario + WAL continuo: recuperación a cualquier punto entre el respaldo completo más
+# viejo que se conserva y el último WAL archivado (archive_timeout=60 s acota la pérdida a ~1 minuto si hay escrituras).
+
+[global]
+@@REPO@@
+repo1-cipher-type=aes-256-cbc
+repo1-cipher-pass=@@CIPHER_PASS@@
+repo1-retention-full-type=count
+repo1-retention-full=@@RETENCION@@
+start-fast=y
+compress-type=zst
+process-max=2
+log-level-console=info
+log-level-file=detail
+# El WAL se archiva en segundo plano y sin bloquear a PostgreSQL más de lo necesario.
+archive-async=y
+spool-path=/var/spool/pgbackrest
+
+[@@STANZA@@]
+pg1-path=@@PG_DATA@@
+pg1-port=@@PG_PORT@@
+pg1-socket-path=/var/run/postgresql

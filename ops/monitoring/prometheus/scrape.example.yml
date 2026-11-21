@@ -32,3 +32,10 @@ scrape_configs:
       - targets: ["uvostore-app.internal:8080"]   # la dirección PRIVADA del proceso, una por instancia
         labels:
           environment: production                 # o staging; distingue los ambientes en Alertmanager y Grafana
+
+  # IMP-09. El respaldo del clúster (pgBackRest) y de las imágenes: node_exporter del servidor de la plataforma con
+  # --collector.textfile.directory=/var/lib/prometheus/node-exporter, donde escriben ops/respaldo/metricas-respaldo.sh
+  # y respaldar-imagenes.sh. Es del servidor, no de un ambiente: sin la etiqueta environment.
+  - job_name: uvostore-respaldo
+    static_configs:
+      - targets: ["plataforma.internal:9100"]     # node_exporter, por la red privada
