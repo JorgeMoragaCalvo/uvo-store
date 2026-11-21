@@ -343,4 +343,190 @@ set -e
 $(grep '^FALLA' "$INFORME/verificacion-staging.txt")"
 echo "OK  verificar.sh sin fallas"
 
+# ---- Respaldo y restauración aislada (C10, IMP-09) ---------------------------------------------------------------
+# Después de verificar.sh, a propósito: la restauración levanta otro clúster (5433) y otra instancia (8091), y nada de
+# eso tiene que confundir a la verificación del ambiente.
+#
+# El escenario: un restablecimiento de contraseña queda en cola (SMTP caído) en el punto de restauración T, y después
+# de T se entrega y se sube otro banner. La copia restaurada a T tiene que traer la fila en cola y no el banner, NO
+# reenviar el correo (modo recuperación), descifrar las credenciales con la llave del gestor de contraseñas, y retener
+# la fila para revisión. Con la llave equivocada, la sonda lo dice. El reinicio con trabajo en vuelo (§11.1) es el de C11.
+paso "C10: políticas del respaldo"
+BUCKET_RESPALDO=uvostore-respaldo-ensayo
+BUCKET_AISLADO=uvostore-staging-restaurado
+"${S3[@]}" create-bucket --bucket "$BUCKET_RESPALDO" > /dev/null
+"${S3[@]}" create-bucket --bucket "$BUCKET_AISLADO" > /dev/null
+for politica in politica-iam-respaldo politica-bucket-respaldo; do
+    tmp="$(mktemp)"
+    renderizar "$OPS/s3/$politica.json" "$tmp" BUCKET_RESPALDO="$BUCKET_RESPALDO" BUCKET_IMAGENES_STAGING="$BUCKET" \
+        BUCKET_IMAGENES_PRODUCTION=uvostore-production-ensayo ARN_OPERACIONES=arn:aws:iam::000000000000:role/operaciones
+    jq -e '.Statement | length > 0' "$tmp" > /dev/null || die "ops/s3/$politica.json no queda como JSON válido"
+done
+jq -e '.Rules | length > 0' "$OPS/s3/ciclo-vida-versiones.json" > /dev/null || die "ops/s3/ciclo-vida-versiones.json inválido"
+echo "OK  C10: las políticas del bucket de respaldo se renderizan (S3Mock no las aplica)"
+
+paso "C10: instalar-respaldo.sh"
+ENV_RESPALDO="$UVOSTORE_ETC/respaldo.env"
+set +e
+bash "$OPS/respaldo/instalar-respaldo.sh"
+estado=$?
+set -e
+afirmar_igual "C10: la primera vez se detiene pidiendo los valores CAMBIAR_" 2 "$estado"
+afirmar_igual "C10: respaldo.env queda 600 root:root" "600 root:root" "$(stat -c '%a %U:%G' "$ENV_RESPALDO")"
+afirmar_igual "C10: generó la clave de cifrado del repositorio" 1 \
+    "$(grep -cE '^RESPALDO_CIPHER_PASS=.{32,}$' "$ENV_RESPALDO")"
+# S3Mock sirve https en 9191 con un certificado propio; pgBackRest exige TLS.
+fijar_env "$ENV_RESPALDO" RESPALDO_S3_BUCKET "$BUCKET_RESPALDO"
+fijar_env "$ENV_RESPALDO" RESPALDO_S3_REGION us-east-1
+fijar_env "$ENV_RESPALDO" RESPALDO_S3_ENDPOINT 127.0.0.1
+fijar_env "$ENV_RESPALDO" RESPALDO_S3_KEY ensayo
+fijar_env "$ENV_RESPALDO" RESPALDO_S3_KEY_SECRET ensayo
+fijar_env "$ENV_RESPALDO" RESPALDO_S3_URI_STYLE path
+fijar_env "$ENV_RESPALDO" RESPALDO_S3_PORT 9191
+fijar_env "$ENV_RESPALDO" RESPALDO_S3_VERIFY_TLS n
+fijar_env "$ENV_RESPALDO" RESPALDO_AWS_ENDPOINT_URL http://127.0.0.1:9090
+fijar_env "$ENV_RESPALDO" RESPALDO_AMBIENTES staging
+REPO_RESPALDO=s3
+if ! bash "$OPS/respaldo/instalar-respaldo.sh" --reiniciar-postgresql > "$INFORME/instalar-respaldo-s3.log" 2>&1; then
+    tail -n 30 "$INFORME/instalar-respaldo-s3.log"
+    aviso "C10: pgBackRest no funcionó contra S3Mock (instalar-respaldo-s3.log); se ensaya con un repositorio posix."
+    aviso "     Solo en el ensayo: en el servidor el repositorio es S3, y eso se comprueba en el primer respaldo real."
+    fijar_env "$ENV_RESPALDO" RESPALDO_REPO_TIPO posix
+    REPO_RESPALDO=posix
+    bash "$OPS/respaldo/instalar-respaldo.sh" --reiniciar-postgresql
+fi
+echo "repositorio del ensayo: $REPO_RESPALDO" > "$INFORME/c10.txt"
+# instalar-respaldo.sh reinició PostgreSQL (archive_mode): la instancia de staging se reconecta sola.
+esperar_readiness "$PUERTO" 180 uvostore-staging || die "staging no volvió después de reiniciar PostgreSQL"
+antes="$(sha256sum /etc/pgbackrest/pgbackrest.conf /etc/systemd/system/uvostore-respaldo-*.service /etc/systemd/system/uvostore-respaldo-*.timer)"
+bash "$OPS/respaldo/instalar-respaldo.sh"
+afirmar_igual "C10: volver a correrlo no cambia nada" "$antes" \
+    "$(sha256sum /etc/pgbackrest/pgbackrest.conf /etc/systemd/system/uvostore-respaldo-*.service /etc/systemd/system/uvostore-respaldo-*.timer)"
+afirmar_igual "C10: archive_mode activo" on "$(sql 'SHOW archive_mode')"
+for t in completo diferencial imagenes metricas; do
+    systemctl is-enabled --quiet "uvostore-respaldo-$t.timer" || die "el timer uvostore-respaldo-$t no quedó activo"
+done
+echo "OK  C10: timers de respaldo completo, diferencial, imágenes y métricas activos"
+
+paso "C10: un secreto cifrado en la base, para la sonda de descifrado"
+LLAVE_APP="$(valor_env "$ENV_FILE" APP_ENCRYPTION_KEY)"
+CIFRADO="$(echo 'sk_test_ensayo_c10' | LLAVE="$LLAVE_APP" java "$DIR/CifrarSecreto.java")"
+sql "INSERT INTO settings (store_id, key, value, created_at, updated_at)
+     VALUES ($TIENDA_A, 'stripe_secret_key', '$CIFRADO', now(), now())
+     ON CONFLICT (store_id, key) DO UPDATE SET value = EXCLUDED.value" > /dev/null
+echo "OK  C10: stripe_secret_key de la tienda A, cifrada con la llave de staging"
+
+paso "C10: respaldo de imágenes y respaldo completo"
+/usr/local/sbin/uvostore-respaldar-imagenes
+CLAVE_IMAGEN="${IMAGEN#"https://$IMAGENES/$BUCKET/"}"
+"${S3[@]}" head-object --bucket "$BUCKET_RESPALDO" --key "imagenes/$AMBIENTE/$CLAVE_IMAGEN" > /dev/null \
+    || die "la imagen no llegó al bucket de respaldo"
+echo "OK  C10: la imagen está en s3://$BUCKET_RESPALDO/imagenes/$AMBIENTE/"
+systemctl start uvostore-respaldo-completo
+(cd / && runuser -u postgres -- pgbackrest --stanza=uvopos info) | tee "$INFORME/pgbackrest-info.txt"
+grep -q '^uvostore_backup_last_success_timestamp_seconds{type="full"} [0-9]' /var/lib/prometheus/node-exporter/uvostore_respaldo.prom \
+    || die "las métricas no registran el respaldo completo"
+grep -q '^uvostore_images_backup_last_success_timestamp_seconds{environment="staging"} [0-9]' \
+    /var/lib/prometheus/node-exporter/uvostore_respaldo_imagenes.prom || die "las métricas no registran la copia de imágenes"
+echo "OK  C10: respaldo completo terminado y en las métricas"
+
+paso "C10: el punto de restauración, con un correo en cola"
+correos_de() { curl -s "http://127.0.0.1:8025/api/v1/search?query=to:$1" | jq '.messages | length'; }
+docker stop mailpit > /dev/null
+afirmar_igual "C10: pedido de restablecimiento con el SMTP caído" 200 "$(olvide "$CORREO_A")"
+esperar_fila "C10: la fila queda en cola" 60 "PENDING|con-error"
+FILA_C10="$(sql "SELECT m.id FROM outbox_messages m JOIN users u ON u.id = m.user_id
+                 WHERE u.email = '$CORREO_A' AND m.type = 'PASSWORD_RESET_EMAIL' ORDER BY m.id DESC LIMIT 1")"
+bash "$OPS/respaldo/verificar-restauracion.sh" "$AMBIENTE" --conteos > "$INFORME/conteos-origen.txt"
+sleep 2
+PUNTO="$(date -u '+%Y-%m-%d %H:%M:%S+00')"
+PUNTO_ISO="$(date -u -d "$PUNTO" +%Y-%m-%dT%H:%M:%SZ)"
+sleep 2
+echo "    punto de restauración: $PUNTO"
+
+paso "C10: después del punto, el correo sale y se sube otro banner"
+docker start mailpit > /dev/null
+esperar "Mailpit de vuelta" 60 mailpit_arriba
+esperar_fila "C10: la fila se entrega después del punto" 180 "SENT|sin-error"
+# El restablecimiento de C11 subió tokenVersion: JWT_A ya no vale. Se entra con la clave que dejó C11.
+JWT_A="$(https "ensayo-a.$DOMINIO" -X POST "https://ensayo-a.$DOMINIO/api/admin/auth/login" \
+    -H 'Content-Type: application/json' -d "{\"email\":\"$CORREO_A\",\"password\":\"$CLAVE_ADMIN-c11\"}" \
+    | jq -er .token)" || die "C10: el dueño de la tienda A no pudo entrar con la clave restablecida en C11"
+respuesta="$(https "ensayo-a.$DOMINIO" -X POST "https://ensayo-a.$DOMINIO/api/admin/home/banners" \
+    -H "Authorization: Bearer $JWT_A" -F title=Posterior -F active=true -F sortOrder=2 \
+    -F ctaText="Ver tienda" -F ctaLink=/shop -F ctaNewTab=false \
+    -F textPosition=left -F textColor=light -F overlayColor=#000000 -F overlayOpacity=0 \
+    -F "newImage=@$png;type=image/png" -w '\n%{http_code}')"
+jq -e .image <<< "${respuesta%$'\n'*}" > /dev/null 2>&1 \
+    || die "C10: no se pudo subir el banner posterior al punto (HTTP ${respuesta##*$'\n'})"
+afirmar_igual "C10: la tienda A tiene dos banners" 2 \
+    "$(https "ensayo-a.$DOMINIO" "https://ensayo-a.$DOMINIO/api/v1/home-banners" | jq length)"
+CORREOS_ANTES="$(correos_de "$CORREO_A")"
+# Que el WAL con lo posterior al punto también esté archivado: la restauración tiene que poder pasarlo y detenerse.
+sql 'SELECT pg_switch_wal()' > /dev/null
+(cd / && runuser -u postgres -- pgbackrest --stanza=uvopos check)
+
+paso "C10: restauración aislada al punto, con la llave del gestor de contraseñas"
+RESTAURACION=/var/lib/uvostore-restauracion/$AMBIENTE
+printf '%s\n' "$LLAVE_APP" | bash "$OPS/respaldo/restaurar.sh" "$AMBIENTE" --hasta "$PUNTO" --referencia "$PUNTO" \
+    --bucket-aislado "$BUCKET_AISLADO" --llave-stdin | tee "$INFORME/restaurar.txt"
+cp "$RESTAURACION/acta-restauracion.md" "$INFORME/acta-restauracion.md"
+grep -q 'APP_ENCRYPTION_KEY abre todos los valores cifrados' "$RESTAURACION/acta-restauracion.md" \
+    || die "la sonda de descifrado no confirma la llave en la restauración"
+sql_r() { (cd / && runuser -u postgres -- psql -X -At -h "$RESTAURACION/run" -p 5433 -d "uvostore_$AMBIENTE" -c "$1"); }
+RESTAURADA="http://127.0.0.1:8091"
+
+set +e
+bash "$OPS/respaldo/verificar-restauracion.sh" "$AMBIENTE" --desde "$(date -u -d '-1 day' +%Y-%m-%dT%H:%M:%SZ)" \
+    --conteos-origen "$INFORME/conteos-origen.txt" --imagen "$CLAVE_IMAGEN" | tee "$INFORME/verificar-restauracion.txt"
+estado=${PIPESTATUS[0]}
+set -e
+[ "$estado" = 0 ] || die "verificar-restauracion.sh tuvo fallas:
+$(grep '^FALLA' "$INFORME/verificar-restauracion.txt")"
+cp "$RESTAURACION/informe-recuperacion.json" "$INFORME/informe-recuperacion.json"
+
+afirmar_igual "C10: en la copia, la fila del restablecimiento está como en el punto (en cola)" PENDING \
+    "$(sql_r "SELECT status FROM outbox_messages WHERE id = $FILA_C10")"
+afirmar_igual "C10: en la copia, el banner posterior al punto no está" 1 \
+    "$(curl -s -H "Host: ensayo-a.$DOMINIO" "$RESTAURADA/api/v1/home-banners" | jq length)"
+# El despachador correría cada 10 s si estuviera encendido: 30 s sin un correo nuevo bastan para verlo apagado.
+sleep 30
+afirmar_igual "C10: la copia no reenvió el correo que ya había salido" "$CORREOS_ANTES" "$(correos_de "$CORREO_A")"
+afirmar_igual "C10: la fila sigue en cola en la copia" PENDING "$(sql_r "SELECT status FROM outbox_messages WHERE id = $FILA_C10")"
+afirmar_igual "C10: el informe la trae como correo incierto" true \
+    "$(jq --argjson id "$FILA_C10" '[.stores[].outbox[] | select(.outboxId == $id and .classification == "INCIERTO_CORREO")] | length == 1' "$INFORME/informe-recuperacion.json")"
+
+retenidas="$(curl -sS -X POST "$RESTAURADA/api/platform/recovery/outbox/hold" \
+    -H "X-Platform-Key: $PLATFORM_KEY" -H 'X-Platform-Operator: ensayo' -H 'Content-Type: application/json' \
+    -d "{\"restoredAt\":\"$PUNTO_ISO\"}" | jq -er .held)" || die "C10: POST /api/platform/recovery/outbox/hold no respondió {held: N}"
+[ "$retenidas" -ge 1 ] || die "C10: la retención no tomó ninguna fila"
+afirmar_igual "C10: retenida para revisión, con el motivo" "FAILED|Restaurado desde respaldo" \
+    "$(sql_r "SELECT status || '|' || left(last_error, 25) FROM outbox_messages WHERE id = $FILA_C10")"
+afirmar_igual "C10: y la instancia viva no se enteró" "SENT|sin-error" "$(fila_reset)"
+
+RTO_TECNICO="$(sed -n 's/^| \*\*Duración técnica (RTO sin conciliación)\*\* | \*\*\(.*\)\*\* |$/\1/p' "$RESTAURACION/acta-restauracion.md")"
+RPO_MEDIDO="$(sed -n 's/^| \*\*Pérdida respecto de la referencia (RPO)\*\* | \*\*\(.*\)\*\* |$/\1/p' "$RESTAURACION/acta-restauracion.md")"
+{
+    echo "punto de restauración: $PUNTO"
+    echo "RTO técnico (restaurar + instancia lista): $RTO_TECNICO"
+    echo "RPO medido (punto - última transacción restaurada): $RPO_MEDIDO"
+} >> "$INFORME/c10.txt"
+echo "OK  C10: RTO técnico $RTO_TECNICO, RPO $RPO_MEDIDO (detalle en c10.txt y acta-restauracion.md)"
+
+paso "C10: con la llave equivocada, la sonda lo dice"
+bash "$OPS/respaldo/restaurar.sh" "$AMBIENTE" --detener
+openssl rand -base64 32 | bash "$OPS/respaldo/restaurar.sh" "$AMBIENTE" --hasta "$PUNTO" --llave-stdin --forzar \
+    > "$INFORME/restaurar-llave-equivocada.txt"
+grep -q 'APP_ENCRYPTION_KEY no abre [1-9][0-9]* valores' "$RESTAURACION/acta-restauracion.md" \
+    || die "C10: con otra llave, la sonda no informa las credenciales que no abre"
+set +e
+bash "$OPS/respaldo/verificar-restauracion.sh" "$AMBIENTE" --desde "$PUNTO_ISO" > "$INFORME/verificar-llave-equivocada.txt"
+estado=$?
+set -e
+afirmar_igual "C10: verificar-restauracion.sh falla con la llave equivocada" 1 "$estado"
+grep -q '^FALLA  la llave NO abre' "$INFORME/verificar-llave-equivocada.txt" \
+    || die "C10: verificar-restauracion.sh no dice que la llave no abre las credenciales"
+echo "OK  C10: la llave equivocada se detecta al restaurar, no al primer cobro"
+bash "$OPS/respaldo/restaurar.sh" "$AMBIENTE" --detener
+
 paso "ensayo completo"

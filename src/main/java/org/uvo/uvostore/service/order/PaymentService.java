@@ -11,6 +11,14 @@ public interface PaymentService {
     void handleWebhook(String payload, String signatureHeader);
 
     /**
+     * IMP-09. Lo que Stripe dice de la sesión de pago de la orden, con el reembolso de su cargo, sin escribir nada: a
+     * diferencia de {@link #verifyPayment}, no llama a {@code markPaid}. Para el informe de recuperación.
+     *
+     * @return vacío si la orden no tiene sesión de Stripe
+     */
+    java.util.Optional<org.uvo.uvostore.service.payment.ProviderPaymentView> inspect(Long orderId);
+
+    /**
      * G4. Devuelve dinero de una orden cobrada por Stripe. Solo habla con la pasarela: quien decide
      * cuánto se puede devolver y quién marca la orden es {@code RefundService}.
      *

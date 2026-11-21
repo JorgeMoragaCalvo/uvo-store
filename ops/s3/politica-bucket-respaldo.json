@@ -1,0 +1,36 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "SoloHttps",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:*",
+      "Resource": ["arn:aws:s3:::@@BUCKET_RESPALDO@@", "arn:aws:s3:::@@BUCKET_RESPALDO@@/*"],
+      "Condition": { "Bool": { "aws:SecureTransport": "false" } }
+    },
+    {
+      "Sid": "NadieBorraDeVerdadSalvoOperaciones",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": [
+        "s3:DeleteObjectVersion",
+        "s3:PutBucketVersioning",
+        "s3:PutLifecycleConfiguration",
+        "s3:PutBucketPolicy",
+        "s3:DeleteBucketPolicy",
+        "s3:DeleteBucket"
+      ],
+      "Resource": ["arn:aws:s3:::@@BUCKET_RESPALDO@@", "arn:aws:s3:::@@BUCKET_RESPALDO@@/*"],
+      "Condition": { "ArnNotEquals": { "aws:PrincipalArn": "@@ARN_OPERACIONES@@" } }
+    },
+    {
+      "Sid": "LasImagenesRespaldadasNoSeBorran",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:DeleteObject",
+      "Resource": "arn:aws:s3:::@@BUCKET_RESPALDO@@/imagenes/*",
+      "Condition": { "ArnNotEquals": { "aws:PrincipalArn": "@@ARN_OPERACIONES@@" } }
+    }
+  ]
+}

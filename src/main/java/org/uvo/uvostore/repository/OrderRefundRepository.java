@@ -70,4 +70,19 @@ public interface OrderRefundRepository extends JpaRepository<OrderRefund, Long> 
             where r.status = org.uvo.uvostore.entity.order.enums.RefundStatus.PENDING
             """)
     long countPending();
+
+    /**
+     * IMP-09. Los reembolsos del informe de recuperación: los creados desde {@code from} y, de cualquier fecha, los
+     * que siguen sin resolver. Con su orden y su tienda.
+     */
+    @Query("""
+            select r from OrderRefund r
+            join fetch r.order o
+            join fetch o.store
+            where r.createdAt >= :from
+               or r.status = org.uvo.uvostore.entity.order.enums.RefundStatus.PENDING
+            order by o.store.id, r.id
+            """)
+    List<OrderRefund> findForRecoveryReport(@Param("from") java.time.Instant from,
+                                            org.springframework.data.domain.Pageable pageable);
 }

@@ -151,3 +151,82 @@ groups:
           description: >-
             Las alertas de pagos, reembolsos, outbox y stock están ciegas mientras dure.
           runbook: docs/observabilidad.md#sin-metricas
+
+  # IMP-09 (C10). El respaldo del clúster y de las imágenes. Las métricas las escribe ops/respaldo/metricas-respaldo.sh
+  # para el colector de archivos de texto de node_exporter (job uvostore-respaldo en scrape.example.yml), y las dos de
+  # la aplicación (modo recuperación, credenciales) salen de /actuator/prometheus.
+  - name: uvostore-respaldo
+    rules:
+      - alert: UvoStoreRespaldoAtrasado
+        # 26 h: el diferencial diario y su margen. Sin ningún respaldo terminado también alerta: un servidor recién
+        # instalado no está protegido hasta su primer respaldo completo.
+        expr: >-
+          (time() - max by (instance) (uvostore_backup_last_success_timestamp_seconds)) > 26 * 3600
+          or absent(uvostore_backup_last_success_timestamp_seconds)
+        for: 30m
+        labels:
+          severity: critical
+          owner: operaciones-plataforma
+        annotations:
+          summary: "El último respaldo del clúster tiene más de 26 horas, o no hay ninguno"
+          description: "Un incidente ahora perdería todo lo posterior al último respaldo que se pueda restaurar."
+          runbook: docs/recuperacion.md#respaldo-atrasado
+
+      - alert: UvoStoreRepositorioRespaldoIlegible
+        expr: max by (instance) (uvostore_backup_repo_ok) == 0
+        for: 15m
+        labels:
+          severity: critical
+          owner: operaciones-plataforma
+        annotations:
+          summary: "pgBackRest no puede leer el repositorio de respaldo"
+          description: "Credenciales del bucket, red o clave de cifrado. Mientras dure no hay respaldos nuevos."
+          runbook: docs/recuperacion.md#respaldo-atrasado
+
+      - alert: UvoStoreWalSinArchivar
+        # Falla el archivado o se acumulan segmentos sin subir: cada minuto así es pérdida segura ante un desastre, y
+        # los segmentos acumulados llenan el disco de pg_wal (y PostgreSQL se detiene, con UvoPOS).
+        expr: max by (instance) (uvostore_wal_archive_failing) == 1 or max by (instance) (uvostore_wal_ready_segments) > 10
+        for: 10m
+        labels:
+          severity: critical
+          owner: operaciones-plataforma
+        annotations:
+          summary: "El WAL no se está archivando en el repositorio de respaldo"
+          description: "La recuperación a un punto en el tiempo se detiene en el último segmento archivado."
+          runbook: docs/recuperacion.md#wal-sin-archivar
+
+      - alert: UvoStoreRespaldoImagenesAtrasado
+        expr: (time() - max by (instance, environment) (uvostore_images_backup_last_success_timestamp_seconds)) > 26 * 3600
+        for: 30m
+        labels:
+          severity: warning
+          owner: operaciones-plataforma
+        annotations:
+          summary: "La copia de imágenes de {{ $labels.environment }} tiene más de 26 horas"
+          description: "Las imágenes subidas después de la última copia no se pueden recuperar si se pierde el bucket."
+          runbook: docs/recuperacion.md#respaldo-atrasado
+
+      - alert: UvoStoreCredencialesSinDescifrar
+        expr: max by (environment) (uvostore_credentials_decrypt_failures) > 0
+        for: 5m
+        labels:
+          severity: critical
+          owner: operaciones-plataforma
+        annotations:
+          summary: "APP_ENCRYPTION_KEY no abre {{ $value }} credenciales guardadas"
+          description: "La llave no es la que cifró la base: no se puede cobrar, despachar ni hablar con el POS con ellas."
+          runbook: docs/recuperacion.md#credenciales-sin-descifrar
+
+      - alert: UvoStoreModoRecuperacion
+        # Una instancia restaurada no debería estar en el scrape del ambiente. Si lo está, o si el ambiente quedó en
+        # modo recuperación, la tienda no está vendiendo.
+        expr: max by (environment) (uvostore_recovery_mode) == 1
+        for: 5m
+        labels:
+          severity: warning
+          owner: operaciones-plataforma
+        annotations:
+          summary: "Una instancia de {{ $labels.environment }} está en modo recuperación"
+          description: "Checkout, webhooks y trabajos programados detenidos. Esperado solo durante una restauración."
+          runbook: docs/recuperacion.md#salir-del-modo-recuperacion

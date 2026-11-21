@@ -296,6 +296,48 @@ public class MercadoPagoServiceImpl implements MercadoPagoService {
         return orderRepository.findById(orderId).orElseThrow().getPaymentStatus() == PaymentStatus.PAID;
     }
 
+    /** Los estados de un pago de MercadoPago en que el dinero llegó a capturarse. */
+    private static final java.util.Set<String> CHARGED_STATUSES =
+            java.util.Set.of("approved", "refunded", "charged_back", "in_mediation");
+
+    @Override
+    @Transactional(readOnly = true)
+    public java.util.Optional<ProviderPaymentView> inspect(Long orderId) {
+        Long storeId = TenantContext.requireStoreId();
+        Order order = orderRepository.findById(orderId)
+                .filter(o -> o.getStore().getId().equals(storeId))
+                .orElseThrow(() -> new NoSuchElementException("Order " + orderId + " not found"));
+
+        String accessToken = requireAccessToken(storeId);
+        List<Payment> payments;
+        try {
+            // La misma búsqueda que reconcile, sin el markPaid.
+            MPResultsResourcesPage<Payment> page = new PaymentClient().search(
+                    MPSearchRequest.builder()
+                            .limit(10)
+                            .offset(0)
+                            .filters(java.util.Map.of("external_reference", order.getOrderNumber()))
+                            .build(),
+                    requestOptions(accessToken));
+            payments = page.getResults() == null ? List.of() : page.getResults();
+        } catch (Exception e) {
+            throw new IllegalStateException("Error al buscar pagos en MercadoPago: " + e.getMessage(), e);
+        }
+        if (payments.isEmpty()) {
+            return java.util.Optional.empty();
+        }
+
+        Payment chosen = payments.stream()
+                .filter(payment -> CHARGED_STATUSES.contains(payment.getStatus()))
+                .findFirst()
+                .orElse(payments.get(payments.size() - 1));
+        boolean charged = CHARGED_STATUSES.contains(chosen.getStatus());
+        return java.util.Optional.of(new ProviderPaymentView(chosen.getStatus(), charged,
+                charged ? chosen.getTransactionAmount() : null,
+                charged ? java.util.Objects.requireNonNullElse(chosen.getTransactionAmountRefunded(), java.math.BigDecimal.ZERO) : null,
+                String.valueOf(chosen.getId())));
+    }
+
     @Override
     @Transactional
     public String refund(Long orderId, java.math.BigDecimal amount, String idempotencyKey) {

@@ -25,6 +25,23 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
     Optional<Order> findByPaymentId(String paymentId); // Webpay token / MercadoPago reference
 
     /**
+     * IMP-09. Las órdenes cobradas por pasarela que el informe de recuperación compara con el proveedor: las que se
+     * movieron desde {@code from} y, de cualquier fecha, las que siguen esperando el pago sin estar canceladas (el
+     * proveedor pudo cobrarlas después del respaldo). Con su tienda, porque se consultan con sus credenciales.
+     */
+    @Query("""
+            select o from Order o
+            join fetch o.store
+            where o.paymentMethod is not null
+              and o.paymentMethod <> org.uvo.uvostore.entity.order.enums.PaymentMethodType.MANUAL
+              and (o.updatedAt >= :from
+                   or (o.paymentStatus = org.uvo.uvostore.entity.order.enums.PaymentStatus.PENDING
+                       and o.status <> org.uvo.uvostore.entity.order.enums.OrderStatus.CANCELLED))
+            order by o.store.id, o.id
+            """)
+    List<Order> findForRecoveryReport(@Param("from") Instant from, Pageable pageable);
+
+    /**
      * G4. La orden bloqueada hasta el fin de la transacción.
      *
      * <p>Nació para el reembolso: lo devuelto se valida sumando {@code order_refunds} contra el total,

@@ -17,8 +17,9 @@ Todo sale del release: el jar, el zip del frontend del ambiente, `uvostore-ops-<
 | `servidor/uvostore.service.template` | La unidad systemd (límites, apagado ordenado, endurecimiento). |
 | `postgres/roles.sql` | Base y roles del ambiente; también sirve para rotar sus contraseñas. |
 | `nginx/uvostore.conf.template`, `nginx/dominio-propio.conf.template`, `nginx/default.conf` | El server del ambiente, el de cada dominio propio y el que corta los hosts desconocidos. |
-| `s3/*.json` | La política IAM de la aplicación y la de lectura pública del bucket. |
-| `servidor/ensayo/` | El ensayo limpio que corre CI. |
+| `s3/*.json` | La política IAM de la aplicación y la de lectura pública del bucket. Desde IMP-09, también las del bucket de respaldo y el ciclo de vida de las versiones. |
+| `respaldo/` | IMP-09: respaldo del clúster (pgBackRest) y de las imágenes, restauración aislada y su verificación. Ver `docs/recuperacion.md`. |
+| `servidor/ensayo/` | El ensayo limpio que corre CI, y el de migración y vuelta atrás (`migracion-rollback.sh`). |
 
 Cada ambiente usa sus propios nombres: usuario y servicio `uvostore-<ambiente>`, `/opt/uvostore-<ambiente>`, `/srv/uvostore-<ambiente>`, `/etc/uvostore/<ambiente>.env`, base `uvostore_<ambiente>` y upstream `uvostore_<ambiente>`. Staging y production conviven en el mismo servidor sin compartir nada.
 
@@ -91,7 +92,10 @@ sudo bash ops/nginx/publicar-frontend.sh frontend-dist-<tag>-<ambiente>.zip /srv
 
 - **Backend:** `sudo bash ops/servidor/desplegar-backend.sh --activar <ambiente> uvo-store-<tag-anterior>`. Se conservan las últimas 3 versiones.
 - **Frontend:** `sudo bash ops/nginx/publicar-frontend.sh --activar /srv/uvostore-<ambiente>/frontend frontend-dist-<tag-anterior>-<ambiente>`.
-- **Si la versión nueva aplicó migraciones** (`select * from flyway_schema_history order by installed_rank desc`), la anterior puede no arrancar. Hibernate valida el esquema al iniciar, y las migraciones no se deshacen. En ese caso no se vuelve atrás con el script: se corrige hacia adelante o se sigue el procedimiento de restauración y conciliación de IMP-09.
+- **Si la versión nueva aplicó migraciones** (`select * from flyway_schema_history order by installed_rank desc`), la anterior puede no arrancar. Hibernate valida el esquema al iniciar, y las migraciones no se deshacen.
+  - Qué migración lo permite y cuál no está en la tabla de `docs/recuperacion.md#migraciones` (V25 y V36 no lo permiten).
+  - Si no se puede volver con el script, se corrige hacia adelante o se restaura y se concilia (`docs/recuperacion.md`).
+  - Desde IMP-09, `desplegar-backend.sh` exige un respaldo de menos de una hora antes de activar un jar con migraciones pendientes (`SIN_RESPALDO=1` para saltarlo, a sabiendas). `--activar` avisa si el esquema es más nuevo que el jar al que se vuelve.
 - `desplegar-backend.sh` nunca vuelve atrás solo. Si la versión nueva no queda lista, muestra el log y el comando, para que decida una persona.
 
 ## Dominio propio
@@ -177,9 +181,11 @@ Es la «ejecución limpia» del paso 7 de IMP-05. Lo que solo se ve en el servid
 | C03: dos tiendas HTTPS, dominio propio, renovación, hosts desconocidos, backend y DB privados | `verificar.sh` (loopback, 444/handshake, 404 del backend, certificados, timer y hook de Certbot), `dominio-propio.sh` | DNS y certificados reales. Correr `verificar.sh --por-dns` con dos tiendas y un dominio propio real |
 | C04: Host preservado, proxies de confianza, spoofing rechazado, contadores separados | `ensayo-servidor` (token cruzado, spoofing), `TrustedProxyRateLimitTest`, `PlatformNetworkBehindProxyTest` | Repetir el spoofing desde fuera contra el dominio real |
 | C05: caché por host, privado sin caché compartida, SPA recargable | E2E en modalidad `dist` (IMP-04) y `verificar.sh` (no-cache, no-store, recarga directa) | Ninguna CDN delante; si se agrega, revisarla |
-| C07: ambiente correcto, secretos nuevos, roles separados, rotación | `provisionar.sh` (secretos generados en el servidor, roles con nombre por ambiente), `verificar.sh` (roles, 640, configuración enmascarada), el arranque (`DatabaseRole`) | Custodia de `APP_ENCRYPTION_KEY` en el gestor de secretos y registro de quién tiene acceso |
+| C07: ambiente correcto, secretos nuevos, roles separados, rotación | `provisionar.sh` (secretos generados en el servidor, roles con nombre por ambiente), `verificar.sh` (roles, 640, configuración enmascarada), el arranque (`DatabaseRole`) | Custodia de `APP_ENCRYPTION_KEY` en el gestor de contraseñas del equipo, con dos custodios nominales y su prueba trimestral (procedimiento en `docs/recuperacion.md`, «Custodia») |
 | C11: invitación, reset y pedidos recibidos; remitente autenticado; fallo de SMTP visible y recuperable | `AccessEmailOutboxTest` (caída tras el commit, SMTP caído, huérfana, token reemplazado, usado o vencido, recuperación desde la plataforma), `PlatformAccessEmailControllerTest`, `ensayo-servidor` (SMTP caído con reinicio en medio), la alerta `UvoStoreCorreosDeAccesoDetenidos` (promtool) | El proveedor SMTP real: SPF/DKIM/DMARC, recepción en bandeja de entrada de invitación, reset y pedido, y el ensayo de fallo en staging (sección «Correo (C11)») |
 | C12: cada pasarela habilitada supera la matriz de §10 con credenciales y callbacks reales | Webpay contra el ambiente de integración de Transbank, 10 casos el 18-nov (`frontend/e2e/homologacion/webpay.spec.ts`); interruptores `WEBPAY_ENABLED`, `STRIPE_ENABLED` y `MERCADOPAGO_ENABLED` (`PaymentPlatformSwitchTest`); transferencia bancaria (`BankTransferTest`); regresiones `WebpayUncertainCommitTest` y `pasarelas.spec.ts` 5 y 5b. El expediente está en `docs/homologacion-pagos.md` | MercadoPago con credenciales de prueba; staging HTTPS con subdominio y dominio propio; compra controlada en producción; custodios de credenciales |
 | C09: imágenes persistentes, permisos, URL https | `ensayo-servidor` (reinicio, redespliegue, vuelta atrás), `verificar.sh --imagen` | El bucket real con su política, y subir una imagen y repetirlo tras un redespliegue |
+| C10: respaldo de DB y archivos, custodia de la llave, restauración aislada con RPO/RTO medidos | `ensayo-servidor` (paso C10) y `docs/recuperacion.md` | Lo que lista `docs/recuperacion.md`, «Evidencia por punto del checklist» |
+| C19: migración y vuelta atrás ensayadas, incompatibilidades documentadas | `migracion-rollback` (CI), la tabla de `docs/recuperacion.md#migraciones`, las comprobaciones de `desplegar-backend.sh` | Lo mismo, sobre una copia representativa de staging |
 
 La ausencia de accesos (VPS, DNS, AWS, SMTP) es una dependencia pendiente, no un punto cerrado. Los Cxx los aprueba el responsable con estas evidencias (`GO_LIVE_CHECKLIST.md` §12).

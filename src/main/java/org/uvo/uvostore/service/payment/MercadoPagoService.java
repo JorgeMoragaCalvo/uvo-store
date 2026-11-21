@@ -30,6 +30,15 @@ public interface MercadoPagoService {
     boolean reconcile(Long orderId);
 
     /**
+     * IMP-09. Los pagos de la orden en MercadoPago (por {@code external_reference}), sin escribir nada. Para el
+     * informe de recuperación.
+     *
+     * @return el pago capturado (aprobado, o reembolsado después) si hay uno; si no, el último que haya; vacío si
+     *         MercadoPago no tiene ninguno
+     */
+    java.util.Optional<ProviderPaymentView> inspect(Long orderId);
+
+    /**
      * G4. Devuelve dinero de un pago de MercadoPago. Solo habla con la pasarela: cuánto se puede
      * devolver y qué pasa con la orden lo decide {@code RefundService}.
      *

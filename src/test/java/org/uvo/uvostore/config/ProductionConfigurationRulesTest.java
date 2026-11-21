@@ -302,6 +302,20 @@ class ProductionConfigurationRulesTest {
     }
 
     @Test
+    @DisplayName("IMP-09: el modo recuperación se permite en todos los ambientes, pero siempre se advierte")
+    void recoveryModeIsAllowedButAlwaysWarned() throws IOException {
+        MockEnvironment strict = production().withProperty(RecoveryModePolicy.PROPERTY, "true");
+        Findings production = check(AppEnvironment.PRODUCTION, strict, sentry("production"), APP_ROLE);
+        assertThat(production.errors()).isEmpty();
+        assertThat(production.warnings()).singleElement().asString().startsWith("APP_RECOVERY_MODE=true");
+
+        MockEnvironment local = shippedDefaults().withProperty(RecoveryModePolicy.PROPERTY, "true");
+        Findings development = ProductionConfigurationRules.check(AppEnvironment.DEVELOPMENT, local, name -> null,
+                () -> APP_ROLE);
+        assertThat(development.warnings()).singleElement().asString().startsWith("APP_RECOVERY_MODE=true");
+    }
+
+    @Test
     @DisplayName("APP_ENVIRONMENT=development con un dominio real advierte que parece un despliegue")
     void aDeploymentLookingConfigInDevelopmentWarns() {
         Findings findings = check(AppEnvironment.DEVELOPMENT, production(), name -> null, APP_ROLE);

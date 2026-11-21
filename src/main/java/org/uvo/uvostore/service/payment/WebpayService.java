@@ -20,6 +20,14 @@ public interface WebpayService {
     boolean reconcile(Long orderId);
 
     /**
+     * IMP-09. Lo que Transbank dice de la transacción de la orden, con {@code status()} y sin escribir nada: ni
+     * {@code commit()} ni {@code markPaid}. Para el informe de recuperación.
+     *
+     * @return vacío si la orden no tiene token (nunca llegó a Transbank)
+     */
+    java.util.Optional<ProviderPaymentView> inspect(Long orderId);
+
+    /**
      * G4. Devuelve dinero de una transacción de Webpay. Solo habla con Transbank: cuánto se puede
      * devolver y qué pasa con la orden lo decide {@code RefundService}.
      *

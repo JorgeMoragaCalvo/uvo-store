@@ -249,3 +249,107 @@ tests:
               summary: "Las métricas de pendientes no se pueden calcular: la base no responde a la foto"
               description: "Las alertas de pagos, reembolsos, outbox y stock están ciegas mientras dure."
               runbook: docs/observabilidad.md#sin-metricas
+
+  # --- IMP-09: respaldo atrasado. El valor es un instante (segundos): uno que avanza con el reloj está al día, y uno
+  # fijo en el pasado lejano (negativo, para no esperar 26 h de serie) está atrasado. -----------------------------
+  - interval: 1m
+    input_series:
+      - series: 'uvostore_backup_last_success_timestamp_seconds{type="diff",job="uvostore-respaldo",instance="plataforma:9100"}'
+        values: '0+60x60'
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: UvoStoreRespaldoAtrasado
+        exp_alerts: []
+  - interval: 1m
+    input_series:
+      - series: 'uvostore_backup_last_success_timestamp_seconds{type="diff",job="uvostore-respaldo",instance="plataforma:9100"}'
+        values: '-100000x60'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: UvoStoreRespaldoAtrasado
+        exp_alerts: []
+      - eval_time: 40m
+        alertname: UvoStoreRespaldoAtrasado
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              owner: operaciones-plataforma
+              instance: plataforma:9100
+            exp_annotations:
+              summary: "El último respaldo del clúster tiene más de 26 horas, o no hay ninguno"
+              description: "Un incidente ahora perdería todo lo posterior al último respaldo que se pueda restaurar."
+              runbook: docs/recuperacion.md#respaldo-atrasado
+
+  # --- IMP-09: sin ningún respaldo terminado también alerta ---------------------------------------------------------
+  - interval: 1m
+    input_series:
+      - series: 'uvostore_backup_repo_ok{job="uvostore-respaldo",instance="plataforma:9100"}'
+        values: '1x60'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: UvoStoreRespaldoAtrasado
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              owner: operaciones-plataforma
+            exp_annotations:
+              summary: "El último respaldo del clúster tiene más de 26 horas, o no hay ninguno"
+              description: "Un incidente ahora perdería todo lo posterior al último respaldo que se pueda restaurar."
+              runbook: docs/recuperacion.md#respaldo-atrasado
+      - eval_time: 40m
+        alertname: UvoStoreRepositorioRespaldoIlegible
+        exp_alerts: []
+
+  # --- IMP-09: WAL sin archivar, 10 minutos ----------------------------------------------------------------------
+  - interval: 1m
+    input_series:
+      - series: 'uvostore_wal_archive_failing{job="uvostore-respaldo",instance="plataforma:9100"}'
+        values: '0x5 1x30'
+      - series: 'uvostore_wal_ready_segments{job="uvostore-respaldo",instance="plataforma:9100"}'
+        values: '0x35'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: UvoStoreWalSinArchivar
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: UvoStoreWalSinArchivar
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              owner: operaciones-plataforma
+              instance: plataforma:9100
+            exp_annotations:
+              summary: "El WAL no se está archivando en el repositorio de respaldo"
+              description: "La recuperación a un punto en el tiempo se detiene en el último segmento archivado."
+              runbook: docs/recuperacion.md#wal-sin-archivar
+
+  # --- IMP-09: la llave no abre las credenciales; una instancia en modo recuperación ------------------------------
+  - interval: 1m
+    input_series:
+      - series: 'uvostore_credentials_decrypt_failures{application="uvo-store",environment="staging",job="uvostore",instance="app:8080"}'
+        values: '0x3 2x20'
+      - series: 'uvostore_recovery_mode{application="uvo-store",environment="staging",job="uvostore",instance="app:8080"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: UvoStoreCredencialesSinDescifrar
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              owner: operaciones-plataforma
+              environment: staging
+            exp_annotations:
+              summary: "APP_ENCRYPTION_KEY no abre 2 credenciales guardadas"
+              description: "La llave no es la que cifró la base: no se puede cobrar, despachar ni hablar con el POS con ellas."
+              runbook: docs/recuperacion.md#credenciales-sin-descifrar
+      - eval_time: 12m
+        alertname: UvoStoreModoRecuperacion
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              owner: operaciones-plataforma
+              environment: staging
+            exp_annotations:
+              summary: "Una instancia de staging está en modo recuperación"
+              description: "Checkout, webhooks y trabajos programados detenidos. Esperado solo durante una restauración."
+              runbook: docs/recuperacion.md#salir-del-modo-recuperacion

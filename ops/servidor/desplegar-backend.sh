@@ -15,6 +15,9 @@
 # Volver atrás es seguro si la versión nueva no aplicó migraciones; si las aplicó, la anterior puede no arrancar
 # con el esquema nuevo (Hibernate valida el esquema), y eso se decide con el procedimiento de IMP-09, no aquí.
 #
+# IMP-09: si el jar trae migraciones que la base no tiene, exige antes un respaldo de menos de una hora
+# (SIN_RESPALDO=1 para desplegar igual, a sabiendas), y --activar avisa si vuelve a un jar más viejo que el esquema.
+#
 # Conserva las últimas CONSERVAR versiones (3), nunca borra la activa.
 
 set -euo pipefail
@@ -75,6 +78,46 @@ FIN
     exit 1
 }
 
+# IMP-09. La migración más alta que trae un jar, y la última aplicada en la base del ambiente (vacío si la base todavía
+# no tiene esquema: primer despliegue).
+migracion_del_jar() {
+    (unzip -Z1 "$1" 2> /dev/null || true) | sed -n 's|.*db/migration/V\([0-9]*\)__.*|\1|p' | sort -n | tail -n 1
+}
+migracion_de_la_base() {
+    (cd / && runuser -u postgres -- psql -X -At -d "uvostore_$1" -c \
+        "SELECT max(version::int) FROM flyway_schema_history WHERE success AND version ~ '^[0-9]+\$'" 2> /dev/null) || true
+}
+
+# IMP-09 (C19). Un jar con migraciones pendientes cambia el esquema al arrancar, y desde ahí volver al jar anterior
+# puede no ser posible (V25 y V36 lo impiden; tabla en docs/recuperacion.md). Lo que queda entonces es restaurar, y
+# para eso tiene que haber un respaldo de justo antes. Se exige uno de menos de una hora, o SIN_RESPALDO=1 a sabiendas.
+exigir_respaldo_si_migra() {
+    local ambiente="$1" jar="$2" del_jar en_base stanza ultimo edad
+    del_jar="$(migracion_del_jar "$jar")"
+    en_base="$(migracion_de_la_base "$ambiente")"
+    if [ -z "$del_jar" ] || [ -z "$en_base" ] || [ "$del_jar" -le "$en_base" ]; then
+        return 0
+    fi
+    info "$(basename "$jar") aplica migraciones V$((en_base + 1))..V$del_jar sobre uvostore_$ambiente"
+    info "volver al jar anterior después puede no ser posible: ver la tabla de docs/recuperacion.md#migraciones"
+    if [ "${SIN_RESPALDO:-}" = 1 ]; then
+        aviso "desplegando con migraciones sin comprobar el respaldo (SIN_RESPALDO=1)"
+        return 0
+    fi
+    [ -f "$UVOSTORE_ETC/respaldo.env" ] || die "hay migraciones pendientes y el respaldo no está instalado
+(ops/respaldo/instalar-respaldo.sh). SIN_RESPALDO=1 para desplegar igual, a sabiendas."
+    stanza="$(valor_env "$UVOSTORE_ETC/respaldo.env" RESPALDO_STANZA)"
+    ultimo="$( (cd / && runuser -u postgres -- pgbackrest --stanza="$stanza" --output=json info 2> /dev/null) \
+        | jq -r '[.[0].backup[]?.timestamp.stop] | max // 0' 2> /dev/null || echo 0)"
+    edad=$(($(date +%s) - ${ultimo:-0}))
+    if [ "$edad" -gt 3600 ]; then
+        die "hay migraciones pendientes y el último respaldo tiene $((edad / 60)) minutos. Antes de desplegar:
+  sudo systemctl start uvostore-respaldo-diferencial
+(o SIN_RESPALDO=1 para desplegar igual, a sabiendas)."
+    fi
+    info "respaldo de hace $((edad / 60)) minutos: se puede restaurar a antes de las migraciones"
+}
+
 podar() {
     local opt="$1" activa archivo
     activa="$(version_activa "$opt")"
@@ -96,6 +139,13 @@ if [ "${1:-}" = "--activar" ]; then
     OPT="${UVOSTORE_OPT_PREFIX}$AMBIENTE"
     [ -f "$OPT/releases/$VERSION.jar" ] || die "no existe $OPT/releases/$VERSION.jar (versiones: $(ls "$OPT/releases" 2> /dev/null | tr '\n' ' '))"
     ANTERIOR="$(version_activa "$OPT")"
+    # IMP-09 (C19). Volver a un jar más viejo que el esquema: avisa antes, porque puede no arrancar.
+    del_jar="$(migracion_del_jar "$OPT/releases/$VERSION.jar")"
+    en_base="$(migracion_de_la_base "$AMBIENTE")"
+    if [ -n "$del_jar" ] && [ -n "$en_base" ] && [ "$en_base" -gt "$del_jar" ]; then
+        aviso "la base está en V$en_base y $VERSION llega a V$del_jar: según docs/recuperacion.md#migraciones puede no"
+        aviso "arrancar (rollback binario no admitido) y lo que queda es corregir hacia adelante o restaurar."
+    fi
     activar_symlink "$OPT" "$VERSION"
     reiniciar_y_esperar "$AMBIENTE" "$VERSION" "$ANTERIOR"
     exit 0
@@ -136,6 +186,7 @@ else
     install -m 644 -o root -g root "$JAR" "$DESTINO"
 fi
 
+exigir_respaldo_si_migra "$AMBIENTE" "$DESTINO"
 ANTERIOR="$(version_activa "$OPT")"
 activar_symlink "$OPT" "$VERSION"
 reiniciar_y_esperar "$AMBIENTE" "$VERSION" "$ANTERIOR"

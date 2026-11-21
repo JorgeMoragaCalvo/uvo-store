@@ -2,6 +2,7 @@ package org.uvo.uvostore.config;
 
 import java.util.Map;
 import org.slf4j.MDC;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.task.ThreadPoolTaskSchedulerCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -22,10 +23,20 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  * escriba (una fila de auditoría, una fila del outbox que acabe en el POS) queda con ese id. Va como
  * decorador del planificador y no en cada {@code @Scheduled}: así cubre los ocho sin tocarlos, y
  * también al que se añada mañana.
+ *
+ * <p>IMP-09. Con el modo recuperación ({@link RecoveryModePolicy}) el planificador no se enciende: ningún
+ * {@code @Scheduled} corre, ni los que existen ni el que se añada mañana. Va aquí y no como un {@code if} en cada
+ * trabajo por lo mismo que el decorador: un trabajo nuevo que olvidara mirar la bandera saldría a cobrar, a cancelar
+ * o a despachar sobre una base restaurada que todavía no se concilió.
  */
 @Configuration
-@EnableScheduling
 public class SchedulingConfig {
+
+    @Configuration
+    @EnableScheduling
+    @ConditionalOnProperty(name = RecoveryModePolicy.PROPERTY, havingValue = "false", matchIfMissing = true)
+    static class Enabled {
+    }
 
     /**
      * Un customizer y no un bean {@link TaskDecorator}: Boot aplicaría ese bean también al ejecutor de

@@ -159,7 +159,7 @@ jobs:
         run: bash ops/nginx/publicar-frontend.test.sh
 
       - name: Shellcheck
-        run: shellcheck -S warning -x ops/nginx/*.sh ops/servidor/*.sh ops/servidor/ensayo/*.sh
+        run: shellcheck -S warning -x ops/nginx/*.sh ops/servidor/*.sh ops/servidor/ensayo/*.sh ops/respaldo/*.sh
 
   # IMP-05 (paso 7). Construye staging desde cero en una máquina Ubuntu limpia, solo con los scripts de ops/ y los
   # artefactos armados como en release.yml, y comprueba lo que prometen: systemd con APP_ENVIRONMENT=staging (todas
@@ -168,10 +168,14 @@ jobs:
   # (IMP-06, C11) un correo de restablecimiento que sale solo tras una caída del SMTP y un reinicio, invalidando el
   # anterior. Simulado: certificados autofirmados, S3Mock y Mailpit (detalle en ops/servidor/ensayo/ensayo.sh). El
   # informe de verificar.sh queda como artefacto.
+  # IMP-09 (C10) le suma el respaldo con pgBackRest (contra S3Mock por https, o un repositorio posix si S3Mock no le
+  # sirve: lo dice c10.txt), la copia de imágenes, una restauración aislada a un punto en el tiempo en modo
+  # recuperación (sin reenviar lo que ya salió, con la llave recuperada y su sonda) y la medición de RPO/RTO. El acta
+  # técnica y el informe de conciliación quedan en el artefacto.
   ensayo-servidor:
     name: Staging rehearsal (clean server)
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -205,12 +209,14 @@ jobs:
       - name: Server packages, S3Mock and Mailpit
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends nginx postgresql jq
+          sudo apt-get install -y -qq --no-install-recommends nginx postgresql jq pgbackrest unzip
           sudo systemctl start postgresql nginx
           nginx -v
           psql --version
-          # S3Mock y no MinIO: la imagen minio/minio ya no se publica en Docker Hub.
-          docker run -d --name s3mock -p 127.0.0.1:9090:9090 adobe/s3mock:5.2.3
+          pgbackrest version
+          # S3Mock y no MinIO: la imagen minio/minio ya no se publica en Docker Hub. 9191 es su https (pgBackRest
+          # exige TLS; el ensayo no verifica el certificado).
+          docker run -d --name s3mock -p 127.0.0.1:9090:9090 -p 127.0.0.1:9191:9191 adobe/s3mock:5.2.3
           docker run -d --name mailpit -p 127.0.0.1:1025:1025 -p 127.0.0.1:8025:8025 axllent/mailpit:v1.27.0
           for _ in $(seq 1 60); do curl -fs -o /dev/null http://127.0.0.1:9090/ && break; sleep 1; done
           curl -fsS -o /dev/null http://127.0.0.1:9090/
@@ -232,6 +238,10 @@ jobs:
           sudo journalctl -u uvostore-staging --no-pager 2>&1 | tee "$informe/backend.log" > /dev/null || true
           sudo cp /var/log/nginx/error.log "$informe/nginx-error.log" 2> /dev/null || true
           sudo cp /etc/nginx/conf.d/uvostore-staging.conf "$informe/" 2> /dev/null || true
+          # IMP-09: la instancia restaurada, su clúster y pgBackRest.
+          sudo journalctl -u uvostore-staging-restauracion --no-pager 2>&1 | tee "$informe/restaurada.log" > /dev/null || true
+          sudo cp /var/lib/uvostore-restauracion/staging/run/postgresql.log "$informe/postgresql-restaurado.log" 2> /dev/null || true
+          sudo sh -c 'cp /var/log/pgbackrest/*.log "$1"/' _ "$informe" 2> /dev/null || true
           sudo chown -R "$(id -u)" "$informe"
 
       - name: Upload report
@@ -240,6 +250,70 @@ jobs:
         with:
           name: ensayo-servidor
           path: ${{ runner.temp }}/informe
+          retention-days: 30
+
+  # IMP-09 (C19, §11.1). Migración de la etiqueta anterior a este commit y vuelta atrás: el jar anterior con datos, la
+  # candidata migrando encima, el anterior otra vez sobre el esquema migrado (¿arranca?) y la restauración del respaldo
+  # de antes de migrar. Clasifica el paso (ROLLBACK_BINARIO o RESTAURAR_Y_CONCILIAR) en el resumen del job y en
+  # migracion-rollback.json; se compara con la tabla de docs/recuperacion.md#migraciones. Falla si la candidata no migra
+  # o si la restauración no devuelve los datos; la clasificación en sí no lo hace fallar, porque las dos son legítimas.
+  migracion-rollback:
+    name: Migration and rollback rehearsal
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout (with tags)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Build the candidate and the previous tag
+        run: |
+          dir="$RUNNER_TEMP/jars"
+          mkdir -p "$dir"
+          anterior="$(git describe --tags --abbrev=0 HEAD^)"
+          echo "Etiqueta anterior: $anterior"
+          echo "ANTERIOR=$anterior" >> "$GITHUB_ENV"
+          ./mvnw --batch-mode --no-transfer-progress -DskipTests package
+          cp "$(find target -maxdepth 1 -name '*.jar' ! -name '*original*' | head -n1)" "$dir/candidato.jar"
+          # La etiqueta anterior se arma desde su propio árbol, exportado aparte (no un worktree del checkout).
+          mkdir -p "$RUNNER_TEMP/anterior"
+          git archive "$anterior" | tar -x -C "$RUNNER_TEMP/anterior"
+          (cd "$RUNNER_TEMP/anterior" && ./mvnw --batch-mode --no-transfer-progress -DskipTests package)
+          cp "$(find "$RUNNER_TEMP/anterior/target" -maxdepth 1 -name '*.jar' ! -name '*original*' | head -n1)" \
+            "$dir/anterior-$anterior.jar"
+          ls -l "$dir"
+
+      - name: PostgreSQL
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends postgresql jq unzip
+          sudo systemctl start postgresql
+          psql --version
+
+      - name: Rehearse
+        run: |
+          dir="$RUNNER_TEMP/jars"
+          sudo env "PATH=$PATH" "GITHUB_STEP_SUMMARY=$GITHUB_STEP_SUMMARY" bash ops/servidor/ensayo/migracion-rollback.sh \
+            "$dir/anterior-$ANTERIOR.jar" "$dir/candidato.jar" "$RUNNER_TEMP/migracion"
+
+      - name: Upload report
+        if: always()
+        run: sudo chown -R "$(id -u)" "$RUNNER_TEMP/migracion" 2> /dev/null || true
+
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: migracion-rollback
+          path: ${{ runner.temp }}/migracion
           retention-days: 30
 
   # PROD-14a. Red de navegador: Playwright contra el backend real. GAP-09: el job vive en e2e.yml porque

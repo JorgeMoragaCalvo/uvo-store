@@ -64,6 +64,14 @@ public final class ProductionConfigurationRules {
         List<String> errors = new ArrayList<>();
         List<String> warnings = new ArrayList<>();
 
+        // IMP-09. Permitido en todos los ambientes (es lo que levanta una restauración aislada), pero siempre visible:
+        // una instalación que se quedó en modo recuperación no cobra, no despacha y no avisa a nadie.
+        if (bool(properties, RecoveryModePolicy.PROPERTY, false)) {
+            warnings.add("APP_RECOVERY_MODE=true: modo recuperación. Los trabajos programados están detenidos, no sale "
+                    + "nada al POS, al correo ni a las pasarelas, y el checkout y los webhooks responden 503. Solo para "
+                    + "una restauración aislada; se apaga después de conciliar (docs/recuperacion.md).");
+        }
+
         if (!environment.isStrict()) {
             // La red para el olvido de la señal: un dominio de plataforma de verdad es lo más parecido a un
             // despliegue que se puede ver desde aquí sin adivinar nada más.

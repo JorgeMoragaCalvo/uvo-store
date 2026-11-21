@@ -36,6 +36,16 @@ public class GlobalExceptionHandler {
                 .body(ApiError.of(HttpStatus.NOT_FOUND.value(), "Not Found", ex.getMessage()));
     }
 
+    // IMP-09. Un efecto externo cortado por el modo recuperación. 503, como el filtro: no es un fallo del servidor ni
+    // de quien llama, y lo que llegó se puede reintentar cuando la instalación salga del modo.
+    @ExceptionHandler(org.uvo.uvostore.config.RecoveryModeException.class)
+    public ResponseEntity<ApiError> handleRecoveryMode(org.uvo.uvostore.config.RecoveryModeException ex) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .header("Retry-After", "3600")
+                .body(ApiError.of(HttpStatus.SERVICE_UNAVAILABLE.value(),
+                        org.uvo.uvostore.config.RecoveryModeException.CODE, ex.getMessage()));
+    }
+
     // Un archivo estático que no existe —una imagen de /uploads/** borrada o con la ruta mal— caía
     // en el handler genérico: respondía 500 y, peor, mandaba un evento a Sentry. Una galería rota
     // se convertía así en una tormenta de alertas por algo que no es un fallo del servidor. Mismo

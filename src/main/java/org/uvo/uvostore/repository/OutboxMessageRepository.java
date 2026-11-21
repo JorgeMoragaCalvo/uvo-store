@@ -257,4 +257,37 @@ public interface OutboxMessageRepository extends JpaRepository<OutboxMessage, Lo
             group by m.type, m.status
             """)
     List<Object[]> countBacklogByTypeAndStatus();
+
+    /**
+     * IMP-09. Lo que el outbox no terminó (en cola, en vuelo o fallido), con su tienda y su orden, para el informe de
+     * recuperación. En una base restaurada, cualquiera de estas filas pudo haberse entregado después del respaldo.
+     */
+    @Query("""
+            select m from OutboxMessage m
+            join fetch m.store
+            left join fetch m.order
+            where m.status in (org.uvo.uvostore.entity.outbox.enums.OutboxStatus.PENDING,
+                               org.uvo.uvostore.entity.outbox.enums.OutboxStatus.IN_FLIGHT,
+                               org.uvo.uvostore.entity.outbox.enums.OutboxStatus.FAILED)
+            order by m.store.id, m.id
+            """)
+    List<OutboxMessage> findUnfinishedForRecovery(Pageable pageable);
+
+    /**
+     * IMP-09. Retiene lo que el respaldo traía en cola o en vuelo: pasa a {@code FAILED} con el motivo, sin tocar
+     * {@code attempts}, y queda en «Envíos fallidos» para que una persona lo reintente (si comprobó que no se entregó)
+     * o lo cierre (si ya se entregó). Solo las filas creadas hasta {@code restoredAt}: lo que se encole después, en el
+     * propio modo recuperación (un reembolso externo), no venía del respaldo.
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+            update OutboxMessage m
+            set m.status = org.uvo.uvostore.entity.outbox.enums.OutboxStatus.FAILED,
+                m.lastError = :reason,
+                m.updatedAt = :now
+            where m.status in (org.uvo.uvostore.entity.outbox.enums.OutboxStatus.PENDING,
+                               org.uvo.uvostore.entity.outbox.enums.OutboxStatus.IN_FLIGHT)
+              and m.createdAt <= :restoredAt
+            """)
+    int holdRestored(@Param("restoredAt") Instant restoredAt, @Param("reason") String reason, @Param("now") Instant now);
 }
