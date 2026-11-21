@@ -150,6 +150,8 @@ fi
 
 # En Ubuntu, postgresql.conf y pg_hba.conf viven en /etc/postgresql, fuera del directorio de datos: el respaldo no
 # los trae. Lo mínimo para levantar en local, solo con el socket propio y 127.0.0.1.
+# La recuperación de archivo (con hot_standby, el valor por omisión) no arranca si estos parámetros quedan por debajo
+# de los del clúster que generó el WAL: se copian del vivo, que es ese mismo clúster.
 cat > "$PGDATA_R/postgresql.conf" << EOF
 # restaurar.sh (IMP-09): clúster restaurado y aislado. No archiva y no escucha fuera de 127.0.0.1.
 port = $PUERTO_PG
@@ -157,7 +159,11 @@ listen_addresses = '127.0.0.1'
 unix_socket_directories = '$SOCKET_R'
 hba_file = '$PGDATA_R/pg_hba.conf'
 ident_file = '$PGDATA_R/pg_ident.conf'
-max_connections = 50
+max_connections = $(sql_vivo 'SHOW max_connections')
+max_worker_processes = $(sql_vivo 'SHOW max_worker_processes')
+max_wal_senders = $(sql_vivo 'SHOW max_wal_senders')
+max_prepared_transactions = $(sql_vivo 'SHOW max_prepared_transactions')
+max_locks_per_transaction = $(sql_vivo 'SHOW max_locks_per_transaction')
 shared_buffers = 128MB
 archive_mode = off
 EOF
@@ -172,7 +178,10 @@ echo "archive_mode = 'off'" >> "$PGDATA_R/postgresql.auto.conf"
 chown postgres:postgres "$PGDATA_R"/*.conf
 
 info "levantando el clúster restaurado en 127.0.0.1:$PUERTO_PG"
-pg_r pg_ctl -D "$PGDATA_R" -l "$SOCKET_R/postgresql.log" -w -t 7200 start > /dev/null
+if ! pg_r pg_ctl -D "$PGDATA_R" -l "$SOCKET_R/postgresql.log" -w -t 7200 start > /dev/null; then
+    tail -n 40 "$SOCKET_R/postgresql.log" >&2 || true
+    die "el clúster restaurado no arrancó (log completo en $SOCKET_R/postgresql.log)"
+fi
 for _ in $(seq 1 7200); do
     [ "$(sql_r postgres 'SELECT pg_is_in_recovery()' 2> /dev/null || echo t)" = f ] && break
     sleep 1
