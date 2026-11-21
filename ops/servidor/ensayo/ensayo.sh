@@ -448,11 +448,17 @@ paso "C10: después del punto, el correo sale y se sube otro banner"
 docker start mailpit > /dev/null
 esperar "Mailpit de vuelta" 60 mailpit_arriba
 esperar_fila "C10: la fila se entrega después del punto" 180 "SENT|sin-error"
-https "ensayo-a.$DOMINIO" -X POST "https://ensayo-a.$DOMINIO/api/admin/home/banners" \
+# El restablecimiento de C11 subió tokenVersion: JWT_A ya no vale. Se entra con la clave que dejó C11.
+JWT_A="$(https "ensayo-a.$DOMINIO" -X POST "https://ensayo-a.$DOMINIO/api/admin/auth/login" \
+    -H 'Content-Type: application/json' -d "{\"email\":\"$CORREO_A\",\"password\":\"$CLAVE_ADMIN-c11\"}" \
+    | jq -er .token)" || die "C10: el dueño de la tienda A no pudo entrar con la clave restablecida en C11"
+respuesta="$(https "ensayo-a.$DOMINIO" -X POST "https://ensayo-a.$DOMINIO/api/admin/home/banners" \
     -H "Authorization: Bearer $JWT_A" -F title=Posterior -F active=true -F sortOrder=2 \
     -F ctaText="Ver tienda" -F ctaLink=/shop -F ctaNewTab=false \
     -F textPosition=left -F textColor=light -F overlayColor=#000000 -F overlayOpacity=0 \
-    -F "newImage=@$png;type=image/png" | jq -er .image > /dev/null
+    -F "newImage=@$png;type=image/png" -w '\n%{http_code}')"
+jq -e .image <<< "${respuesta%$'\n'*}" > /dev/null 2>&1 \
+    || die "C10: no se pudo subir el banner posterior al punto (HTTP ${respuesta##*$'\n'})"
 afirmar_igual "C10: la tienda A tiene dos banners" 2 \
     "$(https "ensayo-a.$DOMINIO" "https://ensayo-a.$DOMINIO/api/v1/home-banners" | jq length)"
 CORREOS_ANTES="$(correos_de "$CORREO_A")"
@@ -492,10 +498,10 @@ afirmar_igual "C10: el informe la trae como correo incierto" true \
 
 retenidas="$(curl -sS -X POST "$RESTAURADA/api/platform/recovery/outbox/hold" \
     -H "X-Platform-Key: $PLATFORM_KEY" -H 'X-Platform-Operator: ensayo' -H 'Content-Type: application/json' \
-    -d "{\"restoredAt\":\"$PUNTO_ISO\"}" | jq -er .held)"
+    -d "{\"restoredAt\":\"$PUNTO_ISO\"}" | jq -er .held)" || die "C10: POST /api/platform/recovery/outbox/hold no respondió {held: N}"
 [ "$retenidas" -ge 1 ] || die "C10: la retención no tomó ninguna fila"
 afirmar_igual "C10: retenida para revisión, con el motivo" "FAILED|Restaurado desde respaldo" \
-    "$(sql_r "SELECT status || '|' || left(last_error, 26) FROM outbox_messages WHERE id = $FILA_C10")"
+    "$(sql_r "SELECT status || '|' || left(last_error, 25) FROM outbox_messages WHERE id = $FILA_C10")"
 afirmar_igual "C10: y la instancia viva no se enteró" "SENT|sin-error" "$(fila_reset)"
 
 RTO_TECNICO="$(sed -n 's/^| \*\*Duración técnica (RTO sin conciliación)\*\* | \*\*\(.*\)\*\* |$/\1/p' "$RESTAURACION/acta-restauracion.md")"
