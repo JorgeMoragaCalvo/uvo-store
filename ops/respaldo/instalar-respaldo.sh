@@ -52,9 +52,9 @@ if [ ! -f "$ENV_RESPALDO" ]; then
     aviso "(docs/recuperacion.md, «Custodia»). Sin ella, los respaldos no se pueden leer."
 fi
 v() { valor_env "$ENV_RESPALDO" "$1"; }
-if grep -q '^[A-Z_]*=CAMBIAR_' "$ENV_RESPALDO"; then
+if grep -q '^[A-Z0-9_]*=CAMBIAR_' "$ENV_RESPALDO"; then
     aviso "faltan valores en $ENV_RESPALDO:"
-    grep -o '^[A-Z_]*=CAMBIAR_' "$ENV_RESPALDO" | cut -d= -f1 | sed 's/^/    /' >&2
+    grep -o '^[A-Z0-9_]*=CAMBIAR_' "$ENV_RESPALDO" | cut -d= -f1 | sed 's/^/    /' >&2
     exit 2
 fi
 
