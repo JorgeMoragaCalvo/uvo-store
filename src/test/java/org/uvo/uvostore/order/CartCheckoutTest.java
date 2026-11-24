@@ -19,6 +19,7 @@ import java.math.BigDecimal;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -181,6 +182,32 @@ class CartCheckoutTest extends IntegrationTestSupport {
         assertEquals("PENDING", order.getStatus().name());
         assertEquals("MANUAL", order.getPaymentMethod().name());
         assertEquals(0, BigDecimal.valueOf(2380).compareTo(order.getTotal()));
+    }
+
+    // En Chile casi nadie conoce su código postal y el envío se cotiza por región y comuna: es opcional.
+    // Ausente o en blanco, la orden se crea y lo guarda como null, no como "".
+    @Test
+    void checkoutAcceptsAMissingOrBlankPostalCode() throws Exception {
+        Store store = createStore("checkout-sin-cp");
+        disableShipping(store);
+        Category category = createCategory(store, "Cat");
+        Product product = createProduct(store, category, "Producto", BigDecimal.valueOf(1000));
+        String withPostalCode = checkoutBody(product.getId(), 1, "manual");
+
+        for (String body : new String[] {
+                withPostalCode.replace("\"postalCode\":\"8320000\",", ""),
+                withPostalCode.replace("\"postalCode\":\"8320000\"", "\"postalCode\":\"  \"")}) {
+            String response = mockMvc.perform(post("/api/v1/checkout")
+                            .header("Host", hostHeader(store))
+                            .contentType("application/json")
+                            .content(body))
+                    .andExpect(status().isOk())
+                    .andReturn().getResponse().getContentAsString();
+
+            Order order = orderRepository.findById(objectMapper.readTree(response).get("orderId").asLong()).orElseThrow();
+            assertNull(order.getShippingPostalCode());
+            assertNull(order.getShippingAddress().getPostalCode());
+        }
     }
 
     @Test

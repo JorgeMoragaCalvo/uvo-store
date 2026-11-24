@@ -143,7 +143,7 @@ async function fillContactStep(user: ReturnType<typeof userEvent.setup>) {
 async function fillAddressStep(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByPlaceholderText('Dirección'), 'Calle Falsa 123')
   await user.type(screen.getByPlaceholderText('Ciudad'), 'Santiago')
-  await user.type(screen.getByPlaceholderText('Código postal'), '8320000')
+  await user.type(screen.getByPlaceholderText('Código postal (opcional)'), '8320000')
   await user.selectOptions(await screen.findByLabelText('Región'), 'Metropolitana de Santiago')
   await user.selectOptions(await screen.findByLabelText('Comuna'), 'Santiago')
   await user.click(screen.getByRole('button', { name: /continuar/i }))
@@ -289,7 +289,7 @@ describe('Checkout page', () => {
 
     await user.type(screen.getByPlaceholderText('Dirección'), 'Calle Falsa 123')
     await user.type(screen.getByPlaceholderText('Ciudad'), 'Santiago')
-    await user.type(screen.getByPlaceholderText('Código postal'), '8320000')
+    await user.type(screen.getByPlaceholderText('Código postal (opcional)'), '8320000')
     await user.click(screen.getByRole('button', { name: /continuar/i }))
 
     expect(await screen.findByText('Selecciona una región')).toBeInTheDocument()
@@ -313,7 +313,7 @@ describe('Checkout page', () => {
 
     await user.type(screen.getByPlaceholderText('Dirección'), 'Calle Falsa 123')
     await user.type(screen.getByPlaceholderText('Ciudad'), 'Santiago')
-    await user.type(screen.getByPlaceholderText('Código postal'), '8320000')
+    await user.type(screen.getByPlaceholderText('Código postal (opcional)'), '8320000')
     await user.selectOptions(await screen.findByLabelText('Región'), 'Metropolitana de Santiago')
     await user.click(screen.getByRole('button', { name: /continuar/i }))
 
@@ -403,6 +403,27 @@ describe('Checkout page', () => {
       region: 'Metropolitana de Santiago',
       commune: 'Santiago',
     })
+  })
+
+  // En Chile casi nadie conoce su código postal y el envío se cotiza por región y comuna.
+  it('lets the buyer order without a postal code', async () => {
+    const api = (await import('@/services/api')).default
+    const confirmation: OrderConfirmation = { orderId: 1, orderNumber: 'ORD-1', total: 5000 }
+    vi.mocked(api.checkout.createOrder).mockResolvedValue(confirmation)
+
+    const user = userEvent.setup()
+    renderCheckout()
+    await fillContactStep(user)
+    await user.type(screen.getByPlaceholderText('Dirección'), 'Calle Falsa 123')
+    await user.type(screen.getByPlaceholderText('Ciudad'), 'Santiago')
+    await user.selectOptions(await screen.findByLabelText('Región'), 'Metropolitana de Santiago')
+    await user.selectOptions(await screen.findByLabelText('Comuna'), 'Santiago')
+    await user.click(screen.getByRole('button', { name: /continuar/i }))
+    await user.click(await screen.findByRole('button', { name: /confirmar pedido/i }))
+
+    await vi.waitFor(() => expect(api.checkout.createOrder).toHaveBeenCalled())
+    // lastCall: los mocks de la API no se limpian entre tests.
+    expect(vi.mocked(api.checkout.createOrder).mock.lastCall?.[0].shippingAddress.postalCode ?? '').toBe('')
   })
 
   it('blocks confirmation when the store does not deliver to the chosen address', async () => {

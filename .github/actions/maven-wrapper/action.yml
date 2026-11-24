@@ -1,0 +1,18 @@
+name: Maven del wrapper
+description: >-
+  Deja lista la distribución de Maven que pide .mvn/wrapper, desde la caché o bajándola con reintentos y un
+  espejo (.github/scripts/traer-maven.sh). Sin esto, un corte de Maven Central tumbaba el job en el primer ./mvnw.
+  Va después de actions/checkout y de actions/setup-java.
+
+runs:
+  using: composite
+  steps:
+    - name: Cache the Maven distribution
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2/wrapper
+        key: maven-wrapper-${{ runner.os }}-${{ hashFiles('.mvn/wrapper/maven-wrapper.properties') }}
+
+    - name: Fetch the Maven distribution
+      shell: bash
+      run: bash "$GITHUB_WORKSPACE/.github/scripts/traer-maven.sh" "$GITHUB_WORKSPACE"

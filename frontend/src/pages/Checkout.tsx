@@ -133,7 +133,7 @@ export default function Checkout() {
       addressLine1: shippingAddress.addressLine1,
       addressLine2: shippingAddress.addressLine2 ?? '',
       city: shippingAddress.city,
-      postalCode: shippingAddress.postalCode,
+      postalCode: shippingAddress.postalCode ?? '',
       region,
       commune,
     },
@@ -173,7 +173,7 @@ export default function Checkout() {
         addressLine1: pending.shippingAddress.addressLine1,
         addressLine2: pending.shippingAddress.addressLine2 ?? '',
         city: pending.shippingAddress.city,
-        postalCode: pending.shippingAddress.postalCode,
+        postalCode: pending.shippingAddress.postalCode ?? '',
         region: pending.region,
         commune: pending.commune,
       })
@@ -255,7 +255,7 @@ export default function Checkout() {
       // The order's address keeps the region in `state`, which is what it has always meant; the
       // difference now is that the same value also travels as `region` for zone matching.
       state: values.region,
-      postalCode: values.postalCode,
+      postalCode: values.postalCode ?? '',
     })
     await setDestination(values.region, values.commune)
     setStep(2)
@@ -434,10 +434,10 @@ export default function Checkout() {
                   {...addressForm.register('city')}
                 />
               </Field>
-              <Field id="postalCode" label="Código postal" error={addressErrors.postalCode?.message}>
+              <Field id="postalCode" label="Código postal (opcional)" error={addressErrors.postalCode?.message}>
                 <input
                   autoComplete="postal-code"
-                  placeholder="Código postal"
+                  placeholder="Código postal (opcional)"
                   className={inputClass}
                   {...fieldA11y('postalCode', addressErrors.postalCode?.message)}
                   {...addressForm.register('postalCode')}

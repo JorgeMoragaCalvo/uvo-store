@@ -244,7 +244,7 @@ public class CheckoutServiceImpl implements CheckoutService {
         // apagado no exige cobertura—, el texto tal como llegó, que es lo que se guardaba antes.
         order.setShippingRegion(geoCatalog.resolveRegion(command.region()).orElse(command.region()));
         order.setShippingCommune(geoCatalog.resolveCommune(command.region(), command.commune()).orElse(command.commune()));
-        order.setShippingPostalCode(command.shippingAddress().postalCode());
+        order.setShippingPostalCode(blankToNull(command.shippingAddress().postalCode()));
         applyShipping(order, totals.appliedShipping());
 
         // F05: aquí ya no se vuelve a validar nada. El cupón es el que entró en el total, decidido en
@@ -505,9 +505,14 @@ public class CheckoutServiceImpl implements CheckoutService {
         address.setAddressLine2(command.shippingAddress().addressLine2());
         address.setCity(command.shippingAddress().city());
         address.setState(command.shippingAddress().state());
-        address.setPostalCode(command.shippingAddress().postalCode());
+        address.setPostalCode(blankToNull(command.shippingAddress().postalCode()));
         address.setCountry(command.shippingAddress().country());
         return address;
+    }
+
+    // El código postal es opcional en el checkout: vacío se guarda como null, no como "".
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     private static String randomOrderSuffix() {
