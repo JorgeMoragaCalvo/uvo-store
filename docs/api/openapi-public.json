@@ -315,7 +315,6 @@
             "type" : "string"
           },
           "postalCode" : {
-            "minLength" : 1,
             "type" : "string"
           },
           "state" : {

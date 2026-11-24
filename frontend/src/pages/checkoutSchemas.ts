@@ -27,7 +27,8 @@ export const addressSchema = z.object({
   addressLine1: z.string().trim().min(4, 'Ingresa tu dirección'),
   addressLine2: z.string().trim().optional(),
   city: z.string().trim().min(2, 'Ingresa tu ciudad'),
-  postalCode: z.string().trim().min(3, 'Ingresa tu código postal'),
+  // Opcional: en Chile casi nadie lo conoce y el envío se cotiza por región y comuna.
+  postalCode: z.string().trim().optional(),
   // Chosen from the store's own coverage, never typed — a typed value would almost never match a zone,
   // which is how shipping ended up free on every order.
   region: z.string().min(1, 'Selecciona una región'),

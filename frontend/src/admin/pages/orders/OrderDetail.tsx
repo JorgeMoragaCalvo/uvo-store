@@ -221,7 +221,7 @@ function OrderDetailContent({ order, onBack }: { order: AdminOrderDetail; onBack
                 <p>
                   {order.shippingAddress.city}, {order.shippingAddress.state}
                 </p>
-                <p>{order.shippingAddress.postalCode}</p>
+                {order.shippingAddress.postalCode && <p>{order.shippingAddress.postalCode}</p>}
                 <p>{order.shippingAddress.phone}</p>
               </CardContent>
             </Card>

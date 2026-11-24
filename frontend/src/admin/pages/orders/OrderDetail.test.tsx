@@ -111,6 +111,21 @@ describe('OrderDetail: estado y resolución de reembolsos', () => {
     await screen.findByText('Reembolsos')
   }
 
+  // El código postal es opcional en el checkout: sin él, la dirección no deja una línea vacía.
+  it('una dirección sin código postal no deja una línea vacía', async () => {
+    const address = {
+      firstName: 'Test', lastName: 'Comprador', company: null, addressLine1: 'Calle 1', addressLine2: null,
+      city: 'Santiago', state: 'RM', postalCode: null, country: 'CL', phone: '+56911111111',
+    }
+    await renderOrder(order([], { shippingAddress: address }))
+
+    const card = screen.getByText('Dirección de envío').closest('[data-slot="card"]')
+    if (!card) throw new Error('no se encontró la tarjeta de la dirección')
+    const lines = Array.from(card.querySelectorAll('p')).map((p) => p.textContent?.trim())
+    expect(lines).not.toContain('')
+    expect(screen.getByText('Calle 1')).toBeInTheDocument()
+  })
+
   it('muestra el estado de cada reembolso y avisa lo que falta confirmar', async () => {
     await renderOrder(
       order([
