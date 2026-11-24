@@ -45,6 +45,9 @@ jobs:
           java-version: "21"
           cache: maven
 
+      - name: Set up the Maven distribution
+        uses: ./.github/actions/maven-wrapper
+
       - name: Set up Node 24
         uses: actions/setup-node@v4
         with:

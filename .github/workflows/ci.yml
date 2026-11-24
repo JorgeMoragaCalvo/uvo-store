@@ -44,6 +44,9 @@ jobs:
           java-version: "21"
           cache: maven
 
+      - name: Set up the Maven distribution
+        uses: ./.github/actions/maven-wrapper
+
       - name: Build and test
         env:
           DB_URL: jdbc:postgresql://localhost:5432/uvostore
@@ -187,6 +190,9 @@ jobs:
           java-version: "21"
           cache: maven
 
+      - name: Set up the Maven distribution
+        uses: ./.github/actions/maven-wrapper
+
       - name: Set up Node 24
         uses: actions/setup-node@v4
         with:
@@ -274,6 +280,9 @@ jobs:
           java-version: "21"
           cache: maven
 
+      - name: Set up the Maven distribution
+        uses: ./.github/actions/maven-wrapper
+
       - name: Build the candidate and the previous tag
         run: |
           dir="$RUNNER_TEMP/jars"
@@ -284,8 +293,10 @@ jobs:
           ./mvnw --batch-mode --no-transfer-progress -DskipTests package
           cp "$(find target -maxdepth 1 -name '*.jar' ! -name '*original*' | head -n1)" "$dir/candidato.jar"
           # La etiqueta anterior se arma desde su propio árbol, exportado aparte (no un worktree del checkout).
+          # Si su wrapper pide otra versión de Maven, también se baja con reintentos y espejo.
           mkdir -p "$RUNNER_TEMP/anterior"
           git archive "$anterior" | tar -x -C "$RUNNER_TEMP/anterior"
+          bash .github/scripts/traer-maven.sh "$RUNNER_TEMP/anterior"
           (cd "$RUNNER_TEMP/anterior" && ./mvnw --batch-mode --no-transfer-progress -DskipTests package)
           cp "$(find "$RUNNER_TEMP/anterior/target" -maxdepth 1 -name '*.jar' ! -name '*original*' | head -n1)" \
             "$dir/anterior-$anterior.jar"

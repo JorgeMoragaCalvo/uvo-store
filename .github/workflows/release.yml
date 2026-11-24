@@ -40,6 +40,9 @@ jobs:
           java-version: "21"
           cache: maven
 
+      - name: Set up the Maven distribution
+        uses: ./.github/actions/maven-wrapper
+
       - name: Build and test
         env:
           DB_URL: jdbc:postgresql://localhost:5432/uvostore
