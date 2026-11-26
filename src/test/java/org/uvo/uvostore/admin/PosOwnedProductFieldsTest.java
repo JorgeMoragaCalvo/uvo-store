@@ -326,7 +326,7 @@ class PosOwnedProductFieldsTest extends IntegrationTestSupport {
                         .contentType("application/json")
                         .content(variationJson("V-NUEVA", 1000, 2)))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value(containsString("sus variantes se crean y se cambian en el POS")));
+                .andExpect(jsonPath("$.message").value(containsString("no puede tener variantes")));
 
         assertThat(variationRepository.findByProductId(product.getId())).isEmpty();
         assertThat(product.getPrice()).isEqualByComparingTo("9990");
