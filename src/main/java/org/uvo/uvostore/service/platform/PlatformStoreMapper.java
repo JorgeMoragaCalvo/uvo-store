@@ -5,6 +5,8 @@ import org.uvo.uvostore.entity.security.User;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.PosConnectionRepository;
 import org.uvo.uvostore.repository.PosConnectionRepository.PosLinkView;
+import org.uvo.uvostore.repository.StoreSettingsRepository;
+import org.uvo.uvostore.repository.StoreSettingsRepository.LegalTaxIdView;
 import org.uvo.uvostore.repository.UserRepository;
 import org.uvo.uvostore.service.url.StorePublicUrlResolver;
 
@@ -15,18 +17,20 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * PROD-23. Arma {@link PlatformStoreDto}. Por lote: los dueños y las conexiones de una página entera salen en dos
- * consultas, no en dos por tienda.
+ * PROD-23. Arma {@link PlatformStoreDto}. Por lote: los dueños, las conexiones y los RUT de una página entera salen
+ * en tres consultas, no en tres por tienda.
  */
 @Component
 class PlatformStoreMapper {
 
     private final UserRepository userRepository;
     private final PosConnectionRepository posConnectionRepository;
+    private final StoreSettingsRepository storeSettingsRepository;
     private final StorePublicUrlResolver publicUrls;
 
     PlatformStoreMapper(UserRepository userRepository, PosConnectionRepository posConnectionRepository,
-                        StorePublicUrlResolver publicUrls) {
+                        StoreSettingsRepository storeSettingsRepository, StorePublicUrlResolver publicUrls) {
+        this.storeSettingsRepository = storeSettingsRepository;
         this.userRepository = userRepository;
         this.posConnectionRepository = posConnectionRepository;
         this.publicUrls = publicUrls;
@@ -47,18 +51,23 @@ class PlatformStoreMapper {
         Map<Long, List<PosLinkView>> connections = posConnectionRepository
                 .findLinksByStoreIdIn(stores.stream().map(Store::getId).toList()).stream()
                 .collect(Collectors.groupingBy(PosLinkView::getStoreId));
+        // toMap no admite valores nulos: una tienda sin RUT configurado simplemente no entra al mapa.
+        Map<Long, String> legalTaxIds = storeSettingsRepository
+                .findLegalTaxIdsByStoreIdIn(stores.stream().map(Store::getId).toList()).stream()
+                .filter(view -> view.getLegalTaxId() != null)
+                .collect(Collectors.toMap(LegalTaxIdView::getStoreId, LegalTaxIdView::getLegalTaxId, (a, b) -> a));
         return stores.stream()
                 .map(store -> toDto(store, owners.get(store.getOwnerUserId()),
-                        connections.getOrDefault(store.getId(), List.of())))
+                        connections.getOrDefault(store.getId(), List.of()), legalTaxIds.get(store.getId())))
                 .toList();
     }
 
-    private PlatformStoreDto toDto(Store store, User owner, List<PosLinkView> connections) {
+    private PlatformStoreDto toDto(Store store, User owner, List<PosLinkView> connections, String legalTaxId) {
         // Un dueño de otra tienda no debería existir (owner_user_id lo escribe solo el alta), pero si existiera no se
         // muestra: la lista no puede ser la forma de ver un usuario de otra tienda.
         User safeOwner = owner != null && owner.getStore().getId().equals(store.getId()) ? owner : null;
         return new PlatformStoreDto(
-                store.getId(), store.getName(), store.getSlug(), store.getDomain(), store.getDomainVerifiedAt(),
+                store.getId(), store.getName(), store.getSlug(), legalTaxId, store.getDomain(), store.getDomainVerifiedAt(),
                 store.getStatus(), store.getStatusChangedAt(), store.getCreatedAt(),
                 publicUrls.storefrontOrigin(store),
                 safeOwner == null ? null : new PlatformStoreDto.Owner(

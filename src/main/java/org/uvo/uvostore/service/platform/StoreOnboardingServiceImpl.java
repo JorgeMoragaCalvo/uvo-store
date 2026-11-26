@@ -297,6 +297,18 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
     }
 
     /**
+     * Quitar el dominio es cambiarlo a ninguno: la misma auditoría ({@code STORE_DOMAIN_UPDATE} con el dominio a
+     * {@code null} y si tenía verificación), la verificación queda en {@code NULL} y una tienda cerrada sigue siendo
+     * un 400. Por qué existe aparte del PUT: {@code UpdateStoreDomainRequest} exige un dominio, y así tiene que
+     * seguir para que un PUT con el cuerpo mal armado no deje una tienda sin dominio por accidente.
+     */
+    @Override
+    @Transactional
+    public StoreOnboardingResponse clearDomain(Long storeId) {
+        return updateDomain(storeId, null);
+    }
+
+    /**
      * PROD-04. Deja constancia de que el dominio propio de la tienda ya apunta aquí, que es lo que habilita
      * su uso en los enlaces que salen (correos, retornos de pasarela, webhooks).
      *

@@ -1,5 +1,6 @@
 package org.uvo.uvostore.service.platform;
 
+import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Subquery;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -11,6 +12,7 @@ import org.uvo.uvostore.entity.audit.AuditEvent;
 import org.uvo.uvostore.entity.audit.enums.AuditAction;
 import org.uvo.uvostore.entity.pos.PosConnection;
 import org.uvo.uvostore.entity.security.User;
+import org.uvo.uvostore.entity.settings.StoreSettings;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.entity.tenant.enums.StoreStatus;
 import org.uvo.uvostore.repository.AuditEventRepository;
@@ -47,6 +49,7 @@ public class PlatformStoreQueryServiceImpl implements PlatformStoreQueryService 
         List<Specification<Store>> specs = new ArrayList<>();
         if (search != null && !search.isBlank()) {
             String term = "%" + search.trim().toLowerCase() + "%";
+            String taxIdTerm = taxIdSearchTerm(search);
             specs.add((root, query, cb) -> {
                 // El correo del dueño por subconsulta: owner_user_id es un número en la tienda, no una relación.
                 Subquery<Long> owner = query.subquery(Long.class);
@@ -54,11 +57,23 @@ public class PlatformStoreQueryServiceImpl implements PlatformStoreQueryService 
                 owner.select(user.get("id")).where(
                         cb.equal(user.get("id"), root.get("ownerUserId")),
                         cb.like(cb.lower(user.get("email")), term));
-                return cb.or(
+                List<Predicate> matches = new ArrayList<>(List.of(
                         cb.like(cb.lower(root.get("slug")), term),
                         cb.like(cb.lower(root.get("name")), term),
                         cb.like(cb.lower(root.get("domain")), term),
-                        cb.exists(owner));
+                        cb.exists(owner)));
+                if (taxIdTerm != null) {
+                    // El RUT se guarda como 12345678-5 (ChileanRut); se compara sin el guion para que valga escrito
+                    // con puntos, sin guion o solo una parte.
+                    Subquery<Long> settings = query.subquery(Long.class);
+                    var row = settings.from(StoreSettings.class);
+                    settings.select(row.get("id")).where(
+                            cb.equal(row.get("store"), root),
+                            cb.like(cb.function("replace", String.class, row.get("legalTaxId"), cb.literal("-"),
+                                    cb.literal("")), taxIdTerm));
+                    matches.add(cb.exists(settings));
+                }
+                return cb.or(matches.toArray(Predicate[]::new));
             });
         }
         if (status != null) {
@@ -78,6 +93,15 @@ public class PlatformStoreQueryServiceImpl implements PlatformStoreQueryService 
         Specification<Store> spec = specs.stream().reduce(Specification::and).orElse(null);
         Page<Store> page = storeRepository.findAll(spec, pageable);
         return new PageImpl<>(mapper.toDtos(page.getContent()), page.getPageable(), page.getTotalElements());
+    }
+
+    /**
+     * El término como RUT parcial ({@code %765432%}), o {@code null} si no lo parece: solo dígitos (y una K al final)
+     * una vez quitados puntos, guiones y espacios, y al menos cuatro, para que buscar "12" no traiga media lista.
+     */
+    public static String taxIdSearchTerm(String search) {
+        String compact = search.replaceAll("[.\\s-]", "").toUpperCase();
+        return compact.matches("[0-9]{3,8}[0-9K]") ? "%" + compact + "%" : null;
     }
 
     @Override

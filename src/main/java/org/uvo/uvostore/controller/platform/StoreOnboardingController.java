@@ -1,6 +1,7 @@
 package org.uvo.uvostore.controller.platform;
 
 import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -44,6 +45,14 @@ public class StoreOnboardingController {
     @PutMapping("/{id}/domain")
     public StoreOnboardingResponse updateDomain(@PathVariable Long id, @Valid @RequestBody UpdateStoreDomainRequest request) {
         return storeOnboardingService.updateDomain(id, request.domain());
+    }
+
+    // Quita el dominio propio: la tienda vuelve a responder solo en su subdominio de plataforma y los enlaces que
+    // salen vuelven a él. Lo llama el panel de dominios al dar de baja el dominio de un cliente; sin esto el
+    // dominio quedaba en la tienda (el PUT exige uno) y ocupado para cualquier otra. Quitarlo dos veces no hace nada.
+    @DeleteMapping("/{id}/domain")
+    public StoreOnboardingResponse clearDomain(@PathVariable Long id) {
+        return storeOnboardingService.clearDomain(id);
     }
 
     // PROD-04. El dominio propio de una tienda no se usa en los enlaces que salen hasta que alguien
