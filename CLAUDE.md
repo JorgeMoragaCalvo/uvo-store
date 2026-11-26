@@ -131,7 +131,12 @@ cd frontend && npx tsc -b         # type check on its own — NOT `tsc --noEmit`
   the verification, because an email linking to a domain whose DNS isn't pointed here yet is a dead
   email and there's no resend screen. `PUT /api/platform/stores/{id}/domain/verified` records the
   operator's check — **it does not probe DNS**; automating that waits on PROD-03. Changing the
-  domain clears the flag, so a new domain never inherits it.
+  domain clears the flag, so a new domain never inherits it. `DELETE /api/platform/stores/{id}/domain`
+  removes it (and the flag): the store goes back to its platform subdomain and the domain is free for
+  another store. It's a separate endpoint on purpose — `UpdateStoreDomainRequest` keeps requiring a
+  domain, so a malformed PUT can't leave a store without one by accident. Same `STORE_DOMAIN_UPDATE`
+  audit (domain → `null`); clearing a store with no domain is a 200 no-op; a closed store is a 400.
+  The caller is UVO's domains panel, which connects clients' domains through Cloudflare for SaaS.
 - The frontend computes every API client's `baseURL` **at runtime** from `window.location.origin` (`frontend/src/services/api.ts`, `admin/services/adminApi.ts`, `platform/services/platformApi.ts`) — not from a build-time env var — so one deployed frontend build serves any tenant. In dev, Vite's own proxy (`vite.config.ts`) forwards `/api/*` to `VITE_DEV_PROXY_TARGET` (`frontend/.env`, default `http://demo.localhost:8080`) so the browser still sees same-origin requests, matching production. Since
 PROD-14a the proxy keeps the browser's store: a page on `<slug>.localhost:5173` reaches the backend as
 `<slug>.localhost:8080`, and only a bare `localhost` goes to the target store. In production this assumes frontend static assets and the API are served from the same origin (a reverse proxy). The nginx config is versioned in `ops/nginx/` (IMP-04, `docs/despliegue-frontend.md`) and the server provisioning in `ops/servidor/` (IMP-05, `docs/despliegue-backend.md`); the E2E and the CI rehearsal run against them, but nothing is deployed yet, see "Known gotchas".
@@ -1356,7 +1361,12 @@ exist. It has the same `/api/platform/stores` base and the same `PlatformApiKeyA
 consumer is the UvoPOS backoffice; there is no screen.
 - **Reading:**
   - `GET /` lists stores: `search` over slug, name, domain and owner e-mail; `status`; `companyId`; the M8 sort
-    allowlist; 20 per page.
+    allowlist; 20 per page. A term that looks like a RUT (only digits and a final K once dots, dashes and spaces
+    are stripped, at least four) also matches `store_settings.legal_tax_id` without its dash, so `76.123.456-0`,
+    `761234560` and `123456` all find it (`PlatformStoreQueryServiceImpl.taxIdSearchTerm`).
+  - `PlatformStoreDto.legalTaxId` is the seller's RUT (`null` if not configured). It's already public on the
+    storefront's legal pages; it comes from a one-column projection per page
+    (`StoreSettingsRepository.findLegalTaxIdsByStoreIdIn`), never by loading `StoreSettings`.
   - `GET /{id}` returns one store.
   - `GET /{id}/audit-events` takes `action`, `from` (inclusive) and `to` (exclusive), 50 per page, newest first.
     This is the consumer PROD-18 left open; the panel still doesn't read the audit.
@@ -1910,6 +1920,15 @@ its PostgreSQL, S3). Runbook and evidence per checklist item: `docs/despliegue-b
   `desplegar-backend.sh` (SHA256SUMS, atomic `current.jar`, `SENTRY_RELEASE=<tag>`, restart, wait for readiness;
   `--activar` rolls back; never rolls back on its own because a migration may have run), `dominio-propio.sh
   alta|baja`, `verificar.sh` (the evidence report, secrets masked). Shared helpers in `comun.sh`.
+- **Cloudflare for SaaS (optional):** `cloudflare-saas.sh activar <env> <cert> <key>|desactivar` swaps
+  `default.conf` for `nginx/cloudflare-saas.conf.template` in the same place. Clients' domains then arrive through
+  Cloudflare (CNAME to `customers.<zone>`, Cloudflare issues their certificate), so the 443 `default_server` serves
+  the environment instead of rejecting the handshake — **but only to Cloudflare's networks** (`nginx/cloudflare-ips.txt`,
+  444 otherwise). The filter is a `geo` on `$realip_remote_addr`, not `allow/deny`: `real_ip` (from
+  `CF-Connecting-IP`, trusted only from those networks) rewrites `$remote_addr` before the access phase, so an
+  allowlist on it would shut out every shopper. Port 80 stays as in `default.conf`. `provisionar.sh` reinstalls
+  `default.conf`, so `activar` has to be rerun after it. Not in the CI rehearsal yet. Runbook in
+  `docs/despliegue-backend.md`, «Dominios propios con Cloudflare for SaaS».
 - Everything per environment is named after it (`uvostore-<env>` user/service/upstream, `/opt/uvostore-<env>`,
   `/srv/uvostore-<env>/frontend`, base `uvostore_<env>`), so staging and production share the server and nothing
   else. Backend ports 8081/8082 on 127.0.0.1 — **never 8080, AlfozApi's**.

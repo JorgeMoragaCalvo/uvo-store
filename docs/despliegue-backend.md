@@ -12,6 +12,7 @@ Todo sale del release: el jar, el zip del frontend del ambiente, `uvostore-ops-<
 | `servidor/desplegar-backend.sh` | Verifica el jar con `SHA256SUMS`, cambia `current.jar` de forma atómica, reinicia y espera readiness. `--activar` vuelve a una versión anterior. |
 | `nginx/publicar-frontend.sh` | Lo mismo para el frontend (`docs/despliegue-frontend.md`). |
 | `servidor/dominio-propio.sh alta\|baja` | Certificado y server de nginx de un dominio propio. |
+| `servidor/cloudflare-saas.sh activar\|desactivar` | Modo Cloudflare for SaaS: los dominios propios llegan por Cloudflare sin certificado por dominio (`nginx/cloudflare-saas.conf.template`, `nginx/cloudflare-ips.txt`). |
 | `servidor/verificar.sh` | Comprueba el ambiente y deja un informe sin secretos: es la evidencia. |
 | `servidor/uvostore.env.example` | Todas las variables del backend, con su motivo. |
 | `servidor/uvostore.service.template` | La unidad systemd (límites, apagado ordenado, endurecimiento). |
@@ -115,7 +116,40 @@ El backend resuelve la tienda por `stores.domain` y nginx necesita un server con
 - Al hacer el PUT, el backend deja de resolver el viejo y responde 404 «Tienda no encontrada».
 - Después, `dominio-propio.sh baja <ambiente> <viejo>`: nginx deja de servirlo y rechaza el handshake.
 
-**Baja:** la API de plataforma cambia el dominio de una tienda, pero hoy no lo quita (`UpdateStoreDomainRequest` exige uno); cerrar la tienda sí lo borra. Con `dominio-propio.sh baja` el dominio deja de llegar desde Internet, que es lo que importa.
+**Baja:** `DELETE /api/platform/stores/<id>/domain` quita el dominio de la tienda (y su verificación): el backend deja de resolverlo, los enlaces vuelven a `<slug>.<dominio de plataforma>` y el dominio queda libre para otra tienda. Después, `dominio-propio.sh baja` para que deje de llegar desde Internet. Cerrar la tienda también lo borra.
+
+## Dominios propios con Cloudflare for SaaS
+
+La alternativa a un certificado por dominio: el cliente apunta un CNAME a un nombre de la plataforma
+(`customers.<zona>`), Cloudflare emite y renueva su certificado, y se conecta a este servidor con el `Host` del
+cliente. No hay que dar de alta cada dominio en nginx; el panel de dominios de UVO hace el resto por la API de
+plataforma (`PUT .../domain`, `PUT .../domain/verified`, `DELETE .../domain`).
+
+En Cloudflare, en la zona de la plataforma:
+1. Registro `A customers` → IP de este servidor, con proxy (nube naranja).
+2. **SSL/TLS → Custom Hostnames**: habilitar Cloudflare for SaaS y poner `customers.<zona>` como *Fallback Origin*.
+3. **SSL/TLS → Origin Server → Create Certificate** (Cloudflare Origin CA) para `customers.<zona>`. Guardar el
+   certificado y la llave en el servidor (por ejemplo `/etc/ssl/uvostore/origen.pem` y `origen.key`, la llave con
+   permisos 600).
+4. Modo SSL/TLS **Full** y *Always Use HTTPS*. Con **Full (strict)**, comprobar antes que Cloudflare acepta el
+   certificado de origen para los dominios de los clientes; si no, quedarse en Full.
+
+En el servidor:
+1. `sudo bash ops/servidor/cloudflare-saas.sh activar production /etc/ssl/uvostore/origen.pem /etc/ssl/uvostore/origen.key`
+   - Reemplaza `default.conf` por `nginx/cloudflare-saas.conf.template`: el 443 por omisión atiende al ambiente,
+     solo para conexiones desde las redes de Cloudflare (`nginx/cloudflare-ips.txt`); el resto recibe 444.
+   - Toma la IP del comprador de `CF-Connecting-IP`, solo si viene de Cloudflare, y la pasa al backend como
+     cualquier otra petición: no hace falta tocar `RATE_LIMIT_TRUSTED_PROXIES`.
+   - El 80 queda igual que en `default.conf` (444, salvo el desafío de Certbot).
+2. Firewall: el 443 basta con abrirlo a las redes de Cloudflare.
+3. `sudo bash ops/servidor/cloudflare-saas.sh desactivar` vuelve a `default.conf`. `provisionar.sh` también lo
+   reinstala: después de volver a provisionar, correr `activar` otra vez.
+
+Los rangos de `cloudflare-ips.txt` hay que revisarlos contra <https://www.cloudflare.com/ips/> antes de activar y
+cada cierto tiempo: una conexión desde un rango nuevo que no está en la lista recibe 444.
+
+Los dominios con certificado propio (`dominio-propio.sh`) y el comodín de la plataforma siguen funcionando igual:
+tienen su `server_name`, así que no caen en el server por omisión.
 
 ## Rotación de secretos
 

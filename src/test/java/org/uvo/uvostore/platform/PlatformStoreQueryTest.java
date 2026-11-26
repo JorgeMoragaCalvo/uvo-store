@@ -8,9 +8,12 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.uvo.uvostore.entity.pos.PosConnection;
 import org.uvo.uvostore.entity.security.User;
+import org.uvo.uvostore.entity.settings.StoreSettings;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.entity.tenant.enums.StoreStatus;
 import org.uvo.uvostore.repository.PosConnectionRepository;
+import org.uvo.uvostore.repository.StoreSettingsRepository;
+import org.uvo.uvostore.service.platform.PlatformStoreQueryServiceImpl;
 import org.uvo.uvostore.support.IntegrationTestSupport;
 
 import java.time.Instant;
@@ -34,6 +37,9 @@ class PlatformStoreQueryTest extends IntegrationTestSupport {
     @Autowired
     private PosConnectionRepository connectionRepository;
 
+    @Autowired
+    private StoreSettingsRepository storeSettingsRepository;
+
     @Test
     @DisplayName("La búsqueda encuentra por nick, nombre, dominio y correo del dueño, sin distinguir mayúsculas")
     void theSearchCoversSlugNameDomainAndOwnerEmail() throws Exception {
@@ -55,6 +61,49 @@ class PlatformStoreQueryTest extends IntegrationTestSupport {
 
         assertThat(ids(page)).containsExactlyInAnyOrder(bySlug.getId(), byName.getId(), byDomain.getId(), byOwner.getId());
         assertThat(page.get("totalElements").asLong()).isEqualTo(4);
+    }
+
+    @Test
+    @DisplayName("El RUT del vendedor sale en la lista y en el detalle, y se puede buscar con o sin puntos y guion")
+    void theLegalTaxIdIsListedAndSearchable() throws Exception {
+        Store withRut = createStore("qrut");
+        String rut = uniqueRut();
+        StoreSettings settings = new StoreSettings();
+        settings.setStore(withRut);
+        settings.setLegalTaxId(rut);
+        storeSettingsRepository.save(settings);
+        Store withoutRut = createStore("qrut-sin");
+
+        String body = rut.substring(0, rut.length() - 2);
+        String formatted = body.substring(0, 2) + "." + body.substring(2, 5) + "." + body.substring(5) + rut.substring(rut.length() - 2);
+        for (String search : List.of(rut, formatted, body.substring(1), rut.replace("-", ""))) {
+            JsonNode page = list("?search=" + search);
+            assertThat(ids(page)).as("buscar «%s»", search).containsExactly(withRut.getId());
+            assertThat(page.get("content").get(0).path("legalTaxId").asText()).isEqualTo(rut);
+        }
+
+        JsonNode detail = objectMapper.readTree(mockMvc.perform(platform(get("/api/platform/stores/" + withoutRut.getId())))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString());
+        assertThat(detail.path("legalTaxId").isMissingNode() || detail.path("legalTaxId").isNull()).isTrue();
+
+        // Unos pocos dígitos no se toman como RUT: buscar "12" no puede traer media lista.
+        assertThat(PlatformStoreQueryServiceImpl.taxIdSearchTerm("12")).isNull();
+        assertThat(PlatformStoreQueryServiceImpl.taxIdSearchTerm("tienda")).isNull();
+    }
+
+    /** Un RUT válido (módulo 11) y distinto en cada llamada, para no chocar con otras filas de la base. */
+    private static String uniqueRut() {
+        String body = String.valueOf(70_000_000L + (System.nanoTime() + nextSeq()) % 9_999_999L);
+        int sum = 0;
+        int factor = 2;
+        for (int i = body.length() - 1; i >= 0; i--) {
+            sum += (body.charAt(i) - '0') * factor;
+            factor = factor == 7 ? 2 : factor + 1;
+        }
+        int digit = 11 - (sum % 11);
+        char dv = digit == 11 ? '0' : digit == 10 ? 'K' : (char) ('0' + digit);
+        return body + "-" + dv;
     }
 
     @Test
