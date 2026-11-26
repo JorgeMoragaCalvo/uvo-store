@@ -85,7 +85,7 @@ class RecoveryModeTest extends IntegrationTestSupport {
     @Test
     @DisplayName("La venta al POS y el correo lanzan en vez de salir")
     void posAndMailAreCut() {
-        assertThatThrownBy(() -> posClient.notifyOrder(null, null)).isInstanceOf(RecoveryModeException.class);
+        assertThatThrownBy(() -> posClient.notifyOrder(null, null, null)).isInstanceOf(RecoveryModeException.class);
         assertThatThrownBy(() -> emailService.deliver("comprador@test.local", "Asunto", "Cuerpo"))
                 .isInstanceOf(RecoveryModeException.class);
     }

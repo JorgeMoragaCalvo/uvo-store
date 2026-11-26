@@ -76,6 +76,9 @@ public class PosReconciliationService {
     /** Cuántos ids de cada tipo se guardan en el registro: el conteo va siempre entero. */
     static final int MAX_IDS_IN_LOG = 50;
 
+    /** IMP-08. El máximo de Productos por lectura del snapshot (contrato §5). */
+    static final int MAX_IDS_PER_READ = 200;
+
     public enum Trigger {
         SCHEDULED, MANUAL
     }
@@ -143,8 +146,8 @@ public class PosReconciliationService {
         }
         List<PosConnection> connections = connectionRepository.findActiveByStoreId(store.getId());
         if (connections.isEmpty()) {
-            throw new BusinessException("Esta tienda no tiene una conexión activa con UvoPOS: configura el token "
-                    + "de la API antes de resincronizar.");
+            throw new BusinessException("Esta tienda no tiene una conexión activa con UvoPOS: configura sus dos "
+                    + "llaves antes de resincronizar.");
         }
         PosReconciliationSummary total = PosReconciliationSummary.empty();
         for (PosConnection connection : connections) {
@@ -157,26 +160,38 @@ public class PosReconciliationService {
         Tally tally = new Tally();
         String failure = null;
         long afterId = 0;
+        batches:
         while (true) {
             long cursor = afterId;
             Batch batch = readOnlyTransactions.execute(status -> snapshot(connection.getCompanyId(), cursor));
-            if (batch == null || batch.items().isEmpty()) {
+            if (batch == null || batch.mappingCount() == 0) {
                 break;
             }
 
-            PosCatalogSnapshot pos = posClient.readCatalog(connection,
-                    batch.items().stream().map(Item::externalId).toList());
-            if (pos.isFailed()) {
-                // Sin la lectura no hay con qué comparar. Se corta esta conexión; las demás siguen.
-                failure = pos.failure();
-                break;
+            // IMP-08. Hasta 200 Productos del POS por lectura (§5): un lote de mapeos con variantes puede tener más.
+            List<Item> items = batch.items();
+            for (int from = 0; from < items.size(); from += MAX_IDS_PER_READ) {
+                List<Item> chunk = items.subList(from, Math.min(from + MAX_IDS_PER_READ, items.size()));
+                List<Long> ids = chunk.stream().map(Item::externalId).toList();
+                PosCatalogSnapshot pos = posClient.readCatalog(connection, ids);
+                if (pos.isFailed()) {
+                    // Sin la lectura no hay con qué comparar. Se corta esta conexión; las demás siguen.
+                    failure = pos.failure();
+                    break batches;
+                }
+                Set<Long> unaccounted = pos.unaccounted(ids);
+                for (Item item : chunk) {
+                    if (unaccounted.contains(item.externalId())) {
+                        // §5: un id que no está ni en data ni en missing es un lote incompleto, no un producto que el
+                        // POS no tiene. Se deja para la próxima pasada.
+                        tally.error(item, "el POS no lo devolvió ni en data ni en missing");
+                        continue;
+                    }
+                    reconcileItem(item, pos.rows().get(item.externalId()), batch.inFlight(), tally);
+                }
             }
-
-            for (Item item : batch.items()) {
-                reconcileItem(item, pos.rows().get(item.externalId()), batch.inFlight(), tally);
-            }
-            afterId = batch.items().getLast().mappingId();
-            if (batch.items().size() < batchSize) {
+            afterId = batch.lastMappingId();
+            if (batch.mappingCount() < batchSize) {
                 break;
             }
         }
@@ -197,31 +212,40 @@ public class PosReconciliationService {
         metrics.stockDivergences(BusinessMetrics.DivergenceSource.RECONCILIATION_MISSING, tally.missingInPos.size());
     }
 
-    /** La foto del lote: valores, no entidades, porque las correcciones limpian el contexto de persistencia. */
+    /**
+     * La foto del lote: valores, no entidades, porque las correcciones limpian el contexto de persistencia. IMP-08: un
+     * item por Producto del POS: el producto simple, o cada variante vinculada de un producto con variantes.
+     */
     private Batch snapshot(Long companyId, long afterId) {
         List<ProductSyncMapping> mappings = mappingRepository.findActiveBatch(companyId, afterId,
                 PageRequest.of(0, batchSize));
         if (mappings.isEmpty()) {
-            return new Batch(List.of(), Set.of());
+            return new Batch(List.of(), Set.of(), 0, afterId);
         }
-        // POS-5. Las variantes de todo el lote en una consulta, agrupadas por mapeo.
-        Map<Long, List<VariantItem>> variants = new HashMap<>();
+        Map<Long, List<ProductVariationSyncMapping>> variants = new HashMap<>();
         for (ProductVariationSyncMapping variant : variantMappingRepository.findByMappingIdIn(
                 mappings.stream().map(ProductSyncMapping::getId).toList())) {
-            variants.computeIfAbsent(variant.getMapping().getId(), id -> new ArrayList<>()).add(VariantItem.of(variant));
+            variants.computeIfAbsent(variant.getMapping().getId(), id -> new ArrayList<>()).add(variant);
         }
-        List<Item> items = mappings.stream()
-                .map(mapping -> Item.of(mapping, variants.getOrDefault(mapping.getId(), List.of())))
-                .toList();
-        List<Long> productIds = items.stream().map(Item::productId).toList();
+        List<Item> items = new ArrayList<>();
+        for (ProductSyncMapping mapping : mappings) {
+            if (mapping.getProduct().getProductType() == ProductType.VARIABLE) {
+                variants.getOrDefault(mapping.getId(), List.of())
+                        .forEach(variant -> items.add(Item.ofVariant(mapping, variant)));
+            } else if (mapping.getExternalId() != null) {
+                items.add(Item.ofSimple(mapping));
+            }
+        }
+        List<Long> productIds = mappings.stream().map(mapping -> mapping.getProduct().getId()).toList();
         Set<Long> inFlight = new HashSet<>(outboxRepository.findProductsWithUnregisteredSales(companyId, productIds));
         inFlight.addAll(orderRepository.findProductsWithStockPending(productIds));
-        return new Batch(items, inFlight);
+        return new Batch(items, inFlight, mappings.size(), mappings.getLast().getId());
     }
 
     private void reconcileItem(Item item, PosCatalogSnapshot.Row row, Set<Long> inFlight, Tally tally) {
         tally.checked++;
         if (row == null) {
+            // En missing (§5): el POS no lo tiene, o no es de esta empresa. Hay que revisar el vínculo.
             tally.missingInPos.add(item.productId());
             return;
         }
@@ -238,12 +262,11 @@ public class PosReconciliationService {
         }
     }
 
+    /**
+     * El stock web del POS, con el UPDATE condicionado al valor de la foto. La venta en vuelo es la del producto: en
+     * uno con variantes, una talla con una venta pendiente deja todas para la próxima pasada.
+     */
     private void reconcileStock(Item item, PosCatalogSnapshot.Row row, Set<Long> inFlight, Tally tally) {
-        if (item.variable()) {
-            // POS-5. El padre es la suma de sus variantes: lo que se compara es cada variante.
-            reconcileVariantStock(item, row, inFlight, tally);
-            return;
-        }
         if (!item.syncStock() || row.stockWeb() == null || row.stockWeb() == item.stock()) {
             return;
         }
@@ -253,59 +276,29 @@ public class PosReconciliationService {
             return;
         }
         Boolean corrected = transactions.execute(status -> {
-            int updated = productRepository.setStockIfUnchanged(item.productId(), item.stock(), row.stockWeb());
+            int updated;
+            if (item.variationId() == null) {
+                updated = productRepository.setStockIfUnchanged(item.productId(), item.stock(), row.stockWeb());
+            } else {
+                // El padre primero, como la venta: si no, esta corrección y una venta de otra talla del mismo
+                // producto podrían esperarse mutuamente.
+                productRepository.findByIdForUpdate(item.productId());
+                updated = variationRepository.setStockIfUnchanged(item.variationId(), item.stock(), row.stockWeb());
+                if (updated == 1) {
+                    productRepository.recalculateStockFromVariations(item.productId());
+                }
+            }
             if (updated == 1) {
                 mappingRepository.touchSynced(item.mappingId(), Instant.now());
             }
             return updated == 1;
         });
         if (Boolean.TRUE.equals(corrected)) {
-            LOG.warn("Conciliación con el POS: producto {} tenía stock {} y el POS dice {}; corregido",
-                    item.productId(), item.stock(), row.stockWeb());
+            LOG.warn("Conciliación con el POS: {} tenía stock {} y el POS dice {}; corregido",
+                    item.describe(), item.stock(), row.stockWeb());
             tally.stockCorrected.add(item.productId());
         } else {
             tally.changedMeanwhile.add(item.productId());
-        }
-    }
-
-    /**
-     * POS-5. Lo mismo que el stock de un producto simple, variante por variante. La venta en vuelo es la del
-     * producto: cualquier talla con una venta pendiente deja todas para la próxima pasada.
-     */
-    private void reconcileVariantStock(Item item, PosCatalogSnapshot.Row row, Set<Long> inFlight, Tally tally) {
-        if (!item.syncStock() || row.variants() == null) {
-            return;
-        }
-        Map<Long, PosVariantFields> pos = new HashMap<>();
-        row.variants().forEach(variant -> pos.putIfAbsent(variant.variantId(), variant));
-        for (VariantItem variant : item.variants()) {
-            PosVariantFields posVariant = pos.get(variant.externalVariantId());
-            if (posVariant == null || posVariant.stock() == null || posVariant.stock() == variant.stock()) {
-                continue;
-            }
-            if (inFlight.contains(item.productId())) {
-                tally.pendingInFlight.add(item.productId());
-                continue;
-            }
-            Boolean corrected = transactions.execute(status -> {
-                // El padre primero, como la venta: si no, esta corrección y una venta de otra talla del mismo
-                // producto podrían esperarse mutuamente.
-                productRepository.findByIdForUpdate(item.productId());
-                int updated = variationRepository.setStockIfUnchanged(variant.variationId(), variant.stock(),
-                        posVariant.stock());
-                if (updated == 1) {
-                    productRepository.recalculateStockFromVariations(item.productId());
-                    mappingRepository.touchSynced(item.mappingId(), Instant.now());
-                }
-                return updated == 1;
-            });
-            if (Boolean.TRUE.equals(corrected)) {
-                LOG.warn("Conciliación con el POS: la variación {} del producto {} tenía stock {} y el POS dice {}; "
-                        + "corregido", variant.variationId(), item.productId(), variant.stock(), posVariant.stock());
-                tally.stockCorrected.add(item.productId());
-            } else {
-                tally.changedMeanwhile.add(item.productId());
-            }
         }
     }
 
@@ -313,28 +306,19 @@ public class PosReconciliationService {
         if (row.version() == null) {
             return;
         }
-        if (row.variants() != null) {
-            String invalid = PosVariants.validate(row.variants());
-            if (invalid != null) {
-                tally.error(item, "Las variantes que devolvió el POS no sirven: " + invalid);
-                return;
-            }
-        }
-        // En un producto variable el precio del padre resume el de sus variantes, y son ellas las que se comparan.
-        boolean differs = (item.syncPrice() && !item.variable() && row.price() != null
+        boolean differs = (item.syncPrice() && row.price() != null
                         && (item.price() == null || row.price().compareTo(item.price()) != 0))
-                || (item.syncName() && row.name() != null && !row.name().equals(item.name()))
-                || (item.syncDescription() && row.description() != null
-                        && !row.description().equals(item.description()))
-                || variantsDiffer(item, row);
-        boolean newer = item.catalogVersion() == null || row.version() > item.catalogVersion();
+                || (item.variationId() == null && item.syncName() && row.name() != null
+                        && !row.name().equals(item.name()))
+                || (row.taxExempt() != null && row.taxExempt() != item.taxExempt());
+        boolean newer = item.appliedVersion() == null || row.version() > item.appliedVersion();
         if (!differs && !newer) {
             return;
         }
 
-        PosCatalogWriter.Result result = transactions.execute(status -> mappingRepository.findById(item.mappingId())
-                .map(mapping -> catalogWriter.reconcile(mapping, row.version(),
-                        new PosCatalogFields(row.name(), row.description(), row.price(), row.variants())))
+        PosCatalogFields fields = new PosCatalogFields(row.name(), row.price(), row.taxExempt(), null);
+        PosCatalogWriter.Result result = transactions.execute(status -> target(item)
+                .map(target -> catalogWriter.reconcile(target, row.version(), fields))
                 .orElse(null));
         if (result == null) {
             return;
@@ -357,31 +341,12 @@ public class PosReconciliationService {
         }
     }
 
-    /**
-     * POS-5. Si las variantes del POS no son las de aquí: un precio distinto (con {@code syncPrice}), una variante
-     * que aquí no existe, una nuestra activa que el POS ya no tiene o una inactiva que volvió. En un producto simple,
-     * que el POS traiga variantes también cuenta, para que el escritor lo rechace y quede avisado.
-     */
-    private static boolean variantsDiffer(Item item, PosCatalogSnapshot.Row row) {
-        if (row.variants() == null) {
-            return false;
+    /** El destino del item, cargado dentro de la transacción de la corrección. */
+    private java.util.Optional<PosTarget> target(Item item) {
+        if (item.variantMappingId() != null) {
+            return variantMappingRepository.findById(item.variantMappingId()).map(PosTarget.Variant::new);
         }
-        if (!item.variable()) {
-            return true;
-        }
-        Map<Long, VariantItem> ours = new HashMap<>();
-        item.variants().forEach(variant -> ours.put(variant.externalVariantId(), variant));
-        Set<Long> theirs = new HashSet<>();
-        for (PosVariantFields posVariant : row.variants()) {
-            theirs.add(posVariant.variantId());
-            VariantItem variant = ours.get(posVariant.variantId());
-            if (variant == null || !variant.active()
-                    || (item.syncPrice() && posVariant.price().compareTo(variant.price()) != 0)) {
-                return true;
-            }
-        }
-        return item.variants().stream().anyMatch(variant -> variant.active()
-                && !theirs.contains(variant.externalVariantId()));
+        return mappingRepository.findById(item.mappingId()).map(PosTarget.Simple::new);
     }
 
     private void record(PosConnection connection, Trigger trigger, Tally tally, String failure) {
@@ -435,29 +400,35 @@ public class PosReconciliationService {
 
     // --- valores de la foto ------------------------------------------------------------------------
 
-    private record Batch(List<Item> items, Set<Long> inFlight) {
+    private record Batch(List<Item> items, Set<Long> inFlight, int mappingCount, long lastMappingId) {
     }
 
-    private record Item(Long mappingId, Long productId, Long externalId, int stock, BigDecimal price, String name,
-                        String description, Long catalogVersion, boolean syncStock, boolean syncPrice,
-                        boolean syncName, boolean syncDescription, boolean variable, List<VariantItem> variants) {
+    /**
+     * IMP-08. Un Producto del POS de la foto, como valores: un producto simple ({@code variationId} nulo) o una
+     * variante vinculada. {@code appliedVersion} es la del mapeo del producto o la de la variante.
+     */
+    private record Item(Long mappingId, Long variantMappingId, Long productId, Long variationId, Long externalId,
+                        int stock, BigDecimal price, String name, boolean taxExempt, Long appliedVersion,
+                        boolean syncStock, boolean syncPrice, boolean syncName) {
 
-        static Item of(ProductSyncMapping mapping, List<VariantItem> variants) {
+        static Item ofSimple(ProductSyncMapping mapping) {
             var product = mapping.getProduct();
-            return new Item(mapping.getId(), product.getId(), mapping.getExternalId(), product.getStock(),
-                    product.getPrice(), product.getName(), product.getDescription(), mapping.getCatalogVersion(),
-                    mapping.isSyncStock(), mapping.isSyncPrice(), mapping.isSyncName(), mapping.isSyncDescription(),
-                    product.getProductType() == ProductType.VARIABLE, variants);
+            return new Item(mapping.getId(), null, product.getId(), null, mapping.getExternalId(), product.getStock(),
+                    product.getPrice(), product.getName(), product.isTaxExempt(), mapping.getCatalogVersion(),
+                    mapping.isSyncStock(), mapping.isSyncPrice(), mapping.isSyncName());
         }
-    }
 
-    /** POS-5. Una variante mapeada, como valores. */
-    private record VariantItem(Long variationId, Long externalVariantId, int stock, BigDecimal price, boolean active) {
-
-        static VariantItem of(ProductVariationSyncMapping variantMapping) {
+        static Item ofVariant(ProductSyncMapping mapping, ProductVariationSyncMapping variantMapping) {
             var variation = variantMapping.getVariation();
-            return new VariantItem(variation.getId(), variantMapping.getExternalVariantId(), variation.getStock(),
-                    variation.getPrice(), variation.isActive());
+            return new Item(mapping.getId(), variantMapping.getId(), mapping.getProduct().getId(), variation.getId(),
+                    variantMapping.getExternalVariantId(), variation.getStock(), variation.getPrice(), null,
+                    variation.isTaxExempt(), variantMapping.getPosVersion(), mapping.isSyncStock(),
+                    mapping.isSyncPrice(), false);
+        }
+
+        String describe() {
+            return variationId == null ? "producto " + productId
+                    : "la variación %d del producto %d".formatted(variationId, productId);
         }
     }
 

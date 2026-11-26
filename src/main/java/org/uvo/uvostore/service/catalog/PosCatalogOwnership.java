@@ -42,10 +42,13 @@ public class PosCatalogOwnership {
 
     private final ProductSyncMappingRepository mappingRepository;
     private final ProductRepository productRepository;
+    private final org.uvo.uvostore.repository.ProductVariationSyncMappingRepository variantMappingRepository;
 
-    public PosCatalogOwnership(ProductSyncMappingRepository mappingRepository, ProductRepository productRepository) {
+    public PosCatalogOwnership(ProductSyncMappingRepository mappingRepository, ProductRepository productRepository,
+                               org.uvo.uvostore.repository.ProductVariationSyncMappingRepository variantMappingRepository) {
         this.mappingRepository = mappingRepository;
         this.productRepository = productRepository;
+        this.variantMappingRepository = variantMappingRepository;
     }
 
     /** Lo que lee el formulario del panel para bloquear los campos. */
@@ -62,6 +65,18 @@ public class PosCatalogOwnership {
     public Set<PosOwnedField> lockedFields(Product product) {
         Set<PosOwnedField> locked = EnumSet.noneOf(PosOwnedField.class);
         for (ProductSyncMapping mapping : activeMappings(product.getId())) {
+            if (mapping.getExternalId() == null) {
+                // IMP-08. El padre de un producto con variantes no es un Producto del POS: su nombre y su SKU son de la
+                // tienda. Precio y stock resumen sus variantes, y siguen sin editarse.
+                if (mapping.isSyncPrice()) {
+                    locked.add(PosOwnedField.PRICE);
+                }
+                if (mapping.isSyncStock()) {
+                    locked.add(PosOwnedField.STOCK);
+                    locked.add(PosOwnedField.MANAGE_STOCK);
+                }
+                continue;
+            }
             locked.add(PosOwnedField.SKU);
             if (mapping.isSyncName()) {
                 locked.add(PosOwnedField.NAME);
@@ -105,16 +120,45 @@ public class PosCatalogOwnership {
     }
 
     /**
-     * Las variantes de un producto sincronizado son del POS (POS-5): las crea, las quita y les pone precio y stock
-     * por la sincronización, y el panel no las toca. {@code VariationCommand} solo trae campos del POS —SKU, precio,
-     * stock y atributos—, así que no hay una parte editable que dejar pasar. Y en un producto simple mapeado, una
-     * variante creada en el panel lo volvería variable sin que el POS lo supiera.
+     * IMP-08. Un producto simple que es un Producto del POS no puede tener variantes: una creada en el panel lo
+     * volvería variable sin que el POS lo supiera. En un producto con variantes la agrupación es de la tienda
+     * (contrato §4): sus variaciones se crean y se quitan en el panel, y cada una se vincula a su Producto del POS.
      */
     public void requireNotMapped(Long productId) {
-        if (!activeMappings(productId).isEmpty()) {
-            throw new BusinessException("Este producto se sincroniza con UvoPOS: sus variantes se crean y se cambian "
-                    + "en el POS, no en el panel.");
+        boolean posProduct = activeMappings(productId).stream().anyMatch(mapping -> mapping.getExternalId() != null);
+        if (posProduct) {
+            throw new BusinessException("Este producto es un Producto de UvoPOS: no puede tener variantes. Crea las "
+                    + "variantes en un producto con variantes y vincula cada una a su Producto del POS.");
         }
+    }
+
+    /**
+     * IMP-08. Una variación vinculada a un Producto del POS: su SKU, su precio y su stock son del POS (§4). Igual que
+     * {@link #checkUpdate}, un valor que llega igual al guardado pasa.
+     */
+    public void checkVariationUpdate(org.uvo.uvostore.entity.catalog.ProductVariation stored, String sku,
+                                     BigDecimal price, Integer stock) {
+        if (!isLinked(stored)) {
+            return;
+        }
+        boolean changed = differs(sku, stored.getSku()) || differs(price, stored.getPrice())
+                || (stock != null && stock != stored.getStock());
+        if (changed) {
+            throw new BusinessException("Esta variante es un Producto de UvoPOS: el SKU, el precio y el stock se "
+                    + "cambian en el POS, no en el panel.");
+        }
+    }
+
+    /** IMP-08. Una variación vinculada no se borra: primero se desvincula. */
+    public void requireNotLinked(org.uvo.uvostore.entity.catalog.ProductVariation variation) {
+        if (isLinked(variation)) {
+            throw new BusinessException("Esta variante está vinculada a un Producto de UvoPOS: desvincúlala antes de "
+                    + "borrarla.");
+        }
+    }
+
+    private boolean isLinked(org.uvo.uvostore.entity.catalog.ProductVariation variation) {
+        return !variantMappingRepository.findByVariationId(variation.getId()).isEmpty();
     }
 
     // Lista y no Optional: un producto puede estar mapeado a dos empresas (PROD-13b).

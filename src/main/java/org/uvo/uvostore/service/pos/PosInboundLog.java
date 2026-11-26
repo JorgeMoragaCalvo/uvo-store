@@ -38,6 +38,11 @@ public class PosInboundLog {
         return close(log, WebhookStatus.SUCCESS, null);
     }
 
+    /** IMP-08. Aplicada, con una observación (el stock que se dejó para la conciliación, §6). */
+    public SyncWebhookLog success(SyncWebhookLog log, String note) {
+        return close(log, WebhookStatus.SUCCESS, note);
+    }
+
     public SyncWebhookLog failed(SyncWebhookLog log, String error) {
         return close(log, WebhookStatus.FAILED, error);
     }

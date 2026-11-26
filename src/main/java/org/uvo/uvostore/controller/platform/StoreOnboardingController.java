@@ -36,7 +36,8 @@ public class StoreOnboardingController {
                 request.slug(), request.domain(), request.storeName(),
                 request.adminName(), request.adminEmail(),
                 pos == null ? null : new StoreOnboardingCommand.PosLink(pos.companyId(), pos.companyName(),
-                        pos.apiUrl(), pos.apiKey(), pos.webhookSecret())
+                        pos.apiUrl(), pos.outboundKeyId(), pos.outboundSecret(), pos.inboundKeyId(),
+                        pos.inboundSecret())
         ));
     }
 

@@ -107,6 +107,19 @@ public interface OutboxMessageRepository extends JpaRepository<OutboxMessage, Lo
     int finish(@Param("id") Long id, @Param("attempts") int attempts, @Param("status") OutboxStatus status,
                @Param("error") String error, @Param("now") Instant now);
 
+    /**
+     * IMP-08. Fija el cuerpo de una venta al POS, solo si todavía no tenía: una vez fijado no cambia nunca.
+     * Devuelve 1 si lo fijó esta llamada.
+     */
+    @Modifying
+    @Query("update OutboxMessage m set m.payload = :payload where m.id = :id and m.payload is null")
+    int fixPayload(@Param("id") Long id, @Param("payload") String payload);
+
+    /** IMP-08. El id de la venta en el POS, cuando la registró. */
+    @Modifying
+    @Query("update OutboxMessage m set m.posSaleId = :saleId where m.id = :id")
+    int recordPosSale(@Param("id") Long id, @Param("saleId") Long saleId);
+
     /** De vuelta a la cola, para otro intento a partir de {@code nextAttemptAt}. */
     @Modifying
     @Query("""

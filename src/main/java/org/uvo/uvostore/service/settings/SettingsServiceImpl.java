@@ -14,7 +14,8 @@ import org.uvo.uvostore.service.BusinessException;
 import org.uvo.uvostore.service.audit.AuditDiff;
 import org.uvo.uvostore.service.audit.AuditEntry;
 import org.uvo.uvostore.service.audit.AuditTrail;
-import org.uvo.uvostore.service.pos.PosApiKey;
+import org.uvo.uvostore.entity.pos.PosConnectionKey;
+import org.uvo.uvostore.service.pos.PosConnectionKeyService;
 import org.uvo.uvostore.service.pos.PosIntegrationPolicy;
 
 @Service
@@ -23,15 +24,17 @@ public class SettingsServiceImpl implements SettingsService {
     private final SettingRepository settingRepository;
     private final PosConnectionRepository posConnectionRepository;
     private final PosIntegrationPolicy posPolicy;
+    private final PosConnectionKeyService posKeys;
     private final org.uvo.uvostore.service.payment.PaymentPlatformPolicy gatewayPolicy;
     private final AuditTrail auditTrail;
 
     public SettingsServiceImpl(SettingRepository settingRepository, PosConnectionRepository posConnectionRepository,
-                               PosIntegrationPolicy posPolicy, AuditTrail auditTrail,
+                               PosIntegrationPolicy posPolicy, PosConnectionKeyService posKeys, AuditTrail auditTrail,
                                org.uvo.uvostore.service.payment.PaymentPlatformPolicy gatewayPolicy) {
         this.settingRepository = settingRepository;
         this.posConnectionRepository = posConnectionRepository;
         this.posPolicy = posPolicy;
+        this.posKeys = posKeys;
         this.gatewayPolicy = gatewayPolicy;
         this.auditTrail = auditTrail;
     }
@@ -47,7 +50,10 @@ public class SettingsServiceImpl implements SettingsService {
                 get("free_shipping_threshold", "0"), getBool("allow_guest_checkout", true), getBool("require_phone", false),
                 getBool("require_company", false), get("stripe_public_key", ""), isSet("stripe_secret_key"),
                 getBool("stripe_enabled", false), get("pos_api_url", ""),
-                connection != null && notBlank(connection.getApiKey()), connection != null && notBlank(connection.getWebhookSecret()),
+                connection == null ? null : connection.getCompanyId(),
+                connection == null ? null : posKeys.currentOutbound(connection).map(PosConnectionKey::getKeyId).orElse(null),
+                connection == null ? null : currentInboundKeyId(connection),
+                connection != null && connection.isActive(),
                 getBool("pos_sync_enabled", false), posPolicy.isEnabled(),
                 get("meta_title", ""), get("meta_description", ""), get("meta_keywords", ""),
                 get("facebook_url", ""), get("instagram_url", ""), get("twitter_url", "")
@@ -57,8 +63,6 @@ public class SettingsServiceImpl implements SettingsService {
     @Override
     @Transactional
     public GeneralSettingsDto updateGeneralSettings(GeneralSettingsUpdateRequest command) {
-        String posToken = command.posApiToken() == null ? "" : command.posApiToken().trim();
-
         // F17. Todo lo que participa en dinero se valida y se normaliza ANTES de escribir nada. El
         // método es transaccional, así que un rechazo aquí deshace lo ya escrito de todos modos, pero
         // resolverlo primero deja el orden explícito: la tienda no queda a medio configurar por un
@@ -108,46 +112,12 @@ public class SettingsServiceImpl implements SettingsService {
         set("instagram_url", command.instagramUrl());
         set("twitter_url", command.twitterUrl());
 
-        // POS integration is optional — only validate/upsert the connection when the admin
-        // actually supplied a token, so saving unrelated settings (colors, shipping, checkout
-        // options) never fails just because the store hasn't set up UvoPOS yet. The token/secret
-        // are never stored in the plain-text `settings` table — only on PosConnection, whose
-        // apiKey/webhookSecret columns are encrypted at rest (see EncryptedStringConverter).
-        if (!posToken.isEmpty()) {
-            Long companyId = PosApiKey.companyIdOf(posToken)
-                    .orElseThrow(() -> new IllegalArgumentException("API key inválida"));
-            Store store = TenantContext.requireCurrent();
-            PosConnection connection = posConnectionRepository.findByStoreId(store.getId()).orElseGet(PosConnection::new);
-            // PROD-18. Lo de antes, en claro y en memoria (EncryptedStringConverter ya lo descifró al cargar).
-            boolean created = connection.getId() == null;
-            Long previousCompanyId = connection.getCompanyId();
-            String previousApiKey = connection.getApiKey();
-            String previousWebhookSecret = connection.getWebhookSecret();
-            boolean wasActive = connection.isActive();
-            connection.setStore(store);
-            connection.setCompanyId(companyId);
-            connection.setApiKey(command.posApiToken());
-            if (notBlank(command.posWebhookSecret())) {
-                connection.setWebhookSecret(command.posWebhookSecret());
-            } else if (connection.getWebhookSecret() == null) {
-                connection.setWebhookSecret("");
-            }
-            requirePosWebhookSecret(connection);
-            connection.setActive(true);
-            if (connection.getCompanyName() == null) {
-                connection.setCompanyName("UvoPOS");
-            }
-            if (connection.getApiUrl() == null) {
-                connection.setApiUrl(command.posApiUrl() == null ? "" : command.posApiUrl());
-            }
-            PosConnection saved = posConnectionRepository.save(connection);
-            pos.value("companyId", previousCompanyId, saved.getCompanyId())
-                    .secret("apiKey", previousApiKey, saved.getApiKey())
-                    .secret("webhookSecret", previousWebhookSecret, saved.getWebhookSecret())
-                    .value("active", wasActive, saved.isActive());
-            if (created) {
-                pos.with("connectionCreated", true);
-            }
+        // POS integration is optional — only validate/upsert the connection when the admin actually
+        // supplied connection data, so saving unrelated settings (colors, shipping, checkout options)
+        // never fails just because the store hasn't set up UvoPOS yet. Key secrets are never stored in
+        // the plain-text `settings` table — only on PosConnectionKey, encrypted at rest.
+        if (submitsPosConnection(command)) {
+            savePosConnection(command, pos);
         }
 
         recordIfChanged(AuditAction.SETTINGS_MONEY_UPDATE, money);
@@ -189,28 +159,127 @@ public class SettingsServiceImpl implements SettingsService {
      * {@link #setSecret}.
      */
     /**
-     * PROD-12. Activar la conexión al POS exige el secreto con el que se firman sus webhooks, igual que
-     * F17 exige credenciales para activar Stripe y M3 para MercadoPago, y por la misma razón: se rechaza
-     * donde la persona puede hacer algo al respecto.
-     *
-     * <p>Antes la conexión quedaba {@code active = true} de forma incondicional, con el secreto en cadena
-     * vacía si el administrador dejaba el campo en blanco. Y eso no deja la puerta abierta, la deja
-     * <b>rota</b>: {@code PosWebhookAuthFilter} no comprueba que el secreto exista antes de firmar, así
-     * que cada webhook entrante de esa tienda muere al construir el HMAC — desde un filtro, donde
-     * {@code GlobalExceptionHandler} no llega. Una conexión que se presenta como activa y no puede
-     * autenticar ni una petición es peor que no tenerla.
-     *
-     * <p>Se comprueba sobre la conexión y no sobre el comando porque el secreto cuenta si <b>llega o ya
-     * estaba guardado</b>: el panel nunca puede pre-rellenar un secreto, así que un guardado que no toca
-     * ese campo no debe fallar por él. Misma regla que {@link #requireStripeCredentials}.
+     * Si el formulario cambia algo de la conexión. El panel reenvía la empresa y los key_id vigentes con cada guardado;
+     * si son los mismos y no trae secretos, no hay nada que validar, y guardar otro ajuste no debe fallar porque la
+     * conexión esté sin llaves (por ejemplo, revocadas).
      */
-    private void requirePosWebhookSecret(PosConnection connection) {
-        if (notBlank(connection.getWebhookSecret())) {
-            return;
+    private boolean submitsPosConnection(GeneralSettingsUpdateRequest command) {
+        boolean anything = command.posCompanyId() != null
+                || notBlank(command.posOutboundKeyId()) || notBlank(command.posOutboundSecret())
+                || notBlank(command.posInboundKeyId()) || notBlank(command.posInboundSecret());
+        if (!anything) {
+            return false;
         }
-        throw new BusinessException(
-                "Para conectar UvoPOS debes indicar el secreto de webhook: es con lo que se firman las "
-                        + "notificaciones que llegan del POS, y sin él ninguna se puede verificar.");
+        PosConnection current = posConnectionRepository.findByStoreId(TenantContext.requireStoreId()).orElse(null);
+        if (current == null || notBlank(command.posOutboundSecret()) || notBlank(command.posInboundSecret())) {
+            return true;
+        }
+        boolean sameCompany = command.posCompanyId() == null || command.posCompanyId().equals(current.getCompanyId());
+        boolean sameUrl = !notBlank(command.posApiUrl()) || command.posApiUrl().trim().equals(current.getApiUrl());
+        boolean sameOutbound = !notBlank(command.posOutboundKeyId()) || command.posOutboundKeyId().trim().equals(
+                posKeys.currentOutbound(current).map(PosConnectionKey::getKeyId).orElse(null));
+        boolean sameInbound = !notBlank(command.posInboundKeyId())
+                || command.posInboundKeyId().trim().equals(currentInboundKeyId(current));
+        return !(sameCompany && sameUrl && sameOutbound && sameInbound);
+    }
+
+    /**
+     * IMP-08. Crea o actualiza la conexión con UvoPOS y sus dos llaves (contrato §2).
+     *
+     * <p>PROD-12, con el esquema nuevo: la conexión solo queda activa con una llave vigente en cada dirección. Una
+     * conexión que se presenta como activa y no puede firmar ni verificar una petición es peor que no tenerla, así
+     * que se rechaza aquí, donde la persona puede hacer algo al respecto.
+     *
+     * <p>Un secreto cuenta si <b>llega o ya estaba guardado</b>: el panel nunca puede pre-rellenarlo, así que un
+     * guardado que repite el {@code key_id} vigente sin secreto deja esa llave como está. Un {@code key_id} distinto
+     * con su secreto es una rotación ({@link PosConnectionKeyService#install}).
+     */
+    private void savePosConnection(GeneralSettingsUpdateRequest command, AuditDiff pos) {
+        Store store = TenantContext.requireCurrent();
+        PosConnection connection = posConnectionRepository.findByStoreId(store.getId()).orElseGet(PosConnection::new);
+        boolean created = connection.getId() == null;
+        Long previousCompanyId = connection.getCompanyId();
+        String previousApiUrl = connection.getApiUrl();
+        String previousOutbound = created ? null : posKeys.currentOutbound(connection).map(PosConnectionKey::getKeyId).orElse(null);
+        String previousInbound = created ? null : currentInboundKeyId(connection);
+        boolean wasActive = connection.isActive();
+
+        Long companyId = command.posCompanyId() != null ? command.posCompanyId() : connection.getCompanyId();
+        if (companyId == null || companyId <= 0) {
+            throw new BusinessException("Para conectar UvoPOS debes indicar la empresa del POS.");
+        }
+        posConnectionRepository.findByCompanyId(companyId)
+                .filter(other -> !other.getId().equals(connection.getId()))
+                .ifPresent(other -> {
+                    throw new BusinessException("La empresa " + companyId + " del POS ya está conectada a otra tienda.");
+                });
+        String apiUrl = notBlank(command.posApiUrl()) ? command.posApiUrl().trim() : connection.getApiUrl();
+        if (!notBlank(apiUrl) || !apiUrl.matches("^https?://\\S+$")) {
+            throw new BusinessException("Para conectar UvoPOS debes indicar la URL de su API (https://…).");
+        }
+
+        connection.setStore(store);
+        connection.setCompanyId(companyId);
+        connection.setApiUrl(apiUrl);
+        if (connection.getCompanyName() == null) {
+            connection.setCompanyName("UvoPOS");
+        }
+        if (created) {
+            connection.setActive(false);
+            connection.setConnectedAt(java.time.Instant.now());
+        }
+        PosConnection saved = posConnectionRepository.save(connection);
+
+        boolean outboundRotated = installIfSubmitted(saved, PosConnectionKey.Direction.OUTBOUND,
+                command.posOutboundKeyId(), command.posOutboundSecret(), previousOutbound);
+        boolean inboundRotated = installIfSubmitted(saved, PosConnectionKey.Direction.INBOUND,
+                command.posInboundKeyId(), command.posInboundSecret(), previousInbound);
+        if (!posKeys.hasUsableKeys(saved)) {
+            throw new BusinessException("Para conectar UvoPOS debes indicar las dos llaves, tienda→POS y POS→tienda, "
+                    + "cada una con su key_id y su secreto: sin ellas no se puede firmar ni verificar ninguna petición.");
+        }
+        saved.setActive(true);
+
+        pos.value("companyId", previousCompanyId, saved.getCompanyId())
+                .value("apiUrl", previousApiUrl, saved.getApiUrl())
+                .value("outboundKeyId", previousOutbound, posKeys.currentOutbound(saved).map(PosConnectionKey::getKeyId).orElse(null))
+                .value("inboundKeyId", previousInbound, currentInboundKeyId(saved))
+                .value("active", wasActive, saved.isActive());
+        if (outboundRotated || inboundRotated) {
+            pos.with("keysInstalled", true);
+        }
+        if (created) {
+            pos.with("connectionCreated", true);
+        }
+    }
+
+    private boolean installIfSubmitted(PosConnection connection, PosConnectionKey.Direction direction, String keyId,
+                                       String secret, String currentKeyId) {
+        if (!notBlank(keyId) && !notBlank(secret)) {
+            return false;
+        }
+        if (!notBlank(keyId)) {
+            throw new BusinessException("Falta el key_id de la llave " + label(direction) + ".");
+        }
+        if (!notBlank(secret)) {
+            if (keyId.trim().equals(currentKeyId)) {
+                return false;
+            }
+            throw new BusinessException("Falta el secreto de la llave " + label(direction) + ".");
+        }
+        return posKeys.install(connection, direction, keyId.trim(), secret);
+    }
+
+    private String currentInboundKeyId(PosConnection connection) {
+        return posKeys.describe(connection).stream()
+                .filter(key -> key.direction() == PosConnectionKey.Direction.INBOUND && key.usable())
+                .map(PosConnectionKeyService.KeyView::keyId)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private static String label(PosConnectionKey.Direction direction) {
+        return direction == PosConnectionKey.Direction.OUTBOUND ? "tienda→POS" : "POS→tienda";
     }
 
     private void requireStripeCredentials(GeneralSettingsUpdateRequest command) {

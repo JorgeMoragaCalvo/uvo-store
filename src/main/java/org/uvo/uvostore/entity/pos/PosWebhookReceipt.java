@@ -30,12 +30,12 @@ public class PosWebhookReceipt {
     @EqualsAndHashCode.Include
     private Long id;
 
-    @Column(name = "company_id", nullable = false)
-    private Long companyId;
+    // IMP-08. El nonce ya visto con esa llave (contrato §3, regla 3), y no la firma como en F21.
+    @Column(name = "key_id", nullable = false, length = 100)
+    private String keyId;
 
-    // El HMAC ya verificado (64 caracteres hex): es el id del evento (F21).
     @Column(nullable = false, length = 64)
-    private String signature;
+    private String nonce;
 
     @Column(name = "received_at", nullable = false)
     private Instant receivedAt;

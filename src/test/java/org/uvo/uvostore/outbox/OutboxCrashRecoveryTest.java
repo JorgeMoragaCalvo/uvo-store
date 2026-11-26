@@ -130,12 +130,12 @@ class OutboxCrashRecoveryTest {
         Fixture f = fixture();
         Order order = paidOrder(f);
         OutboxMessage row = posRow(order, f.connection().getCompanyId(), OutboxStatus.PENDING, 0, Instant.now());
-        when(posClient.notifyOrder(any(), any())).thenReturn(PosDelivery.sent(Map.of()));
+        when(posClient.notifyOrder(any(), any(), any())).thenReturn(PosDelivery.sent(Map.of()));
 
         dispatcher.dispatch(OutboxChannel.POS);
         dispatcher.dispatch(OutboxChannel.POS);
 
-        verify(posClient, times(1)).notifyOrder(any(), any());
+        verify(posClient, times(1)).notifyOrder(any(), any(), any());
         OutboxMessage after = reload(row);
         assertThat(after.getStatus()).isEqualTo(OutboxStatus.SENT);
         assertThat(after.getAttempts()).isEqualTo(1);
@@ -152,7 +152,7 @@ class OutboxCrashRecoveryTest {
 
         dispatcher.dispatch(OutboxChannel.POS);
 
-        verify(posClient, never()).notifyOrder(any(), any());
+        verify(posClient, never()).notifyOrder(any(), any(), any());
         OutboxMessage after = reload(row);
         assertThat(after.getStatus()).isEqualTo(OutboxStatus.FAILED);
         assertThat(after.getLastError()).contains("Huérfana en vuelo");
@@ -167,7 +167,7 @@ class OutboxCrashRecoveryTest {
 
         dispatcher.dispatch(OutboxChannel.POS);
 
-        verify(posClient, never()).notifyOrder(any(), any());
+        verify(posClient, never()).notifyOrder(any(), any(), any());
         assertThat(reload(row).getStatus()).isEqualTo(OutboxStatus.IN_FLIGHT);
     }
 
@@ -176,13 +176,13 @@ class OutboxCrashRecoveryTest {
     void fromThePaymentToThePos() {
         Fixture f = fixture();
         Order order = pendingOrder(f);
-        when(posClient.notifyOrder(any(), any())).thenReturn(PosDelivery.sent(Map.of()));
+        when(posClient.notifyOrder(any(), any(), any())).thenReturn(PosDelivery.sent(Map.of()));
 
         transactionTemplate.executeWithoutResult(status ->
                 orderStatusService.markPaid(order.getId(), "pi_crash", order.getTotal()));
         dispatcher.dispatch(OutboxChannel.POS);
 
-        verify(posClient, times(1)).notifyOrder(any(), any());
+        verify(posClient, times(1)).notifyOrder(any(), any(), any());
         assertThat(outboxRepository.findByOrderIdOrderByIdAsc(order.getId()))
                 .filteredOn(row -> row.getType() == OutboxType.POS_ORDER)
                 .singleElement()
@@ -213,7 +213,7 @@ class OutboxCrashRecoveryTest {
         verify(emailService, times(1)).deliver(any(), any(), any());
         assertThat(reload(row).getStatus()).isEqualTo(OutboxStatus.SENT);
         // El POS va por su propio canal: despachar el correo no lo toca.
-        verify(posClient, never()).notifyOrder(any(), any());
+        verify(posClient, never()).notifyOrder(any(), any(), any());
     }
 
     // --- fixtures ----------------------------------------------------------------------------------
@@ -250,8 +250,6 @@ class OutboxCrashRecoveryTest {
         connection.setCompanyName("Empresa " + seq);
         connection.setCompanyId(seq);
         connection.setApiUrl("https://pos.test.local/api");
-        connection.setApiKey("api-key");
-        connection.setWebhookSecret("webhook-secret");
         connection.setActive(true);
         connection = posConnectionRepository.save(connection);
         createdConnections.add(connection);

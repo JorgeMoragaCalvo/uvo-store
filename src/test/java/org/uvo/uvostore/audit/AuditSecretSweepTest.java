@@ -94,10 +94,12 @@ class AuditSecretSweepTest extends IntegrationTestSupport {
                   "shippingEnabled":true,"defaultShippingCost":"0","freeShippingEnabled":false,"freeShippingThreshold":"0",
                   "allowGuestCheckout":true,"requirePhone":false,"requireCompany":false,
                   "stripePublicKey":"%s","stripeSecretKey":"%s","stripeEnabled":true,
-                  "posApiUrl":"https://pos.test","posApiToken":"uvp_%d_%s","posWebhookSecret":"%s","posSyncEnabled":true,
+                  "posApiUrl":"https://pos.test","posCompanyId":%d,
+                  "posOutboundKeyId":"out-%d","posOutboundSecret":"%s","posInboundKeyId":"in-%d","posInboundSecret":"%s",
+                  "posSyncEnabled":true,
                   "metaTitle":"","metaDescription":"","metaKeywords":"","facebookUrl":"","instagramUrl":"","twitterUrl":""
                 }
-                """.formatted(marker(), marker(), company, marker(), marker());
+                """.formatted(marker(), marker(), company, company, secretMarker(), company, secretMarker());
         mockMvc.perform(auth(put("/api/admin/settings/general")).contentType("application/json").content(body))
                 .andExpect(status().isOk());
     }
@@ -197,8 +199,8 @@ class AuditSecretSweepTest extends IntegrationTestSupport {
                 {"slug":"audit-sweep-pos-%d","domain":"","storeName":"Tienda del POS","adminName":"Dueno",
                  "adminEmail":"dueno-sweep-%d@test.local",
                  "pos":{"companyId":%d,"companyName":"Empresa","apiUrl":"http://pos.internal/%s",
-                        "apiKey":"uvp_%d_%s","webhookSecret":"%s"}}"""
-                .formatted(nextSeq(), nextSeq(), company, marker(), company, marker(), marker());
+                        "outboundKeyId":"out-%d","outboundSecret":"%s","inboundKeyId":"in-%d","inboundSecret":"%s"}}"""
+                .formatted(nextSeq(), nextSeq(), company, marker(), company, secretMarker(), company, secretMarker());
         String response = mockMvc.perform(post("/api/platform/stores")
                         .header("X-Platform-Key", platformKey)
                         .header("X-Platform-Operator", "op-sweep")
@@ -273,6 +275,11 @@ class AuditSecretSweepTest extends IntegrationTestSupport {
     }
 
     /** Un secreto nuevo y reconocible (33 caracteres: cumple los mínimos de largo del POS). */
+    /** IMP-08. Un secreto de llave del POS válido (base64 de 33 bytes) que lleva un marcador dentro. */
+    private String secretMarker() {
+        return marker() + "AAAAAAAAAAA";
+    }
+
     private String marker() {
         String marker = "S" + UUID.randomUUID().toString().replace("-", "");
         markers.add(marker);

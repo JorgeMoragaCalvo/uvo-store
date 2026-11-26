@@ -580,8 +580,12 @@ export interface GeneralSettingsDto {
   stripeSecretKeyConfigured: boolean
   stripeEnabled: boolean
   posApiUrl: string
-  posApiTokenConfigured: boolean
-  posWebhookSecretConfigured: boolean
+  // IMP-08. La empresa del POS y los key_id vigentes de las dos llaves (no son secretos); de los secretos, nada.
+  // posConnectionActive dice si la conexión tiene sus dos llaves y está activa.
+  posCompanyId: number | null
+  posOutboundKeyId: string | null
+  posInboundKeyId: string | null
+  posConnectionActive: boolean
   posSyncEnabled: boolean
   // PROD-12, solo lectura: si esta instalación tiene la integración POS habilitada. En false,
   // posSyncEnabled no decide nada y el formulario lo dice en vez de ofrecer un interruptor sin efecto.
@@ -596,10 +600,40 @@ export interface GeneralSettingsDto {
 
 // Mirrors GeneralSettingsUpdateRequest — PUT body. Secret fields are write-only: blank/omitted
 // means "leave the stored value unchanged" (see SettingsServiceImpl.setSecret).
-export interface GeneralSettingsUpdateRequest extends Omit<GeneralSettingsDto, 'stripeSecretKeyConfigured' | 'posApiTokenConfigured' | 'posWebhookSecretConfigured' | 'posIntegrationAvailable'> {
+export interface GeneralSettingsUpdateRequest
+  extends Omit<
+    GeneralSettingsDto,
+    | 'stripeSecretKeyConfigured'
+    | 'posIntegrationAvailable'
+    | 'posConnectionActive'
+    | 'posOutboundKeyId'
+    | 'posInboundKeyId'
+  > {
   stripeSecretKey: string
-  posApiToken: string
-  posWebhookSecret: string
+  // IMP-08. Cada llave: su key_id y su secreto base64. Un secreto en blanco deja la llave como está; un key_id
+  // nuevo con su secreto es una rotación (la anterior sigue viva 7 días).
+  posOutboundKeyId: string
+  posOutboundSecret: string
+  posInboundKeyId: string
+  posInboundSecret: string
+}
+
+// IMP-08. Mirrors PosConnectionKeyService.KeyView — una llave de la conexión con UvoPOS, sin su secreto.
+export type PosKeyDirection = 'OUTBOUND' | 'INBOUND'
+
+export interface PosConnectionKeyView {
+  direction: PosKeyDirection
+  keyId: string
+  createdAt: string
+  retiresAt: string | null
+  revokedAt: string | null
+  usable: boolean
+}
+
+// IMP-08. Mirrors PosVariantLinkService.Link — qué Producto del POS es cada variante.
+export interface PosVariantLink {
+  variationId: number
+  posProductId: number
 }
 
 // POS-4. Mirrors PosReconciliationSummary — lo que devuelve "Resincronizar con UvoPOS".

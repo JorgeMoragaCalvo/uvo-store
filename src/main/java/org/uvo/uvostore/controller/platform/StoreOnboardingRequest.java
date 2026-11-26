@@ -6,7 +6,6 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
-import jakarta.validation.constraints.Size;
 
 /**
  * El cuerpo de {@code POST /api/platform/stores}.
@@ -27,7 +26,9 @@ public record StoreOnboardingRequest(
 ) {
 
     /**
-     * POS-6. La conexión con UvoPOS, con los secretos que generó el POS (contrato propuesto, ver CLAUDE.md).
+     * POS-6 e IMP-08. La conexión con UvoPOS, con las dos llaves que generó el POS (contrato §2): la tienda→POS, con
+     * la que firma la tienda, y la POS→tienda, con la que firma el POS sus avisos. Cada una es un {@code key_id} y un
+     * secreto base64 de al menos 32 bytes ({@code PosConnectionKeyService} lo comprueba).
      *
      * <p>Los mensajes no repiten el valor recibido: aquí viajan secretos, y el mensaje de validación vuelve en la
      * respuesta.
@@ -38,15 +39,16 @@ public record StoreOnboardingRequest(
             @NotBlank(message = "Falta el nombre de la empresa") String companyName,
             @NotBlank(message = "Falta la URL de la API del POS")
             @Pattern(regexp = "^https?://\\S+$", message = "La URL de la API del POS no es válida") String apiUrl,
-            @NotBlank(message = "Falta el token de la API") String apiKey,
-            @NotBlank(message = "Falta el secreto de webhook")
-            @Size(min = 32, message = "El secreto de webhook debe tener al menos 32 caracteres") String webhookSecret
+            @NotBlank(message = "Falta el key_id de la llave tienda→POS") String outboundKeyId,
+            @NotBlank(message = "Falta el secreto de la llave tienda→POS") String outboundSecret,
+            @NotBlank(message = "Falta el key_id de la llave POS→tienda") String inboundKeyId,
+            @NotBlank(message = "Falta el secreto de la llave POS→tienda") String inboundSecret
     ) {
 
         @Override
         public String toString() {
             return "PosLinkRequest[companyId=" + companyId + ", companyName=" + companyName + ", apiUrl=" + apiUrl
-                    + ", apiKey=***, webhookSecret=***]";
+                    + ", outboundKeyId=" + outboundKeyId + ", inboundKeyId=" + inboundKeyId + ", secrets=***]";
         }
     }
 }

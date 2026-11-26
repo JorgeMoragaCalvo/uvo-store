@@ -126,6 +126,18 @@ public class OutboxMessage {
     @Column(name = "requeued_at")
     private Instant requeuedAt;
 
+    /**
+     * IMP-08. Solo {@code POS_ORDER}: el cuerpo JSON exacto de la venta, fijado la primera vez que se prepara. Cada
+     * reintento manda estos mismos bytes con una firma y un nonce nuevos: con otro cuerpo, la misma clave daría
+     * {@code IDEMPOTENCY_CONFLICT} (contrato §8). Null hasta el primer intento.
+     */
+    @Column(name = "payload", columnDefinition = "TEXT")
+    private String payload;
+
+    /** IMP-08. El {@code sale_id} con que el POS registró la venta. Null hasta que se entrega. */
+    @Column(name = "pos_sale_id")
+    private Long posSaleId;
+
     /** IMP-06. Un correo de acceso: cuelga de un usuario, no de una orden. */
     public boolean isAccess() {
         return type.channel() == OutboxChannel.ACCESS;

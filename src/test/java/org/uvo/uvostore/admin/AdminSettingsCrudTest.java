@@ -36,12 +36,13 @@ class AdminSettingsCrudTest extends IntegrationTestSupport {
     }
 
     @Test
-    void generalSettingsRejectsAnInvalidPosToken() throws Exception {
+    void generalSettingsRejectsAnInvalidPosKey() throws Exception {
         Store store = createStore("settings-badpos");
         User admin = createAdmin(store, "settings-badpos");
         String token = loginAdmin(store, admin);
 
-        String body = generalSettingsBody("not-a-valid-token");
+        // IMP-08. Un secreto que no es base64 de 32 bytes.
+        String body = generalSettingsBody(posKeys(nextSeq(), "not-a-valid-secret"));
 
         mockMvc.perform(put("/api/admin/settings/general")
                         .header("Host", hostHeader(store))
@@ -52,12 +53,13 @@ class AdminSettingsCrudTest extends IntegrationTestSupport {
     }
 
     @Test
-    void generalSettingsAcceptsAValidPosToken() throws Exception {
+    void generalSettingsAcceptsValidPosKeys() throws Exception {
         Store store = createStore("settings-goodpos");
         User admin = createAdmin(store, "settings-goodpos");
         String token = loginAdmin(store, admin);
 
-        String body = generalSettingsBody("uvp_1_abc123XYZ");
+        long company = nextSeq();
+        String body = generalSettingsBody(posKeys(company, org.uvo.uvostore.support.PosSigning.secret("o" + company)));
 
         mockMvc.perform(put("/api/admin/settings/general")
                         .header("Host", hostHeader(store))
@@ -65,7 +67,7 @@ class AdminSettingsCrudTest extends IntegrationTestSupport {
                         .contentType("application/json")
                         .content(body))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.posApiTokenConfigured").value(true));
+                .andExpect(jsonPath("$.posConnectionActive").value(true));
     }
 
     @Test
@@ -298,13 +300,18 @@ class AdminSettingsCrudTest extends IntegrationTestSupport {
     }
 
     /**
-     * PROD-12: el secreto de webhook va junto al token y no en blanco. Este fixture estaba ejerciendo el
-     * fallo que PROD-12 cierra —un token de POS sin secreto dejaba la conexion activa y sin poder
-     * verificar ni un webhook— igual que el de SettingsControllerTest activaba Stripe sin credenciales
-     * antes de F17. Solo importa cuando el token es valido; los casos de token vacio o mal formado no
-     * llegan a crear conexion.
+     * IMP-08. Los campos de la conexión con UvoPOS: la empresa y las dos llaves, con el secreto tienda→POS dado y uno
+     * válido para la otra. PROD-12 sigue en pie: sin las dos llaves la conexión no se activa.
      */
-    private String generalSettingsBody(String posApiToken) {
+    private static String posKeys(long company, String outboundSecret) {
+        return ("\"posApiUrl\":\"https://pos.test\",\"posCompanyId\":%d,\"posOutboundKeyId\":\"out-%d\","
+                + "\"posOutboundSecret\":\"%s\",\"posInboundKeyId\":\"in-%d\",\"posInboundSecret\":\"%s\",")
+                .formatted(company, company, outboundSecret, company,
+                        org.uvo.uvostore.support.PosSigning.secret("i" + company));
+    }
+
+    /** @param posFields los campos POS ({@link #posKeys}), o vacío para un guardado sin conexión */
+    private String generalSettingsBody(String posFields) {
         return """
                 {
                   "storeName":"Tienda","storeEmail":"a@test.local","storePhone":"+56911111111","adminEmail":"admin@test.local",
@@ -312,10 +319,10 @@ class AdminSettingsCrudTest extends IntegrationTestSupport {
                   "shippingEnabled":true,"defaultShippingCost":"0","freeShippingEnabled":false,"freeShippingThreshold":"0",
                   "allowGuestCheckout":true,"requirePhone":false,"requireCompany":false,
                   "stripePublicKey":"","stripeSecretKey":"","stripeEnabled":false,
-                  "posApiUrl":"","posApiToken":"%s","posWebhookSecret":"whsec_de_prueba_12345","posSyncEnabled":false,
+                  %s"posSyncEnabled":false,
                   "metaTitle":"","metaDescription":"","metaKeywords":"",
                   "facebookUrl":"","instagramUrl":"","twitterUrl":""
                 }
-                """.formatted(posApiToken);
+                """.formatted(posFields.isEmpty() ? "\"posApiUrl\":\"\"," : posFields);
     }
 }

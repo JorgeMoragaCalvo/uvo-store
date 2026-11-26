@@ -73,7 +73,9 @@ public class ProductVariationServiceImpl implements ProductVariationService{
                 .filter(v -> v.getStore().getId().equals(TenantContext.requireStoreId()))
                 .orElseThrow(()-> new NoSuchElementException("Product variation " + variationId + " not found"));
         // POS-2: el producto de la variante, no el {productId} de la ruta, que el controlador no usa para buscar.
+        // IMP-08: una variación vinculada a un Producto del POS conserva su SKU, su precio y su stock.
         posOwnership.requireNotMapped(variation.getProduct().getId());
+        posOwnership.checkVariationUpdate(variation, command.sku(), command.price(), command.stock());
         productRepository.findByIdForUpdate(variation.getProduct().getId());
 
         BigDecimal previousPrice = variation.getPrice();
@@ -105,6 +107,7 @@ public class ProductVariationServiceImpl implements ProductVariationService{
                 .orElseThrow(()-> new NoSuchElementException("Product variation " + variationId + " not found"));
         Long productId = variation.getProduct().getId();
         posOwnership.requireNotMapped(productId);
+        posOwnership.requireNotLinked(variation);
         productRepository.findByIdForUpdate(productId);
 
         variationAttributeRepository.deleteByVariationId(variationId);

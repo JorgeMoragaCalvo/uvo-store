@@ -1,169 +1,147 @@
 package org.uvo.uvostore.pos;
 
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.api.Test;
 import org.uvo.uvostore.entity.order.Order;
+import org.uvo.uvostore.security.UvoHmac;
 import org.uvo.uvostore.service.pos.PosOrderItem;
 import org.uvo.uvostore.service.pos.PosOrderPayload;
 import org.uvo.uvostore.service.pos.PosOrderPayloadMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * G3.1 y G3.3, test de contrato. El cuerpo que se le manda a UvoPOS llevaba solo
- * {@code source}, {@code order_number} e ítems con {@code product_id}/{@code quantity}/{@code price}:
- * sin total, envío, descuento ni IVA, un documento tributario emitido a partir de él sale por un
- * monto distinto del cobrado; y sin clave de idempotencia, el reintento de G2 lo emite dos veces.
- *
- * <p>El test va sobre el mapper y no sobre {@code PosClient} a propósito: el {@code RestClient} de
- * PosClient se instancia dentro de la clase y no hay dónde interceptarlo, mientras que el mapper es
- * una función pura — y es donde vive todo lo que depende del contrato. Fija el cuerpo COMPLETO: si
- * alguien cambia o quita un nombre de campo, esto falla, que es justo lo que se quiere mientras la
- * especificación de la plataforma siga sin confirmarse.
+ * G3, GAP-05 e IMP-08, test de contrato. El cuerpo de la venta (§7) contra los cuatro ejemplos del contrato
+ * ({@code docs/contrato-pos-ecommerce/ejemplos/venta-*.request.json}), leídos del repositorio: una orden armada con
+ * los importes del ejemplo tiene que dar exactamente ese JSON. Y los bytes del ejemplo simple son los del vector de
+ * firma, así que lo que la tienda firma es lo que el contrato fija.
  */
 class PosOrderPayloadMapperTest {
 
+    private static final Path EXAMPLES = Path.of("docs", "contrato-pos-ecommerce", "ejemplos");
+    private static final JsonMapper JSON = JsonMapper.builder().build();
+
     private final PosOrderPayloadMapper mapper = new PosOrderPayloadMapper();
 
-    @Test
-    @DisplayName("El cuerpo lleva los importes de la orden, los del ítem y la clave de idempotencia")
-    void theBodyFixesTheWholeContract() {
-        // GAP-05: el descuento y el IVA de las líneas suman los de la orden (6.000 + 4.000 y 10.260 + 6.840).
-        Order order = order("ORD-2026-0001", "100000", "10000", "3990", "17100", "111090");
+    @ParameterizedTest
+    @ValueSource(strings = {"venta-simple", "venta-variante", "venta-cupon-envio", "venta-iva-no-incluido"})
+    @DisplayName("Cada ejemplo del contrato sale tal cual, y cumple las invariantes del §7")
+    void eachContractExampleIsReproduced(String name) throws Exception {
+        JsonNode expected = JSON.readTree(Files.readString(EXAMPLES.resolve(name + ".request.json")));
 
-        PosOrderPayload payload = mapper.toPayload(order, 42L, List.of(
-                new PosOrderItem(777L, null, 2, new BigDecimal("30000"), new BigDecimal("60000"), new BigDecimal("6000"),
-                        new BigDecimal("10260")),
-                new PosOrderItem(888L, null, 1, new BigDecimal("40000"), new BigDecimal("40000"), new BigDecimal("4000"),
-                        new BigDecimal("6840"))
-        ));
+        PosOrderPayload payload = fromExample(expected);
+        JsonNode actual = JSON.readTree(mapper.toJson(payload));
 
-        assertThat(payload.body()).isEqualTo(Map.of(
-                "source", "uvostore",
-                "order_number", "ORD-2026-0001",
-                "idempotency_key", "ORD-2026-0001:42",
-                "subtotal", new BigDecimal("100000"),
-                "discount_amount", new BigDecimal("10000"),
-                "shipping_cost", new BigDecimal("3990"),
-                "tax_amount", new BigDecimal("17100"),
-                "tax_included", false,
-                "total", new BigDecimal("111090"),
-                "items", List.of(
-                        Map.of("product_id", 777L, "quantity", 2, "price", new BigDecimal("30000"),
-                                "subtotal", new BigDecimal("60000"), "discount_amount", new BigDecimal("6000"),
-                                "tax_amount", new BigDecimal("10260")),
-                        Map.of("product_id", 888L, "quantity", 1, "price", new BigDecimal("40000"),
-                                "subtotal", new BigDecimal("40000"), "discount_amount", new BigDecimal("4000"),
-                                "tax_amount", new BigDecimal("6840"))
-                )
-        ));
+        assertThat(actual).isEqualTo(expected);
+        assertThat(PosOrderPayloadMapper.invariantViolation(payload.body())).isEmpty();
+        assertThat(payload.idempotencyKey()).isEqualTo(expected.get("idempotency_key").asString());
     }
 
     @Test
-    @DisplayName("POS-5: una línea de variación lleva su variante del POS, y una simple sigue sin la clave")
-    void aVariationLineCarriesItsVariant() {
-        Order order = order("ORD-2026-0006", "50000", "0", "0", "9500", "59500");
+    @DisplayName("Los bytes del ejemplo simple son los del vector de firma: compactos y en el orden del contrato")
+    void theSimpleSaleBytesAreTheSignatureVectorBytes() throws Exception {
+        JsonNode vector = JSON.readTree(Files.readString(EXAMPLES.resolve("firma-vector.json")));
+        JsonNode sale = vector.get("casos").get(0);
 
-        PosOrderPayload payload = mapper.toPayload(order, 42L, List.of(
-                new PosOrderItem(500L, 501L, 1, new BigDecimal("10000"), new BigDecimal("10000"), BigDecimal.ZERO,
-                        new BigDecimal("1900")),
-                new PosOrderItem(777L, null, 2, new BigDecimal("20000"), new BigDecimal("40000"), BigDecimal.ZERO,
-                        new BigDecimal("7600"))
-        ));
+        String json = mapper.toJson(fromExample(JSON.readTree(Files.readString(EXAMPLES.resolve("venta-simple.request.json")))));
 
-        assertThat(payload.body().get("items")).isEqualTo(List.of(
-                Map.of("product_id", 500L, "variant_id", 501L, "quantity", 1, "price", new BigDecimal("10000"),
-                        "subtotal", new BigDecimal("10000"), "discount_amount", BigDecimal.ZERO,
-                        "tax_amount", new BigDecimal("1900")),
-                Map.of("product_id", 777L, "quantity", 2, "price", new BigDecimal("20000"),
-                        "subtotal", new BigDecimal("40000"), "discount_amount", BigDecimal.ZERO,
-                        "tax_amount", new BigDecimal("7600"))
-        ));
+        assertThat(json).isEqualTo(sale.get("body").asString());
+        assertThat(UvoHmac.sha256Hex(json.getBytes(java.nio.charset.StandardCharsets.UTF_8)))
+                .isEqualTo(sale.get("body_sha256").asString());
     }
 
     @Test
-    @DisplayName("La clave de idempotencia es la misma en dos llamadas para la misma orden y empresa")
-    void theIdempotencyKeyIsStable() {
+    @DisplayName("Los importes viajan como enteros CLP, y un importe ausente como cero")
+    void amountsAreIntegerPesos() {
+        Order order = order("ORD-2026-0005", "1000.00", null, null, null, "1000");
+
+        Map<String, Object> body = mapper.toPayload(order, 1L,
+                List.of(new PosOrderItem(1L, 1, new BigDecimal("1000.00"), new BigDecimal("1000.00"), null, null))).body();
+
+        assertThat(body.get("subtotal")).isEqualTo(1000L);
+        assertThat(body.get("discount_amount")).isEqualTo(0L);
+        assertThat(body.get("shipping_cost")).isEqualTo(0L);
+        assertThat(body.get("tax_amount")).isEqualTo(0L);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> item = ((List<Map<String, Object>>) body.get("items")).getFirst();
+        assertThat(item).doesNotContainKey("variant_id").containsEntry("price", 1000L).containsEntry("tax_amount", 0L);
+    }
+
+    @Test
+    @DisplayName("La clave es {order_number}:{company_id}: estable, por empresa, y la misma del cuerpo")
+    void theIdempotencyKey() {
         Order order = order("ORD-2026-0002", "1000", "0", "0", "190", "1190");
 
         String first = mapper.toPayload(order, 7L, List.of(item())).idempotencyKey();
         String second = mapper.toPayload(order, 7L, List.of(item())).idempotencyKey();
+        PosOrderPayload otherCompany = mapper.toPayload(order, 8L, List.of(item()));
 
-        // Esto —y no otra cosa— es lo que impide que un reintento emita un segundo documento
-        // tributario. Una clave aleatoria o derivada del reloj rompe este test, que es el punto.
         assertThat(first).isEqualTo(second).isEqualTo("ORD-2026-0002:7");
+        assertThat(otherCompany.idempotencyKey()).isNotEqualTo(first);
+        assertThat(otherCompany.body().get("idempotency_key")).isEqualTo(otherCompany.idempotencyKey());
     }
 
     @Test
-    @DisplayName("Cada empresa tiene su propia clave: son dos documentos distintos")
-    void theIdempotencyKeyIsPerCompany() {
-        Order order = order("ORD-2026-0003", "1000", "0", "0", "190", "1190");
+    @DisplayName("Una orden que no cuadra se detecta antes de enviarla: el POS la rechazaría para siempre")
+    void anOrderThatDoesNotAddUpIsCaught() {
+        // Las líneas suman 1000 de subtotal y la orden dice 1100.
+        Order wrongSubtotal = order("ORD-X-1", "1100", "0", "0", "190", "1290");
+        // total = subtotal - descuento + envío + IVA (sin IVA incluido) = 1190, y dice 1200.
+        Order wrongTotal = order("ORD-X-2", "1000", "0", "0", "190", "1200");
 
-        assertThat(mapper.toPayload(order, 1L, List.of(item())).idempotencyKey())
-                .isNotEqualTo(mapper.toPayload(order, 2L, List.of(item())).idempotencyKey());
+        assertThat(PosOrderPayloadMapper.invariantViolation(mapper.toPayload(wrongSubtotal, 1L, List.of(item())).body()))
+                .hasValueSatisfying(message -> assertThat(message).contains("subtotal"));
+        assertThat(PosOrderPayloadMapper.invariantViolation(mapper.toPayload(wrongTotal, 1L, List.of(item())).body()))
+                .hasValueSatisfying(message -> assertThat(message).contains("total"));
+        assertThat(PosOrderPayloadMapper.invariantViolation(
+                mapper.toPayload(order("ORD-X-3", "1000", "0", "0", "190", "1190"), 1L, List.of(item())).body()))
+                .isEmpty();
     }
 
-    @Test
-    @DisplayName("La clave del cuerpo y la de la cabecera son la misma")
-    void theKeyInTheBodyIsTheOneSentAsAHeader() {
-        Order order = order("ORD-2026-0004", "1000", "0", "0", "190", "1190");
+    // --- fixtures ----------------------------------------------------------------------------------
 
-        PosOrderPayload payload = mapper.toPayload(order, 9L, List.of(item()));
-
-        assertThat(payload.body().get("idempotency_key")).isEqualTo(payload.idempotencyKey());
-    }
-
-    @Test
-    @DisplayName("Un importe ausente viaja como cero, no como null")
-    void missingAmountsTravelAsZero() {
-        Order order = new Order();
-        order.setOrderNumber("ORD-2026-0005");
-        order.setSubtotal(new BigDecimal("1000"));
-        order.setTotal(new BigDecimal("1000"));
-        order.setDiscountAmount(null);
-        order.setShippingCost(null);
-        order.setTaxAmount(null);
-
-        Map<String, Object> body = mapper.toPayload(order, 1L,
-                List.of(new PosOrderItem(1L, null, 1, new BigDecimal("1000"), null, null, null))).body();
-
-        assertThat(body.get("discount_amount")).isEqualTo(BigDecimal.ZERO);
-        assertThat(body.get("shipping_cost")).isEqualTo(BigDecimal.ZERO);
-        assertThat(body.get("tax_amount")).isEqualTo(BigDecimal.ZERO);
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> firstItem = ((List<Map<String, Object>>) body.get("items")).getFirst();
-        assertThat(firstItem.get("subtotal")).isEqualTo(BigDecimal.ZERO);
-        assertThat(firstItem.get("discount_amount")).isEqualTo(BigDecimal.ZERO);
-        assertThat(firstItem.get("tax_amount")).isEqualTo(BigDecimal.ZERO);
-    }
-
-    @Test
-    @DisplayName("GAP-05: una orden con precios con IVA incluido lo dice, para que el receptor sepa cómo suma")
-    void aTaxInclusiveOrderSaysSo() {
-        // 11.900 − 1.000 = 10.900, con 1.740 de IVA contenido: aquí el IVA no se suma.
-        Order order = order("ORD-2026-0007", "11900", "1000", "0", "1740", "10900");
-        order.setTaxIncluded(true);
-
-        assertThat(mapper.toPayload(order, 1L, List.of(item())).body().get("tax_included")).isEqualTo(true);
+    /** La orden y las líneas que darían el ejemplo: lo que la tienda tiene guardado de esa venta. */
+    private PosOrderPayload fromExample(JsonNode example) {
+        Order order = order(example.get("order_number").asString(), example.get("subtotal").asString(),
+                example.get("discount_amount").asString(), example.get("shipping_cost").asString(),
+                example.get("tax_amount").asString(), example.get("total").asString());
+        order.setTaxIncluded(example.get("tax_included").asBoolean());
+        List<PosOrderItem> items = new ArrayList<>();
+        for (JsonNode line : example.get("items")) {
+            items.add(new PosOrderItem(line.get("product_id").asLong(), line.get("quantity").asInt(),
+                    new BigDecimal(line.get("price").asString()), new BigDecimal(line.get("subtotal").asString()),
+                    new BigDecimal(line.get("discount_amount").asString()),
+                    new BigDecimal(line.get("tax_amount").asString())));
+        }
+        String key = example.get("idempotency_key").asString();
+        Long company = Long.valueOf(key.substring(key.lastIndexOf(':') + 1));
+        return mapper.toPayload(order, company, items);
     }
 
     private static PosOrderItem item() {
-        return new PosOrderItem(1L, null, 1, new BigDecimal("1000"), new BigDecimal("1000"), BigDecimal.ZERO,
+        return new PosOrderItem(1L, 1, new BigDecimal("1000"), new BigDecimal("1000"), BigDecimal.ZERO,
                 new BigDecimal("190"));
     }
 
-    private static Order order(String orderNumber, String subtotal, String discount, String shipping, String tax, String total) {
+    private static Order order(String orderNumber, String subtotal, String discount, String shipping, String tax,
+                               String total) {
         Order order = new Order();
         order.setOrderNumber(orderNumber);
         order.setSubtotal(new BigDecimal(subtotal));
-        order.setDiscountAmount(new BigDecimal(discount));
-        order.setShippingCost(new BigDecimal(shipping));
-        order.setTaxAmount(new BigDecimal(tax));
+        order.setDiscountAmount(discount == null ? null : new BigDecimal(discount));
+        order.setShippingCost(shipping == null ? null : new BigDecimal(shipping));
+        order.setTaxAmount(tax == null ? null : new BigDecimal(tax));
         order.setTotal(new BigDecimal(total));
         return order;
     }

@@ -176,8 +176,6 @@ class PlatformStoreQueryTest extends IntegrationTestSupport {
         connection.setCompanyName("Empresa consulta");
         connection.setCompanyId(companyId);
         connection.setApiUrl("https://pos.que-no-sale.local/api");
-        connection.setApiKey(apiKey);
-        connection.setWebhookSecret("secreto-webhook-que-no-sale");
         connection.setActive(true);
         return connectionRepository.save(connection);
     }

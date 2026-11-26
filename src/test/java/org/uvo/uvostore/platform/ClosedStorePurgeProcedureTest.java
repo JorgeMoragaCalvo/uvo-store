@@ -125,7 +125,10 @@ class ClosedStorePurgeProcedureTest {
         assertThat(count("SELECT count(*) FROM order_items WHERE order_id = ?", filled.orderId)).isZero();
         assertThat(count("SELECT count(*) FROM outbox_messages WHERE order_id = ?", filled.orderId)).isZero();
         assertThat(count("SELECT count(*) FROM sync_webhook_logs WHERE company_id = ?", filled.companyId)).isZero();
-        assertThat(count("SELECT count(*) FROM pos_webhook_receipts WHERE company_id = ?", filled.companyId)).isZero();
+        assertThat(count("SELECT count(*) FROM pos_webhook_receipts WHERE key_id = ?", "purga-" + filled.companyId))
+                .isZero();
+        assertThat(count("SELECT count(*) FROM pos_connection_keys WHERE key_id = ?", "purga-" + filled.companyId))
+                .isZero();
     }
 
     @Test
@@ -267,10 +270,14 @@ class ClosedStorePurgeProcedureTest {
         jdbc.update("INSERT INTO bank_transfer_settings (store_id, enabled) VALUES (?, false) ON CONFLICT (store_id) DO NOTHING", id);
 
         long companyId = 860_000_000L + (seq % 1_000_000);
-        jdbc.update("INSERT INTO pos_connections (store_id, company_name, company_id, api_url, api_key, webhook_secret, is_active) "
-                + "VALUES (?, 'Empresa', ?, 'http://pos', 'k', 's', true)", id, companyId);
+        // IMP-08 (V38): la conexión sin secretos propios; la llave va en pos_connection_keys y el nonce, por key_id.
+        Long connectionId = jdbc.queryForObject("INSERT INTO pos_connections (store_id, company_name, company_id, api_url, "
+                + "is_active) VALUES (?, 'Empresa', ?, 'http://pos', true) RETURNING id", Long.class, id, companyId);
+        jdbc.update("INSERT INTO pos_connection_keys (connection_id, direction, key_id, secret) VALUES (?, 'INBOUND', ?, 's')",
+                connectionId, "purga-" + companyId);
         jdbc.update("INSERT INTO sync_webhook_logs (company_id, event_type, status) VALUES (?, 'stock.updated', 'SUCCESS')", companyId);
-        jdbc.update("INSERT INTO pos_webhook_receipts (company_id, signature) VALUES (?, ?)", companyId, "sig-" + seq);
+        jdbc.update("INSERT INTO pos_webhook_receipts (key_id, nonce) VALUES (?, ?)", "purga-" + companyId,
+                "nonce-de-la-purga-" + seq);
 
         long categoryId = insert("INSERT INTO categories (store_id, name, slug, active, is_featured, sort_order, products_count, image) "
                 + "VALUES (?, 'Cat', ?, true, false, 0, 0, 'categories/c.png') RETURNING id", id, "cat-" + seq);

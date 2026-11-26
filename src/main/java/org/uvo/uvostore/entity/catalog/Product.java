@@ -88,6 +88,11 @@ public class Product {
     @Builder.Default
     private boolean manageStock = true;
 
+    // IMP-08. Exento de IVA: lo fija el POS en un producto vinculado (contrato §4) y el IVA de la línea es 0.
+    @Column(name = "tax_exempt", nullable = false)
+    @Builder.Default
+    private boolean taxExempt = false;
+
     @Column(nullable = false)
     @Builder.Default
     private boolean active = true;

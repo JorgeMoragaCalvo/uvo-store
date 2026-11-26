@@ -16,17 +16,16 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import org.uvo.uvostore.entity.pos.PosConnection;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.PosConnectionRepository;
-import org.uvo.uvostore.security.PosApiKeyAuthFilter;
-import org.uvo.uvostore.security.PosWebhookAuthFilter;
+import org.uvo.uvostore.repository.PosConnectionKeyRepository;
+import org.uvo.uvostore.security.PosSignatureAuthFilter;
 import org.uvo.uvostore.security.TenantContext;
 import org.uvo.uvostore.security.TenantResolutionFilter;
+import org.uvo.uvostore.security.UvoHmac;
 import org.uvo.uvostore.support.IntegrationTestSupport;
+import org.uvo.uvostore.support.PosSigning;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
-import java.util.HexFormat;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
@@ -48,9 +47,9 @@ class LogCorrelationTest extends IntegrationTestSupport {
     @Autowired
     private TenantResolutionFilter tenantResolutionFilter;
     @Autowired
-    private PosApiKeyAuthFilter posApiKeyAuthFilter;
+    private PosSignatureAuthFilter posSignatureAuthFilter;
     @Autowired
-    private PosWebhookAuthFilter posWebhookAuthFilter;
+    private PosConnectionKeyRepository keyRepository;
     @Autowired
     private PosConnectionRepository connectionRepository;
 
@@ -132,12 +131,10 @@ class LogCorrelationTest extends IntegrationTestSupport {
     void aPosSyncRequestCarriesTheStoreOfItsConnection() throws Exception {
         Store store = createStore("log-pos-sync");
         PosConnection connection = connection(store);
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/sync/product");
-        request.addHeader("Authorization", "Bearer " + connection.getApiKey());
-        request.addHeader("X-Company-ID", connection.getCompanyId().toString());
+        MockHttpServletRequest request = signed("/api/sync/product", "{\"n\":" + nextSeq() + "}", connection);
         AtomicReference<String> seen = new AtomicReference<>();
 
-        posApiKeyAuthFilter.doFilter(request, new MockHttpServletResponse(),
+        posSignatureAuthFilter.doFilter(request, new MockHttpServletResponse(),
                 (req, res) -> seen.set(MDC.get(LogContext.STORE_ID)));
 
         assertThat(seen.get()).isEqualTo(store.getId().toString());
@@ -150,15 +147,10 @@ class LogCorrelationTest extends IntegrationTestSupport {
         Store store = createStore("log-pos-webhook");
         PosConnection connection = connection(store);
         String body = "{\"event\":\"stock.updated\",\"n\":" + nextSeq() + "}";
-        String timestamp = String.valueOf(System.currentTimeMillis() / 1000);
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/webhooks/pos/stock-updated");
-        request.setContent(body.getBytes(StandardCharsets.UTF_8));
-        request.addHeader("X-Signature", hmac(body + timestamp, connection.getWebhookSecret()));
-        request.addHeader("X-Company-ID", connection.getCompanyId().toString());
-        request.addHeader("X-Timestamp", timestamp);
+        MockHttpServletRequest request = signed("/api/webhooks/pos/stock-updated", body, connection);
         AtomicReference<String> seen = new AtomicReference<>();
 
-        posWebhookAuthFilter.doFilter(request, new MockHttpServletResponse(),
+        posSignatureAuthFilter.doFilter(request, new MockHttpServletResponse(),
                 (req, res) -> seen.set(MDC.get(LogContext.STORE_ID)));
 
         assertThat(seen.get()).isEqualTo(store.getId().toString());
@@ -174,16 +166,25 @@ class LogCorrelationTest extends IntegrationTestSupport {
         connection.setCompanyName("Empresa log " + seq);
         connection.setCompanyId(900_000_000L + seq);
         connection.setApiUrl("https://pos.que-no-sale.local/api");
-        connection.setApiKey("clave-log-" + seq);
-        connection.setWebhookSecret("secreto-log-" + seq);
         connection.setActive(true);
-        return connectionRepository.save(connection);
+        return PosSigning.installKeys(keyRepository, connectionRepository.save(connection));
     }
 
-    private static String hmac(String data, String secret) throws Exception {
-        Mac mac = Mac.getInstance("HmacSHA256");
-        mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-        return HexFormat.of().formatHex(mac.doFinal(data.getBytes(StandardCharsets.UTF_8)));
+    /** Una petición firmada con la llave de entrada de la conexión (IMP-08, contrato §3). */
+    private static MockHttpServletRequest signed(String path, String body, PosConnection connection) {
+        long timestamp = System.currentTimeMillis() / 1000;
+        String nonce = UvoHmac.newNonce();
+        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", path);
+        request.setContent(bytes);
+        request.addHeader(UvoHmac.HEADER_KEY_ID, PosSigning.inboundKeyId(connection));
+        request.addHeader(UvoHmac.HEADER_TIMESTAMP, Long.toString(timestamp));
+        request.addHeader(UvoHmac.HEADER_NONCE, nonce);
+        request.addHeader(UvoHmac.HEADER_SIGNATURE, UvoHmac.sign(PosSigning.inboundSecret(connection),
+                UvoHmac.canonical("POST", path, timestamp, nonce, PosSigning.inboundKeyId(connection), bytes)));
+        request.addHeader(UvoHmac.HEADER_COMPANY, connection.getCompanyId().toString());
+        request.addHeader(UvoHmac.HEADER_CONTRACT, UvoHmac.CONTRACT_VERSION);
+        return request;
     }
 
     /** El patrón de producción (logback-spring.xml, perfil !default) con la propiedad de verdad dentro. */

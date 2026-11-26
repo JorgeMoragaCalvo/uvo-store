@@ -10,7 +10,8 @@ import { Switch } from '@/components/ui/switch'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import adminApi from '@/admin/services/adminApi'
-import type { CategoryDto, PosOwnedField, ProductImageDto } from '@/admin/types/admin'
+import type { CategoryDto, PosOwnedField, ProductImageDto, ProductVariationDto } from '@/admin/types/admin'
+import PosVariantLinks from '@/admin/pages/products/PosVariantLinks'
 
 interface FormState {
   name: string
@@ -68,6 +69,8 @@ export default function ProductForm() {
   // POS-2. Los campos que gestiona UvoPOS en este producto: se muestran bloqueados y no se envían. Un producto
   // nuevo no tiene mapeo, así que al crear no hay ninguno.
   const [posLocked, setPosLocked] = useState<ReadonlySet<PosOwnedField>>(NO_LOCKS)
+  // IMP-08. Las variantes de un producto con variantes, para vincularlas a sus Productos del POS.
+  const [variations, setVariations] = useState<ProductVariationDto[]>([])
 
   useEffect(() => {
     adminApi.categories.list().then(setCategories).catch(() => toast.error('No se pudieron cargar las categorías'))
@@ -100,6 +103,7 @@ export default function ProductForm() {
           isFeatured: product.featured,
         })
         setExistingImages(product.images)
+        setVariations(product.productType === 'variable' ? product.variations : [])
       })
       .catch(() => toast.error('No se pudo cargar el producto'))
       .finally(() => setLoading(false))
@@ -384,6 +388,7 @@ export default function ProductForm() {
           </Button>
         </div>
       </form>
+      {isEdit && variations.length > 0 && <PosVariantLinks productId={Number(id)} variations={variations} />}
     </div>
   )
 }

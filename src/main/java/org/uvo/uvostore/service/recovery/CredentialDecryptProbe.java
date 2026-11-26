@@ -119,10 +119,9 @@ public class CredentialDecryptProbe {
                 "select credentials from payment_gateway_configs where credentials is not null and credentials <> '' limit ?");
         sources.put("shipping_methods.api_credentials",
                 "select api_credentials from shipping_methods where api_credentials is not null and api_credentials <> '' limit ?");
-        sources.put("pos_connections.api_key",
-                "select api_key from pos_connections where api_key is not null and api_key <> '' limit ?");
-        sources.put("pos_connections.webhook_secret",
-                "select webhook_secret from pos_connections where webhook_secret is not null and webhook_secret <> '' limit ?");
+        // IMP-08 (V38): los secretos del POS pasaron de pos_connections a pos_connection_keys, una fila por llave.
+        sources.put("pos_connection_keys.secret",
+                "select secret from pos_connection_keys where secret is not null and secret <> '' limit ?");
         sources.put("settings.stripe",
                 "select value from settings where key in ('stripe_secret_key', 'stripe_webhook_secret') "
                         + "and value is not null and value <> '' limit ?");

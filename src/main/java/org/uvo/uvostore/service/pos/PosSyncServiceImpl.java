@@ -19,67 +19,64 @@ import org.uvo.uvostore.service.BusinessException;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
+/**
+ * La carga de un Producto del POS ({@code POST /api/sync/product}, contrato §5).
+ *
+ * <p>IMP-08: si el Producto ya está en la tienda —un producto simple mapeado o una variante vinculada desde el panel—
+ * se actualiza por el mismo camino que los avisos ({@link PosCatalogWriter}): solo lo que es del POS, solo si la
+ * versión es más nueva y con el stock protegido (§6). Si no está, se crea como producto simple. Una variante no se
+ * crea nunca desde aquí: la agrupación en variantes es de la tienda (§4).
+ */
 @Service
 public class PosSyncServiceImpl implements PosSyncService {
 
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
     private final ProductSyncMappingRepository mappingRepository;
+    private final PosProductResolver resolver;
     private final PosCatalogWriter catalogWriter;
-    private final PosVariantCatalog variantCatalog;
     private final PosInboundLog inboundLog;
 
     public PosSyncServiceImpl(ProductRepository productRepository, CategoryRepository categoryRepository,
-                               ProductSyncMappingRepository mappingRepository, PosCatalogWriter catalogWriter,
-                               PosVariantCatalog variantCatalog, PosInboundLog inboundLog) {
+                              ProductSyncMappingRepository mappingRepository, PosProductResolver resolver,
+                              PosCatalogWriter catalogWriter, PosInboundLog inboundLog) {
         this.productRepository = productRepository;
         this.categoryRepository = categoryRepository;
         this.mappingRepository = mappingRepository;
+        this.resolver = resolver;
         this.catalogWriter = catalogWriter;
-        this.variantCatalog = variantCatalog;
         this.inboundLog = inboundLog;
     }
 
     @Override
     @Transactional
     public SyncProductResult syncProduct(PosConnection connection, SyncProductCommand command) {
-        // F01. La conexión llega ya autenticada por PosApiKeyAuthFilter y es la ÚNICA fuente de la
-        // tienda (no TenantContext/subdominio: las llamadas del POS no vienen por uno).
-        //
-        // Antes esto la buscaba por el companyId del CUERPO, con un comentario que afirmaba que el
-        // filtro lo había autenticado. No era cierto: el filtro autentica el de la CABECERA. Como
-        // cada comercio se configura sus propias credenciales POS, bastaba firmar con las propias y
-        // poner el companyId de otra tienda en el JSON para crear productos activos en su catálogo.
+        // F01. La conexión llega ya autenticada por PosSignatureAuthFilter y es la ÚNICA fuente de la tienda.
         Long companyId = connection.getCompanyId();
         Store store = connection.getStore();
-        // POS-5. Antes de abrir el registro, como la validación del cuerpo: es un 400, la petición está mal formada.
-        requireConsistent(command);
         SyncWebhookLog log = inboundLog.open(companyId, "product.sync", payloadOf(command));
 
-        var existingMapping = mappingRepository.findByExternalIdAndCompanyId(command.externalId(), companyId);
-
-        if (existingMapping.isPresent()) {
-            // POS-3. Un producto que ya existe se actualiza por el mismo camino que el webhook product.updated:
-            // solo lo que dicen los flags del mapeo, solo si la versión es más nueva y solo con el mapeo activo.
-            // Antes se pisaba todo en cada envío —la descripción que escribió la web, el estado, la categoría—,
-            // se escribía un stock absoluto que podía deshacer una venta web en vuelo, y un mapeo pausado
-            // quedaba reactivado.
-            //
-            // El stock, el estado y la categoría ya no se tocan aquí: el stock entra por stock.updated,
-            // condicionado al oldStock (F13), y el estado y la categoría son de la web (POS-2).
-            ProductSyncMapping mapping = existingMapping.get();
-            Long productId = mapping.getProduct().getId();
-            PosCatalogWriter.Result result = catalogWriter.apply(mapping, command.version(),
-                    new PosCatalogFields(command.name(), command.description(), command.price(), command.variants()));
-
+        Optional<PosTarget> existing = resolver.resolve(companyId, command.externalId());
+        if (existing.isEmpty() && mappingRepository.findByExternalIdAndCompanyId(command.externalId(), companyId).isPresent()) {
+            // El id está en el mapeo de un producto con variantes (anterior a IMP-08): no es un Producto del POS.
+            String message = ("El Producto %d del POS está mapeado a un producto con variantes de la tienda: vincula "
+                    + "cada variante por separado.").formatted(command.externalId());
+            return new SyncProductResult(null, false, false, message, inboundLog.failed(log, message).getId());
+        }
+        if (existing.isPresent()) {
+            PosTarget target = existing.get();
+            PosCatalogWriter.Result result = catalogWriter.apply(target, command.version(),
+                    new PosCatalogFields(command.name(), command.price(), command.taxExempt(), command.stock()));
+            Long productId = target.productId();
             return switch (result.outcome()) {
-                case APPLIED -> new SyncProductResult(productId, false, true, "Producto actualizado",
-                        inboundLog.success(log).getId());
+                case APPLIED -> new SyncProductResult(productId, false, true,
+                        result.message() == null ? "Producto actualizado" : result.message(),
+                        inboundLog.success(log, result.message()).getId());
                 case ALREADY_APPLIED, STALE -> new SyncProductResult(productId, false, false, result.message(),
-                        inboundLog.discarded(log, result.message()).getId());
+                        inboundLog.discarded(log, result.message()).getId(), true);
                 case INACTIVE, MISMATCH -> new SyncProductResult(productId, false, false, result.message(),
                         inboundLog.failed(log, result.message()).getId());
             };
@@ -87,41 +84,33 @@ public class PosSyncServiceImpl implements PosSyncService {
 
         // POS-6. UNIQUE(store_id, sku): un SKU que ya usa otro producto de la tienda era un 500 por la restricción, y
         // en la carga inicial del catálogo el POS lo reintentaría para siempre. Un 400 que nombra el SKU dice qué
-        // corregir. Los de las variantes también, y todo antes de crear nada del catálogo.
+        // corregir.
         if (command.sku() != null && !command.sku().isBlank()
                 && productRepository.existsByStoreIdAndSku(store.getId(), command.sku())) {
             throw new BusinessException("El SKU " + command.sku() + " ya existe en la tienda: corrígelo en el POS.");
         }
-        if (command.variants() != null) {
-            variantCatalog.requireFreeSkus(store, command.variants());
-        }
 
-        // La categoría solo se usa al crear, así que solo aquí se busca o se crea: antes se creaba en cada
-        // envío aunque el producto ya existiera y no se le asignara.
+        // La categoría solo se usa al crear, así que solo aquí se busca o se crea.
         Category category = null;
         if (command.categoryName() != null && !command.categoryName().isBlank()) {
             category = getOrCreateCategory(store, command.categoryName());
         }
 
-        // POS-5. Un producto con variantes nace VARIABLE, y su padre resume las variantes: el precio de la más
-        // barata y la suma de los stocks, lo mismo que mantiene después PosVariantCatalog.
-        boolean variable = command.variants() != null;
         Product product = new Product();
         product.setStore(store);
         product.setName(command.name());
         product.setSlug(catalogWriter.uniqueProductSlug(store.getId(), command.name(), null));
         product.setSku(command.sku());
         product.setDescription(command.description() == null ? "" : command.description());
-        product.setPrice(variable ? PosVariants.minPrice(command.variants()) : command.price());
-        product.setStock(variable
-                ? command.variants().stream().mapToInt(variant -> variant.stock() == null ? 0 : variant.stock()).sum()
-                : command.stock());
+        product.setPrice(command.price());
+        product.setStock(command.stock());
         product.setWeight(BigDecimal.ZERO);
         product.setCategory(category);
         product.setActive(command.active() == null || command.active());
         product.setFeatured(false);
-        product.setProductType(variable ? ProductType.VARIABLE : ProductType.SIMPLE);
+        product.setProductType(ProductType.SIMPLE);
         product.setManageStock(true);
+        product.setTaxExempt(Boolean.TRUE.equals(command.taxExempt()));
         Product saved = productRepository.save(product);
 
         ProductSyncMapping mapping = new ProductSyncMapping();
@@ -134,31 +123,14 @@ public class PosSyncServiceImpl implements PosSyncService {
         mapping.setSyncDirection(SyncDirection.FROM_POS);
         mapping.setSyncStock(true);
         mapping.setSyncPrice(true);
-        mapping.setSyncName(false);
+        // IMP-08. El nombre es del POS (§4): queda bloqueado en el panel y lo actualizan sus avisos.
+        mapping.setSyncName(true);
         mapping.setSyncDescription(false);
         mapping.setCatalogVersion(command.version());
         mapping.setLastSyncedAt(Instant.now());
         mappingRepository.save(mapping);
-        if (variable) {
-            variantCatalog.createAll(saved, mapping, command.variants());
-        }
 
         return new SyncProductResult(saved.getId(), true, true, "Producto creado", inboundLog.success(log).getId());
-    }
-
-    /**
-     * POS-5. Las variantes cumplen las reglas de {@link PosVariants}, y un producto sin variantes trae su precio y su
-     * stock, que ya no son obligatorios en el cuerpo porque un producto variable no los usa.
-     */
-    private static void requireConsistent(SyncProductCommand command) {
-        if (command.variants() != null) {
-            String invalid = PosVariants.validate(command.variants());
-            if (invalid != null) {
-                throw new BusinessException(invalid);
-            }
-        } else if (command.price() == null || command.stock() == null) {
-            throw new BusinessException("Un producto sin variantes tiene que traer price y stock.");
-        }
     }
 
     // HashMap y no Map.of: la descripción, la bodega, la categoría y el estado pueden no venir.
@@ -174,28 +146,11 @@ public class PosSyncServiceImpl implements PosSyncService {
         payload.put("warehouse_id", command.warehouseId());
         payload.put("category_name", command.categoryName());
         payload.put("active", command.active());
-        if (command.variants() != null) {
-            payload.put("variants", variantsPayload(command.variants()));
-        }
+        payload.put("tax_exempt", command.taxExempt());
         return payload;
     }
 
-    // Para el registro: lo que hace falta para leerlo después, en el mismo formato que el resto del payload.
-    static List<Map<String, Object>> variantsPayload(List<PosVariantFields> variants) {
-        return variants.stream().map(variant -> {
-            Map<String, Object> entry = new HashMap<>();
-            entry.put("variant_id", variant.variantId());
-            entry.put("sku", variant.sku());
-            entry.put("price", variant.price());
-            entry.put("stock", variant.stock());
-            entry.put("attributes", variant.attributes());
-            return entry;
-        }).toList();
-    }
-
-    // POS-6. Por nombre y, si no, por slug, como los atributos de PosVariantCatalog: "Bebidas" y "bebidas" son la
-    // misma categoría. Antes solo se buscaba por nombre, así que la segunda se intentaba crear con el mismo slug,
-    // chocaba con UNIQUE(store_id, slug) y era un 500.
+    // POS-6. Por nombre y, si no, por slug: "Bebidas" y "bebidas" son la misma categoría.
     private Category getOrCreateCategory(Store store, String name) {
         String slugified = PosCatalogWriter.slugify(name);
         String slug = slugified.isEmpty() ? "categoria" : slugified;

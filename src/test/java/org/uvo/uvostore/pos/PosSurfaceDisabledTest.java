@@ -9,10 +9,6 @@ import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.repository.PosConnectionRepository;
 import org.uvo.uvostore.support.IntegrationTestSupport;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
-import java.nio.charset.StandardCharsets;
-import java.util.HexFormat;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -34,38 +30,30 @@ class PosSurfaceDisabledTest extends IntegrationTestSupport {
 
     @Autowired
     private PosConnectionRepository posConnectionRepository;
-
-    private static final String SECRET = "un-secreto-de-webhook-de-prueba";
+    @Autowired
+    private org.uvo.uvostore.repository.PosConnectionKeyRepository keyRepository;
 
     @Test
     @DisplayName("Un webhook correctamente firmado por una conexión activa responde 404")
     void aValidWebhookIsGone() throws Exception {
         Store store = createStore("pos-off-webhook");
         PosConnection connection = activeConnection(store, 4242L);
-        String body = "{\"company_id\":" + connection.getCompanyId() + ",\"product_id\":1,"
-                + "\"old_stock\":5,\"new_stock\":4}";
-        String timestamp = String.valueOf(System.currentTimeMillis() / 1000);
+        String body = "{\"companyId\":" + connection.getCompanyId() + ",\"productId\":1,\"version\":2,"
+                + "\"stockWeb\":4}";
 
-        expectGone(post("/api/webhooks/pos/stock-updated")
-                .header("Host", hostHeader(store))
-                .header("X-Company-ID", String.valueOf(connection.getCompanyId()))
-                .header("X-Timestamp", timestamp)
-                .header("X-Signature", sign(body + timestamp))
-                .contentType("application/json")
-                .content(body));
+        expectGone(org.uvo.uvostore.support.PosSigning.signedPost("/api/webhooks/pos/stock-updated", body, connection)
+                .header("Host", hostHeader(store)));
     }
 
     @Test
-    @DisplayName("La sincronización de productos con la API key correcta responde 404")
+    @DisplayName("La carga de productos con la firma correcta responde 404")
     void theSyncSurfaceIsGone() throws Exception {
         Store store = createStore("pos-off-sync");
         PosConnection connection = activeConnection(store, 4343L);
 
-        expectGone(post("/api/sync/product")
-                .header("Host", hostHeader(store))
-                .header("Authorization", "Bearer " + connection.getApiKey())
-                .contentType("application/json")
-                .content("{\"company_id\":" + connection.getCompanyId() + ",\"name\":\"Algo\",\"price\":1000}"));
+        expectGone(org.uvo.uvostore.support.PosSigning.signedPost("/api/sync/product",
+                        "{\"companyId\":" + connection.getCompanyId() + ",\"name\":\"Algo\",\"price\":1000}", connection)
+                .header("Host", hostHeader(store)));
     }
 
     @Test
@@ -79,7 +67,7 @@ class PosSurfaceDisabledTest extends IntegrationTestSupport {
                         .content("{}"))
                 .andExpect(status().isNotFound())
                 // Si el filtro corriera después de la cadena de seguridad, estas rutas responderían el
-                // 401 de los filtros de API key del POS. El contraste con PosWebhookAuthTest —que espera
+                // 401 de el filtro de firma del POS. El contraste con PosWebhookAuthTest —que espera
                 // exactamente ese 401 con la integración encendida— es lo que prueba el orden.
                 .andExpect(header().doesNotExist("WWW-Authenticate"))
                 .andExpect(jsonPath("$.status").value(404));
@@ -90,17 +78,9 @@ class PosSurfaceDisabledTest extends IntegrationTestSupport {
         connection.setStore(store);
         connection.setCompanyId(companyId);
         connection.setCompanyName("UvoPOS");
-        connection.setApiKey("uvp_" + companyId + "_clavedeprueba");
-        connection.setWebhookSecret(SECRET);
         connection.setApiUrl("https://pos.invalid");
         connection.setActive(true);
-        return posConnectionRepository.save(connection);
-    }
-
-    private static String sign(String data) throws Exception {
-        Mac mac = Mac.getInstance("HmacSHA256");
-        mac.init(new SecretKeySpec(SECRET.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-        return HexFormat.of().formatHex(mac.doFinal(data.getBytes(StandardCharsets.UTF_8)));
+        return org.uvo.uvostore.support.PosSigning.installKeys(keyRepository, posConnectionRepository.save(connection));
     }
 
     private void expectGone(MockHttpServletRequestBuilder request) throws Exception {

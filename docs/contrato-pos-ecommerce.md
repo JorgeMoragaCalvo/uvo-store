@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Versión | **1.0.0-borrador** (20-nov-2026) |
-| Estado | Propuesta para aprobar. Nada de esto está implementado todavía en ninguno de los dos lados. |
+| Estado | Propuesta para aprobar. uvo-store lo implementa por su lado desde el 26-nov-2026 (§12), sin firmar todavía; AlfozApi no (§13). |
 | Origen | `GO_LIVE_CHECKLIST.md` §13.9, IMP-08, pasos 1 y 2 |
 | Ejemplos | [`contrato-pos-ecommerce/ejemplos/`](contrato-pos-ecommerce/ejemplos/). Son parte del contrato: si el texto y un ejemplo no coinciden, se corrige uno de los dos antes de aprobar. |
 
@@ -283,19 +283,21 @@ O queda todo o no queda nada. La venta no necesita una sesión de caja ni un usu
 
 ## 12. Impacto en uvo-store
 
-Lo que hay que cambiar para cumplir este contrato. Es el insumo del plan de implementación y no está hecho.
+Lo que había que cambiar para cumplir este contrato. Implementado el 26-nov-2026 (IMP-08, migración V38); el esquema
+anterior (Bearer `uvp_` y `X-Signature`) desapareció.
 
-| Pieza | Hoy | Con el contrato |
-|---|---|---|
-| `PosClient` | Bearer `uvp_<empresa>_<secreto>` | Firma UVO-HMAC (§3) y `X-Uvo-Contract` |
-| `PosClient.classify` | `409` = incierto | `409` por código; `422 OUT_OF_STOCK` como rechazada |
-| Consulta | No existe; `PosOrderNotificationResult` sin uso | `lookup(clave)` y resolución de inciertas (§10) |
-| `PosOrderPayloadMapper` | Comentario «NO está confirmado» y `variant_id` en las líneas | Referencia a este contrato; `product_id` del Producto POS de la variante, sin `variant_id` |
-| Mapeo de variantes (`ProductVariationSyncMapping`) | Variante del POS | Producto del POS; `SyncProductRequest.variants` y `StockUpdatedRequest.variantId` desaparecen |
-| Webhooks y `/api/sync/product` | `X-Signature` HMAC hex de cuerpo+timestamp, anti-replay por firma; `/api/sync/product` con API key | UVO-HMAC (§3), anti-replay por nonce |
-| `stock-updated` | Sin `version` | Con `version` (§5) |
-| `PosConnection` | `apiKey` y `webhookSecret` | `key_id` y secreto por dirección |
-| Doble del POS del E2E | Siempre 200, sin deduplicar | Cumple §7 a §9, con inyección de fallos |
+| Pieza | Antes | Con el contrato | Estado |
+|---|---|---|---|
+| `PosClient` | Bearer `uvp_<empresa>_<secreto>` | Firma UVO-HMAC (§3) y `X-Uvo-Contract`, sobre los bytes exactos | Hecho |
+| `PosClient.classify` | `409` = incierto | `409` por código; `422 OUT_OF_STOCK` como rechazada; `Retry-After` | Hecho |
+| Consulta | No existía | `PosClient.lookup` y resolución de inciertas en `PosSaleOutboxHandler` (también de las huérfanas en vuelo y antes de cada reenvío) | Hecho |
+| Cuerpo de la venta | `variant_id` y decimales | Enteros CLP, `product_id` del Producto POS de la variante, invariantes del §7 antes de enviar; el cuerpo se fija en la fila del outbox y los reintentos mandan los mismos bytes | Hecho |
+| Mapeo de variantes (`ProductVariationSyncMapping`) | Variante del POS | Producto del POS, único por empresa y con su versión; se vincula a mano desde el panel | Hecho |
+| Avisos y `/api/sync/product` | `X-Signature` y API key | `PosSignatureAuthFilter`: UVO-HMAC (§3), antirreplay por nonce | Hecho |
+| `stock-updated` | Sin `version`, ordenado por `oldStock` | Con `version`; el stock se salta mientras haya ventas web sin registrar (§6) | Hecho |
+| `PosConnection` | `apiKey` y `webhookSecret` | `pos_connection_keys`: `key_id` y secreto por dirección, rotación de 7 días y revocación | Hecho |
+| Exento de IVA | No existía | `products.tax_exempt` y `product_variations.tax_exempt`; IVA 0 en la línea | Hecho |
+| Doble del POS del E2E | Siempre 200, sin deduplicar | Verifica la firma, deduplica por empresa y clave, consulta y fallos inyectables | Hecho (sin escenarios E2E nuevos de fallo todavía) |
 
 ## 13. Impacto en UvoPOS (AlfozApi): brechas actuales
 
@@ -322,6 +324,17 @@ Esto se observó en el código de AlfozApi (rama `main`, commit `1977abe0`), al 
 3. **Límites de tasa** del snapshot y de los webhooks, y cuántos reintentos simultáneos acepta cada lado.
 4. **Cliente de la venta 999:** consumidor final genérico, o los datos del comprador (nombre, RUT si lo dio). Hoy la tienda no los envía.
 5. **Anulación:** cómo se anula en el POS una venta web reembolsada en la tienda. No está en esta versión.
+6. **Datos de la empresa (propuesta de uvo-store).** Hoy la tienda solo conoce el `company_id` numérico. Nada confirma que esa empresa sea la de la tienda, y el POS no devuelve sus datos.
+   - **Propuesta:** `GET /api/v1/company`, firmado con la llave tienda→POS (§3), sin cuerpo y sin parámetros. La empresa sale del `key_id` y de `X-Company-ID`, así que una conexión solo puede leer su propia empresa.
+   - **Respuesta `200`:** `company_id`, `rut`, `razon_social`, `giro`, `direccion` y `comuna`. Son campos que la entidad `Empresa` de AlfozApi ya tiene. Es una lectura sin efectos y se puede repetir.
+   - **Uso en la tienda:**
+     - Al crear la conexión, comparar el `rut` con el RUT legal de la tienda (`store_settings.legal_tax_id`). Si no coinciden, la conexión no se activa.
+     - Mostrar los datos al operador para que confirme la empresa y, si quiere, completar con ellos los datos legales de la tienda.
+     - El POS sigue siendo el dueño de esos datos (§4). La tienda no los envía de vuelta.
+   - **Por decidir con el equipo POS:**
+     - Si se aprueba, qué campos son obligatorios.
+     - Si un cambio de razón social o de dirección se avisa por webhook o solo se lee bajo demanda.
+     - Si este endpoint entra en la versión 1 o en una versión menor posterior (es un cambio compatible).
 
 ## 15. Exclusión que vuelve a C01
 

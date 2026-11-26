@@ -10,26 +10,25 @@ import org.uvo.uvostore.config.LogContext;
 import org.uvo.uvostore.entity.pos.PosConnection;
 import org.uvo.uvostore.service.pos.PosClient;
 import org.uvo.uvostore.service.pos.PosDelivery;
-import org.uvo.uvostore.service.pos.PosOrderPayload;
+import org.uvo.uvostore.support.PosSigning;
 
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * PROD-15b. El id con el que se sigue una venta llega al POS como {@code X-Request-Id}, en las dos llamadas que le
- * hacemos. Con sockets de verdad, como {@code PosCatalogReadTest}: el {@code RestClient} se arma dentro de
- * {@code PosClient} y no hay dónde interceptarlo.
+ * PROD-15b e IMP-08. El id con el que se sigue una venta llega al POS como {@code X-Request-Id} en cada llamada, con el
+ * formato del contrato (§11: {@code [A-Za-z0-9-]{8,64}}). Con sockets de verdad, como {@code PosCatalogReadTest}.
  */
 class PosClientRequestIdTest {
 
-    private final PosClient client = new PosClient(500, 2000);
+    private final PosClient client = new PosClient(500, 2000,
+            PosSigning.fixedOutbound("pos-77-tienda", PosSigning.secret("request-id")));
     private final List<String> received = new CopyOnWriteArrayList<>();
     private HttpServer httpServer;
 
@@ -61,7 +60,7 @@ class PosClientRequestIdTest {
     void bothCallsCarryTheIdFromTheMdc() {
         LogContext.putRequestId("it-venta-15b-0001");
 
-        PosDelivery delivery = client.notifyOrder(connection(), new PosOrderPayload("ORD-1:77", Map.of("x", 1)));
+        PosDelivery delivery = client.notifyOrder(connection(), "ORD-1:77", "{\"x\":1}");
         LogContext.putRequestId("job-0123456789ab");
         client.readCatalog(connection(), List.of(11L));
 
@@ -70,17 +69,27 @@ class PosClientRequestIdTest {
     }
 
     @Test
-    @DisplayName("Sin id en el MDC no se inventa uno: la cabecera no va")
-    void withoutAnIdNoHeaderIsSent() {
+    @DisplayName("Un id con punto o guion bajo sale con guiones: el contrato solo admite letras, dígitos y '-'")
+    void anIdOutsideTheContractFormatIsAdapted() {
+        LogContext.putRequestId("proxy.id_00001");
+
         client.readCatalog(connection(), List.of(11L));
 
-        assertThat(received).containsExactly("<sin cabecera>");
+        assertThat(received).containsExactly("proxy-id-00001");
+    }
+
+    @Test
+    @DisplayName("Sin id en el MDC va uno nuevo: el contrato pide que cada petición lleve uno")
+    void withoutAnIdANewOneIsSent() {
+        client.readCatalog(connection(), List.of(11L));
+
+        assertThat(received).hasSize(1);
+        assertThat(received.getFirst()).matches("[A-Za-z0-9-]{8,64}");
     }
 
     private PosConnection connection() {
         PosConnection connection = new PosConnection();
         connection.setCompanyId(77L);
-        connection.setApiKey("clave-pos");
         connection.setApiUrl("http://127.0.0.1:" + httpServer.getAddress().getPort() + "/api/v1");
         return connection;
     }

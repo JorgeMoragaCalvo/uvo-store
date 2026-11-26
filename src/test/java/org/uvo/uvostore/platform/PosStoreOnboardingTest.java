@@ -12,13 +12,16 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.uvo.uvostore.entity.catalog.Product;
 import org.uvo.uvostore.entity.pos.PosConnection;
+import org.uvo.uvostore.entity.pos.PosConnectionKey;
 import org.uvo.uvostore.entity.security.User;
 import org.uvo.uvostore.entity.tenant.Store;
+import org.uvo.uvostore.repository.PosConnectionKeyRepository;
 import org.uvo.uvostore.repository.PosConnectionRepository;
 import org.uvo.uvostore.entity.outbox.enums.OutboxType;
 import org.uvo.uvostore.repository.OutboxMessageRepository;
 import org.uvo.uvostore.support.AuditRows;
 import org.uvo.uvostore.support.IntegrationTestSupport;
+import org.uvo.uvostore.support.PosSigning;
 import org.uvo.uvostore.support.WithPosIntegration;
 
 import java.util.stream.Stream;
@@ -32,7 +35,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * POS-6. El alta de una tienda desde UvoPOS: cuando una empresa activa el módulo, su backend llama a
  * {@code POST /api/platform/stores} con el bloque {@code pos}, y en el mismo paso se crean la tienda, la conexión con
- * los secretos que generó el POS, los ajustes que la hacen operativa y la invitación del dueño.
+ * las dos llaves que generó el POS, los ajustes que la hacen operativa y la invitación del dueño.
  *
  * <p>Lo que más importa es que el alta sea <b>idempotente</b>: el POS la reintenta si no le llega la respuesta, y un
  * reintento no puede duplicar nada ni pisar lo que hay. La carrera entre dos reintentos simultáneos y el correo
@@ -47,6 +50,8 @@ class PosStoreOnboardingTest extends IntegrationTestSupport {
     @Autowired
     private PosConnectionRepository connectionRepository;
     @Autowired
+    private PosConnectionKeyRepository keyRepository;
+    @Autowired
     private JdbcTemplate jdbcTemplate;
     @Autowired
     private OutboxMessageRepository outboxRepository;
@@ -54,7 +59,7 @@ class PosStoreOnboardingTest extends IntegrationTestSupport {
     private EntityManager entityManager;
 
     @Test
-    @DisplayName("Crea la tienda, la conexión con los secretos del POS, sus ajustes y el dueño invitado")
+    @DisplayName("Crea la tienda, la conexión con las dos llaves del POS, sus ajustes y el dueño invitado")
     void createsTheStoreTheConnectionTheSettingsAndAPendingOwner() throws Exception {
         Alta alta = Alta.nueva();
 
@@ -70,8 +75,8 @@ class PosStoreOnboardingTest extends IntegrationTestSupport {
         assertThat(connection.isActive()).isTrue();
         assertThat(connection.getConnectedAt()).isNotNull();
         assertThat(connection.getApiUrl()).isEqualTo(alta.apiUrl());
-        assertThat(connection.getApiKey()).isEqualTo(alta.apiKey());
-        assertThat(connection.getWebhookSecret()).isEqualTo(alta.webhookSecret());
+        assertThat(key(PosConnectionKey.Direction.OUTBOUND, alta.outboundKeyId()).getSecret()).isEqualTo(alta.outboundSecret());
+        assertThat(key(PosConnectionKey.Direction.INBOUND, alta.inboundKeyId()).getSecret()).isEqualTo(alta.inboundSecret());
 
         // Sin pos_sync_enabled, PosIntegrationPolicy trata la tienda como apagada aunque tenga conexión.
         assertThat(settingRepository.findByStoreIdAndSettingKey(store.getId(), "pos_sync_enabled"))
@@ -98,15 +103,15 @@ class PosStoreOnboardingTest extends IntegrationTestSupport {
                 .andReturn().getResponse().getContentAsString();
 
         // Los generó el POS y ya los tiene: devolverlos solo los pondría en otro log.
-        assertThat(response).doesNotContain(alta.apiKey()).doesNotContain(alta.webhookSecret());
+        assertThat(response).doesNotContain(alta.outboundSecret()).doesNotContain(alta.inboundSecret());
 
         entityManager.flush();
-        String storedKey = jdbcTemplate.queryForObject(
-                "select api_key from pos_connections where company_id = ?", String.class, alta.companyId());
-        String storedSecret = jdbcTemplate.queryForObject(
-                "select webhook_secret from pos_connections where company_id = ?", String.class, alta.companyId());
-        assertThat(storedKey).isNotEqualTo(alta.apiKey()).doesNotContain(alta.apiKey());
-        assertThat(storedSecret).isNotEqualTo(alta.webhookSecret()).doesNotContain(alta.webhookSecret());
+        String storedOut = jdbcTemplate.queryForObject(
+                "select secret from pos_connection_keys where key_id = ?", String.class, alta.outboundKeyId());
+        String storedIn = jdbcTemplate.queryForObject(
+                "select secret from pos_connection_keys where key_id = ?", String.class, alta.inboundKeyId());
+        assertThat(storedOut).isNotEqualTo(alta.outboundSecret()).doesNotContain(alta.outboundSecret());
+        assertThat(storedIn).isNotEqualTo(alta.inboundSecret()).doesNotContain(alta.inboundSecret());
     }
 
     @Test
@@ -175,15 +180,14 @@ class PosStoreOnboardingTest extends IntegrationTestSupport {
         Alta alta = Alta.nueva();
         mockMvc.perform(onboard(alta.body())).andExpect(status().isOk());
 
-        Alta otherSecrets = alta.withSecrets("uvp_" + alta.companyId() + "_" + "b".repeat(40), "t".repeat(40));
+        Alta otherSecrets = alta.withSecrets(PosSigning.secret("otro-out-" + alta.companyId()),
+                PosSigning.secret("otro-in-" + alta.companyId()));
         mockMvc.perform(onboard(otherSecrets.body()))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value(containsString("otras credenciales")));
 
-        PosConnection connection = connectionRepository.findByCompanyId(alta.companyId()).orElseThrow();
-        entityManager.refresh(connection);
-        assertThat(connection.getApiKey()).isEqualTo(alta.apiKey());
-        assertThat(connection.getWebhookSecret()).isEqualTo(alta.webhookSecret());
+        assertThat(key(PosConnectionKey.Direction.OUTBOUND, alta.outboundKeyId()).getSecret()).isEqualTo(alta.outboundSecret());
+        assertThat(key(PosConnectionKey.Direction.INBOUND, alta.inboundKeyId()).getSecret()).isEqualTo(alta.inboundSecret());
     }
 
     @Test
@@ -233,18 +237,17 @@ class PosStoreOnboardingTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("El token tiene que ser de la empresa declarada y con una clave de máquina")
-    void theApiKeyMustBelongToTheDeclaredCompany() throws Exception {
+    @DisplayName("Las dos llaves tienen que ser distintas, y de verdad secretos")
+    void theTwoKeysMustBeDistinctAndRealSecrets() throws Exception {
         Alta alta = Alta.nueva();
 
-        // De otra empresa: con él, el POS de la empresa declarada no autenticaría nunca.
-        mockMvc.perform(onboard(alta.withSecrets("uvp_" + (alta.companyId() + 1) + "_" + "a".repeat(40),
-                        alta.webhookSecret()).body()))
+        // La misma llave en las dos direcciones: una fuga de un lado dejaría hacerse pasar por el otro (§2).
+        mockMvc.perform(onboard(alta.withSecrets(alta.outboundSecret(), alta.outboundSecret()).body()))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value(containsString("empresa " + alta.companyId())));
+                .andExpect(jsonPath("$.message").value(containsString("distintos")));
 
-        // Corta: lo genera una máquina, no lo teclea nadie.
-        mockMvc.perform(onboard(alta.withSecrets("uvp_" + alta.companyId() + "_corta", alta.webhookSecret()).body()))
+        // Corto: lo genera una máquina, no lo teclea nadie.
+        mockMvc.perform(onboard(alta.withSecrets("c2hvcnQ=", alta.inboundSecret()).body()))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value(containsString("32")));
 
@@ -255,10 +258,12 @@ class PosStoreOnboardingTest extends IntegrationTestSupport {
     static Stream<Arguments> invalidPosBlocks() {
         Alta base = Alta.nueva();
         return Stream.of(
-                Arguments.of("secreto corto", base.withSecrets(base.apiKey(), "corto-secreto").body(), "corto-secreto"),
+                Arguments.of("secreto que no es base64", base.withSecrets("no es base64 !!", base.inboundSecret()).body(),
+                        "no es base64 !!"),
                 Arguments.of("sin empresa", base.body().replace("\"companyId\": " + base.companyId() + ",", ""), null),
                 Arguments.of("URL que no es http", base.withApiUrl("ftp://pos.internal").body(), null),
-                Arguments.of("sin token", base.body().replace("\"apiKey\": \"" + base.apiKey() + "\",", ""), null));
+                Arguments.of("sin llave tienda→POS",
+                        base.body().replace("\"outboundKeyId\": \"" + base.outboundKeyId() + "\",", ""), null));
     }
 
     @ParameterizedTest(name = "{0}")
@@ -277,7 +282,7 @@ class PosStoreOnboardingTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("Con el token generado, el POS empuja el catálogo a la tienda nueva por /api/sync/product")
+    @DisplayName("Con su llave POS→tienda, el POS empuja el catálogo a la tienda nueva por /api/sync/product")
     void theNewConnectionAcceptsTheCatalogRightAway() throws Exception {
         // El recorrido entero del alta: lo único que el POS hace después es empujar sus productos con el token que
         // generó, por el camino de siempre.
@@ -285,14 +290,12 @@ class PosStoreOnboardingTest extends IntegrationTestSupport {
         mockMvc.perform(onboard(alta.body())).andExpect(status().isOk());
         long externalId = nextSeq();
 
-        mockMvc.perform(post("/api/sync/product")
-                        .header("Authorization", "Bearer " + alta.apiKey())
-                        .header("X-Company-ID", String.valueOf(alta.companyId()))
-                        .contentType("application/json")
-                        .content("""
+        mockMvc.perform(PosSigning.signedPost("/api/sync/product", """
                                 {"companyId":%d,"externalId":%d,"sku":"POS6-%d","name":"Cafe en grano","version":1,
                                  "price":8990,"stock":12,"categoryName":"Café"}"""
-                                .formatted(alta.companyId(), externalId, externalId)))
+                                .formatted(alta.companyId(), externalId, externalId),
+                        String.valueOf(alta.companyId()), alta.inboundKeyId(), alta.inboundSecret(),
+                        System.currentTimeMillis() / 1000, org.uvo.uvostore.security.UvoHmac.newNonce()))
                 .andExpect(status().isOk());
 
         Store store = storeRepository.findBySlug(alta.slug()).orElseThrow();
@@ -307,30 +310,38 @@ class PosStoreOnboardingTest extends IntegrationTestSupport {
                 .content(body);
     }
 
+    private PosConnectionKey key(PosConnectionKey.Direction direction, String keyId) {
+        PosConnectionKey key = keyRepository.findWithConnection(direction, keyId).orElseThrow();
+        entityManager.refresh(key);
+        return key;
+    }
+
     /** Un alta desde el POS, con valores únicos por test. */
-    private record Alta(String slug, String email, long companyId, String apiUrl, String apiKey, String webhookSecret) {
+    private record Alta(String slug, String email, long companyId, String apiUrl, String outboundKeyId,
+                        String outboundSecret, String inboundKeyId, String inboundSecret) {
 
         static Alta nueva() {
             long seq = nextSeq();
             long companyId = 880_000_000L + seq;
             return new Alta("pos6-" + seq, "dueno-" + seq + "@test.local", companyId, "http://pos.internal/api",
-                    "uvp_" + companyId + "_" + "a".repeat(40), "s".repeat(40));
+                    "pos-" + companyId + "-tienda", PosSigning.secret("out-" + companyId),
+                    "pos-" + companyId + "-pos", PosSigning.secret("in-" + companyId));
         }
 
-        Alta withSecrets(String newApiKey, String newWebhookSecret) {
-            return new Alta(slug, email, companyId, apiUrl, newApiKey, newWebhookSecret);
+        Alta withSecrets(String newOutbound, String newInbound) {
+            return new Alta(slug, email, companyId, apiUrl, outboundKeyId, newOutbound, inboundKeyId, newInbound);
         }
 
         Alta withEmail(String newEmail) {
-            return new Alta(slug, newEmail, companyId, apiUrl, apiKey, webhookSecret);
+            return new Alta(slug, newEmail, companyId, apiUrl, outboundKeyId, outboundSecret, inboundKeyId, inboundSecret);
         }
 
         Alta withSlug(String newSlug) {
-            return new Alta(newSlug, email, companyId, apiUrl, apiKey, webhookSecret);
+            return new Alta(newSlug, email, companyId, apiUrl, outboundKeyId, outboundSecret, inboundKeyId, inboundSecret);
         }
 
         Alta withApiUrl(String newApiUrl) {
-            return new Alta(slug, email, companyId, newApiUrl, apiKey, webhookSecret);
+            return new Alta(slug, email, companyId, newApiUrl, outboundKeyId, outboundSecret, inboundKeyId, inboundSecret);
         }
 
         String body() {
@@ -345,10 +356,13 @@ class PosStoreOnboardingTest extends IntegrationTestSupport {
                         "companyId": %d,
                         "companyName": "Empresa del POS",
                         "apiUrl": "%s",
-                        "apiKey": "%s",
-                        "webhookSecret": "%s"
+                        "outboundKeyId": "%s",
+                        "outboundSecret": "%s",
+                        "inboundKeyId": "%s",
+                        "inboundSecret": "%s"
                       }
-                    }""".formatted(slug, email, companyId, apiUrl, apiKey, webhookSecret);
+                    }""".formatted(slug, email, companyId, apiUrl, outboundKeyId, outboundSecret, inboundKeyId,
+                    inboundSecret);
         }
     }
 }

@@ -28,6 +28,8 @@ public enum AuditAction {
     SETTINGS_MONEY_UPDATE,
     SETTINGS_STRIPE_UPDATE,
     POS_CONNECTION_UPDATE,
+    // IMP-08. Una llave de firma del POS revocada en el acto (target POS_CONNECTION).
+    POS_KEY_REVOKE,
     SHIPPING_METHOD_CREDENTIALS_UPDATE,
 
     // Administradores y su acceso.

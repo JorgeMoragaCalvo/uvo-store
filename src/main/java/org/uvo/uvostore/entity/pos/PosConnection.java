@@ -49,15 +49,8 @@ public class PosConnection {
     @Column(name = "api_url", nullable = false)
     private String apiUrl;
 
-    // Secret — encrypted at rest (AES-256-GCM, see EncryptedStringConverter), never log.
-    @Column(name = "api_key", nullable = false)
-    @jakarta.persistence.Convert(converter = org.uvo.uvostore.entity.payment.EncryptedStringConverter.class)
-    private String apiKey;
-
-    // Secret — encrypted at rest.
-    @Column(name = "webhook_secret", nullable = false)
-    @jakarta.persistence.Convert(converter = org.uvo.uvostore.entity.payment.EncryptedStringConverter.class)
-    private String webhookSecret;
+    // IMP-08. Las llaves de firma (una por dirección, con rotación) viven en PosConnectionKey, no aquí: el token
+    // Bearer y el secreto de webhook del esquema anterior se borraron en V38.
 
     @Column(name = "is_active", nullable = false)
     @Builder.Default

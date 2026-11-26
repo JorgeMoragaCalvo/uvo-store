@@ -147,10 +147,11 @@ class StoreOnboardingCommitTest {
                         .contentType("application/json")
                         .content("""
                                 {"slug":"%s","domain":"","storeName":"%s","adminName":"%s","adminEmail":"%s",
-                                 "pos":{"companyId":%d,"companyName":"%s","apiUrl":"%s","apiKey":"%s","webhookSecret":"%s"}}"""
+                                 "pos":{"companyId":%d,"companyName":"%s","apiUrl":"%s","outboundKeyId":"%s",
+                                 "outboundSecret":"%s","inboundKeyId":"%s","inboundSecret":"%s"}}"""
                                 .formatted(alta.slug(), alta.storeName(), alta.adminName(), alta.adminEmail(),
-                                        pos.companyId(), pos.companyName(), pos.apiUrl(), pos.apiKey(),
-                                        pos.webhookSecret())))
+                                        pos.companyId(), pos.companyName(), pos.apiUrl(), pos.outboundKeyId(),
+                                        pos.outboundSecret(), pos.inboundKeyId(), pos.inboundSecret())))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.created").value(true))
                     .andReturn().getResponse().getContentAsString();
@@ -212,7 +213,8 @@ class StoreOnboardingCommitTest {
         long companyId = 770_000_000_000L + seq % 1_000_000_000L;
         return new StoreOnboardingCommand(slug, null, "Tienda confirmada", "Dueño", "dueno-" + seq + "@test.local",
                 new StoreOnboardingCommand.PosLink(companyId, "Empresa del POS", "http://pos.internal/api",
-                        "uvp_" + companyId + "_" + "a".repeat(40), "s".repeat(40)));
+                        "out-" + companyId, org.uvo.uvostore.support.PosSigning.secret("out-" + companyId),
+                        "in-" + companyId, org.uvo.uvostore.support.PosSigning.secret("in-" + companyId)));
     }
 
     private static void awaitQuietly(CountDownLatch latch) {

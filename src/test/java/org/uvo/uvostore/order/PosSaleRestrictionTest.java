@@ -209,8 +209,6 @@ class PosSaleRestrictionTest extends IntegrationTestSupport {
         connection.setCompanyName("Empresa POS");
         connection.setCompanyId(nextSeq());
         connection.setApiUrl("https://pos.test.local/api");
-        connection.setApiKey("pos-key-" + nextSeq());
-        connection.setWebhookSecret("s");
         connection.setActive(true);
         return connectionRepository.save(connection).getCompanyId();
     }

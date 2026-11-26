@@ -226,7 +226,6 @@ class PosOrderNotifierTest {
         PosConnection connection = new PosConnection();
         connection.setCompanyId(companyId);
         connection.setApiUrl("https://pos.invalid/api/v1");
-        connection.setApiKey("k");
         connection.setActive(active);
         return connection;
     }

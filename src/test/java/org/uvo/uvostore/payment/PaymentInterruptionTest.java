@@ -94,10 +94,10 @@ class PaymentInterruptionTest extends InterruptionTestSupport {
         assertThat(notes(order)).filteredOn("Pago confirmado"::equals).hasSize(1);
 
         // La venta llega al POS una vez.
-        when(posClient.notifyOrder(any(), any())).thenReturn(PosDelivery.sent(Map.of()));
+        when(posClient.notifyOrder(any(), any(), any())).thenReturn(PosDelivery.sent(Map.of()));
         dispatcher(shop).dispatch(OutboxChannel.POS);
         dispatcher(shop).dispatch(OutboxChannel.POS);
-        verify(posClient, times(1)).notifyOrder(any(), any());
+        verify(posClient, times(1)).notifyOrder(any(), any(), any());
 
         // Y la confirmación que llega otra vez (el webhook repetido, otra corrida) no duplica nada.
         TenantContext.runWithin(shop.store(), () -> resolved[0] = webpayService.reconcile(order.getId()));
@@ -107,7 +107,7 @@ class PaymentInterruptionTest extends InterruptionTestSupport {
         assertThat(stock(shop.product())).isEqualTo(8);
         assertThat(outbox(order)).hasSize(2);
         assertThat(notes(order)).filteredOn("Pago confirmado"::equals).hasSize(1);
-        verify(posClient, times(1)).notifyOrder(any(), any());
+        verify(posClient, times(1)).notifyOrder(any(), any(), any());
     }
 
     @Test
@@ -137,9 +137,9 @@ class PaymentInterruptionTest extends InterruptionTestSupport {
         assertThat(reload(order).isStockApplied()).isTrue();
         assertThat(notes(order)).filteredOn(note -> note.startsWith("Stock descontado por el barrido")).hasSize(1);
 
-        when(posClient.notifyOrder(any(), any())).thenReturn(PosDelivery.sent(Map.of()));
+        when(posClient.notifyOrder(any(), any(), any())).thenReturn(PosDelivery.sent(Map.of()));
         dispatcher(shop).dispatch(OutboxChannel.POS);
-        verify(posClient, times(1)).notifyOrder(any(), any());
+        verify(posClient, times(1)).notifyOrder(any(), any(), any());
         assertThat(outbox(order)).filteredOn(row -> row.getType() == OutboxType.POS_ORDER)
                 .singleElement().extracting(OutboxMessage::getStatus).isEqualTo(OutboxStatus.SENT);
     }
@@ -178,6 +178,6 @@ class PaymentInterruptionTest extends InterruptionTestSupport {
         assertThat(outbox(order)).isEmpty();
         assertThat(stock(shop.product())).isEqualTo(10);
         assertThat(timesUsed(coupon)).isZero();
-        verify(posClient, never()).notifyOrder(any(), any());
+        verify(posClient, never()).notifyOrder(any(), any(), any());
     }
 }

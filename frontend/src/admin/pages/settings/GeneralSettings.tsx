@@ -10,7 +10,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import adminApi from '@/admin/services/adminApi'
 import { useAdminGeneralSettingsStore } from '@/admin/stores/useAdminGeneralSettingsStore'
-import type { GeneralSettingsDto, GeneralSettingsUpdateRequest, PosResyncSummary } from '@/admin/types/admin'
+import type {
+  GeneralSettingsDto,
+  GeneralSettingsUpdateRequest,
+  PosConnectionKeyView,
+  PosResyncSummary,
+} from '@/admin/types/admin'
 
 function Field({
   id,
@@ -145,6 +150,66 @@ function PosResync({ disabledReason }: { disabledReason: string | null }) {
   )
 }
 
+// IMP-08. Las llaves de la conexión con UvoPOS (contrato §2), sin secretos, y la revocación inmediata de una. La alta
+// y la rotación van por el formulario: un key_id nuevo con su secreto es una rotación y la anterior vive 7 días.
+function PosKeys({ refreshKey, onChanged }: { refreshKey: number; onChanged: () => void }) {
+  const [keys, setKeys] = useState<PosConnectionKeyView[]>([])
+  const [revoking, setRevoking] = useState<string | null>(null)
+
+  useEffect(() => {
+    adminApi.pos
+      .keys()
+      .then(setKeys)
+      .catch(() => setKeys([]))
+  }, [refreshKey])
+
+  async function revoke(key: PosConnectionKeyView) {
+    setRevoking(key.keyId)
+    try {
+      setKeys(await adminApi.pos.revokeKey(key.direction, key.keyId))
+      toast.success(`Llave ${key.keyId} revocada`)
+      onChanged()
+    } catch (err) {
+      toast.error((err as { message?: string })?.message ?? 'No se pudo revocar la llave')
+    } finally {
+      setRevoking(null)
+    }
+  }
+
+  if (keys.length === 0) return null
+
+  return (
+    <div className="flex flex-col gap-2 border-t pt-4">
+      <p className="text-sm font-medium">Llaves de la conexión</p>
+      <ul className="flex flex-col gap-2">
+        {keys.map((key) => (
+          <li key={`${key.direction}-${key.keyId}`}
+            className="flex flex-col gap-2 rounded-md border px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+            <span className="text-sm">
+              {key.direction === 'OUTBOUND' ? 'Tienda→POS' : 'POS→tienda'} · <code>{key.keyId}</code>{' '}
+              <span className="text-xs text-muted-foreground">
+                {key.revokedAt
+                  ? 'revocada'
+                  : !key.usable
+                    ? 'retirada'
+                    : key.retiresAt
+                      ? `se retira el ${new Date(key.retiresAt).toLocaleDateString('es-CL')}`
+                      : 'vigente'}
+              </span>
+            </span>
+            {key.usable && (
+              <Button type="button" variant="outline" size="sm" disabled={revoking === key.keyId}
+                onClick={() => revoke(key)}>
+                Revocar
+              </Button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 export default function GeneralSettings() {
   const settings = useAdminGeneralSettingsStore((state) => state.settings)
   const loading = useAdminGeneralSettingsStore((state) => state.loading)
@@ -166,12 +231,20 @@ export default function GeneralSettings() {
 function toUpdateRequest(dto: GeneralSettingsDto): GeneralSettingsUpdateRequest {
   const {
     stripeSecretKeyConfigured,
-    posApiTokenConfigured,
-    posWebhookSecretConfigured,
     posIntegrationAvailable,
+    posConnectionActive,
+    posOutboundKeyId,
+    posInboundKeyId,
     ...rest
   } = dto
-  return { ...rest, stripeSecretKey: '', posApiToken: '', posWebhookSecret: '' }
+  return {
+    ...rest,
+    stripeSecretKey: '',
+    posOutboundKeyId: posOutboundKeyId ?? '',
+    posOutboundSecret: '',
+    posInboundKeyId: posInboundKeyId ?? '',
+    posInboundSecret: '',
+  }
 }
 
 function GeneralSettingsForm({ initial }: { initial: GeneralSettingsDto }) {
@@ -180,10 +253,13 @@ function GeneralSettingsForm({ initial }: { initial: GeneralSettingsDto }) {
   // resincronización, que decide con lo guardado.
   const [configured, setConfigured] = useState({
     stripeSecretKey: initial.stripeSecretKeyConfigured,
-    posApiToken: initial.posApiTokenConfigured,
-    posWebhookSecret: initial.posWebhookSecretConfigured,
+    posConnectionActive: initial.posConnectionActive,
+    posOutboundKeyId: initial.posOutboundKeyId,
+    posInboundKeyId: initial.posInboundKeyId,
     posSyncEnabled: initial.posSyncEnabled,
   })
+  // Para volver a leer las llaves después de guardar o de revocar una.
+  const [keysVersion, setKeysVersion] = useState(0)
   const [form, setForm] = useState<GeneralSettingsUpdateRequest>(toUpdateRequest(initial))
   const [saving, setSaving] = useState(false)
   // IMP-07. Si la plataforma no ofrece Stripe (STRIPE_ENABLED=false), el motivo; null si se puede activar.
@@ -215,13 +291,15 @@ function GeneralSettingsForm({ initial }: { initial: GeneralSettingsDto }) {
       toast.success('Configuración guardada')
       setConfigured({
         stripeSecretKey: updated.stripeSecretKeyConfigured,
-        posApiToken: updated.posApiTokenConfigured,
-        posWebhookSecret: updated.posWebhookSecretConfigured,
+        posConnectionActive: updated.posConnectionActive,
+        posOutboundKeyId: updated.posOutboundKeyId,
+        posInboundKeyId: updated.posInboundKeyId,
         posSyncEnabled: updated.posSyncEnabled,
       })
       set('stripeSecretKey', '')
-      set('posApiToken', '')
-      set('posWebhookSecret', '')
+      set('posOutboundSecret', '')
+      set('posInboundSecret', '')
+      setKeysVersion((version) => version + 1)
     } catch (err) {
       const message = (err as { message?: string })?.message
       toast.error(message ?? 'No se pudo guardar la configuración')
@@ -404,29 +482,55 @@ function GeneralSettingsForm({ initial }: { initial: GeneralSettingsDto }) {
                     onChange={(v) => set('posApiUrl', v)}
                     disabled={!initial.posIntegrationAvailable}
                   />
-                  <SecretField
-                    id="posApiToken"
-                    label="Token de la API (uvp_&#123;companyId&#125;_&#123;clave&#125;)"
-                    value={form.posApiToken}
-                    configured={configured.posApiToken}
-                    onChange={(v) => set('posApiToken', v)}
+                  <Field
+                    id="posCompanyId"
+                    label="Empresa del POS (company_id)"
+                    value={form.posCompanyId == null ? '' : String(form.posCompanyId)}
+                    onChange={(v) => set('posCompanyId', v.trim() === '' ? null : Number(v))}
+                    disabled={!initial.posIntegrationAvailable}
+                  />
+                  <Field
+                    id="posOutboundKeyId"
+                    label="key_id de la llave tienda→POS"
+                    value={form.posOutboundKeyId}
+                    onChange={(v) => set('posOutboundKeyId', v)}
                     disabled={!initial.posIntegrationAvailable}
                   />
                   <SecretField
-                    id="posWebhookSecret"
-                    label="Secreto de webhook"
-                    value={form.posWebhookSecret}
-                    configured={configured.posWebhookSecret}
-                    onChange={(v) => set('posWebhookSecret', v)}
+                    id="posOutboundSecret"
+                    label="Secreto de la llave tienda→POS (base64)"
+                    value={form.posOutboundSecret}
+                    configured={configured.posOutboundKeyId != null}
+                    onChange={(v) => set('posOutboundSecret', v)}
+                    disabled={!initial.posIntegrationAvailable}
+                  />
+                  <Field
+                    id="posInboundKeyId"
+                    label="key_id de la llave POS→tienda"
+                    value={form.posInboundKeyId}
+                    onChange={(v) => set('posInboundKeyId', v)}
+                    disabled={!initial.posIntegrationAvailable}
+                  />
+                  <SecretField
+                    id="posInboundSecret"
+                    label="Secreto de la llave POS→tienda (base64)"
+                    value={form.posInboundSecret}
+                    configured={configured.posInboundKeyId != null}
+                    onChange={(v) => set('posInboundSecret', v)}
                     disabled={!initial.posIntegrationAvailable}
                   />
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  Las dos llaves las entrega UvoPOS. Para rotar una, escribe su key_id nuevo con su secreto: la
+                  anterior sigue sirviendo 7 días.
+                </p>
+                <PosKeys refreshKey={keysVersion} onChanged={() => setKeysVersion((version) => version + 1)} />
                 <PosResync
                   disabledReason={
                     !initial.posIntegrationAvailable
                       ? 'Se habilita junto con la integración con UvoPOS.'
-                      : !configured.posApiToken
-                        ? 'Configura y guarda el token de la API del POS para poder resincronizar.'
+                      : !configured.posConnectionActive
+                        ? 'Configura y guarda las dos llaves de UvoPOS para poder resincronizar.'
                         : !configured.posSyncEnabled
                           ? 'Activa y guarda la sincronización con POS para poder resincronizar.'
                           : null

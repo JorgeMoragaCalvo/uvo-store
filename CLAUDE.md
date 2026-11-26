@@ -1485,6 +1485,11 @@ DELETE FROM settings WHERE store_id IN (SELECT id FROM purge_store);
 DELETE FROM store_settings WHERE store_id IN (SELECT id FROM purge_store);
 DELETE FROM payment_gateway_configs WHERE store_id IN (SELECT id FROM purge_store);
 DELETE FROM bank_transfer_settings WHERE store_id IN (SELECT id FROM purge_store);
+-- IMP-08 (V38): the POS nonces are keyed by key_id, so they go before the connection; deleting the connection
+-- cascades pos_connection_keys.
+DELETE FROM pos_webhook_receipts WHERE key_id IN (
+    SELECT k.key_id FROM pos_connection_keys k JOIN pos_connections c ON c.id = k.connection_id
+    WHERE c.store_id IN (SELECT id FROM purge_store));
 DELETE FROM pos_connections WHERE store_id IN (SELECT id FROM purge_store);
 -- Cascades from users (and from stores): the access e-mail rows of outbox_messages (IMP-06).
 DELETE FROM user_roles WHERE user_id IN (SELECT id FROM users WHERE store_id IN (SELECT id FROM purge_store));
@@ -1492,8 +1497,6 @@ DELETE FROM role_permissions WHERE role_id IN (SELECT id FROM roles WHERE store_
 DELETE FROM users WHERE store_id IN (SELECT id FROM purge_store);
 DELETE FROM roles WHERE store_id IN (SELECT id FROM purge_store);
 DELETE FROM sync_webhook_logs WHERE company_id IN (SELECT company_id FROM purge_companies)
-    AND company_id NOT IN (SELECT company_id FROM pos_connections);
-DELETE FROM pos_webhook_receipts WHERE company_id IN (SELECT company_id FROM purge_companies)
     AND company_id NOT IN (SELECT company_id FROM pos_connections);
 DELETE FROM stores WHERE id IN (SELECT id FROM purge_store);
 COMMIT;

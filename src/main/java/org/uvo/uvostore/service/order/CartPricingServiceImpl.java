@@ -56,6 +56,8 @@ public class CartPricingServiceImpl implements CartPricingService {
         BigDecimal totalWeight = BigDecimal.ZERO;
         List<BigDecimal> unitPrices = new ArrayList<>(lines.size());
         List<BigDecimal> lineSubtotals = new ArrayList<>(lines.size());
+        // IMP-08. Las líneas exentas de IVA (lo fija el POS, contrato §4): no entran en la base del IVA.
+        List<Boolean> exempt = new ArrayList<>(lines.size());
         for (CartLineCommand line : lines) {
             BigDecimal unitPrice;
             BigDecimal unitWeight;
@@ -65,6 +67,7 @@ public class CartPricingServiceImpl implements CartPricingService {
                         .orElseThrow(() -> new NoSuchElementException("Variation " + line.variationId() + " not found"));
                 unitPrice = variation.getPrice();
                 unitWeight = variation.getWeight();
+                exempt.add(variation.isTaxExempt());
             } else {
                 Product product = productRepository.findById(line.productId())
                         .filter(p -> p.getStore().getId().equals(storeId))
@@ -78,6 +81,7 @@ public class CartPricingServiceImpl implements CartPricingService {
                 // que lo que se cotiza es lo que la ficha mostró.
                 unitPrice = EffectivePrice.of(product);
                 unitWeight = product.getWeight();
+                exempt.add(product.isTaxExempt());
             }
             BigDecimal lineSubtotal = unitPrice.multiply(BigDecimal.valueOf(line.quantity()));
             unitPrices.add(unitPrice);
@@ -106,8 +110,20 @@ public class CartPricingServiceImpl implements CartPricingService {
         // después del cupón (GAP-05).
         subtotalWithTax = Money.round(subtotalWithTax);
 
+        // IMP-08. Una línea exenta no lleva IVA dentro: con precios con IVA incluido, solo las gravadas se dividen.
+        // Sin líneas exentas, taxedSubtotal es el subtotal entero y esto es lo de siempre.
+        BigDecimal exemptSubtotal = BigDecimal.ZERO;
+        for (int i = 0; i < lineSubtotals.size(); i++) {
+            if (exempt.get(i)) {
+                exemptSubtotal = exemptSubtotal.add(lineSubtotals.get(i));
+            }
+        }
+        exemptSubtotal = Money.round(exemptSubtotal);
+        BigDecimal taxedSubtotal = subtotalWithTax.subtract(exemptSubtotal);
+
         BigDecimal subtotalWithoutTax = pricesIncludeTax
-                ? Money.round(subtotalWithTax.divide(BigDecimal.ONE.add(taxRate), 6, RoundingMode.HALF_UP))
+                ? Money.round(taxedSubtotal.divide(BigDecimal.ONE.add(taxRate), 6, RoundingMode.HALF_UP))
+                        .add(exemptSubtotal)
                 : subtotalWithTax;
 
         boolean shippingEnabled = settingRepository.findByStoreIdAndSettingKey(storeId, "shipping_enabled")
@@ -163,34 +179,47 @@ public class CartPricingServiceImpl implements CartPricingService {
         // Todos los sumandos son enteros, así que el total lo es sin redondearlo, y es exactamente la suma
         // de las partes que se guardan con él. Con IVA incluido, el IVA sale por diferencia y no redondeado
         // por su cuenta, para que neto + IVA sea exactamente lo pagado (F06).
+        // IMP-08. El descuento se reparte antes del IVA, para saber cuánto descuento cae en las líneas gravadas: el IVA
+        // es solo de esas. Sin líneas exentas, el descuento gravado es el descuento entero y esto es lo de siempre.
+        List<BigDecimal> discounts = AmountSpread.spread(discountAmount, lineSubtotals);
+        BigDecimal taxedDiscount = BigDecimal.ZERO;
+        for (int i = 0; i < discounts.size(); i++) {
+            if (!exempt.get(i)) {
+                taxedDiscount = taxedDiscount.add(discounts.get(i));
+            }
+        }
+
         BigDecimal taxAmount;
         BigDecimal total;
         if (pricesIncludeTax) {
             BigDecimal paid = subtotalWithTax.subtract(discountAmount);
-            taxAmount = paid.subtract(Money.round(paid.divide(BigDecimal.ONE.add(taxRate), 6, RoundingMode.HALF_UP)));
+            BigDecimal taxedPaid = taxedSubtotal.subtract(taxedDiscount);
+            taxAmount = taxedPaid.subtract(Money.round(taxedPaid.divide(BigDecimal.ONE.add(taxRate), 6,
+                    RoundingMode.HALF_UP)));
             total = paid.add(shippingCost);
         } else {
             BigDecimal taxable = subtotalWithoutTax.subtract(discountAmount);
-            taxAmount = Money.round(taxable.multiply(taxRate));
+            BigDecimal taxedBase = taxedSubtotal.subtract(taxedDiscount);
+            taxAmount = Money.round(taxedBase.multiply(taxRate));
             total = taxable.add(taxAmount).add(shippingCost);
         }
 
         return new CartTotals(subtotalWithoutTax, taxAmount, subtotalWithTax, shippingCost, discountAmount, total,
                 shippingAvailable, couponApplied, appliedCoupon, customerRejectionReason,
-                best.orElse(null), pricesIncludeTax, lineAmounts(unitPrices, lineSubtotals, discountAmount, taxAmount));
+                best.orElse(null), pricesIncludeTax, lineAmounts(unitPrices, lineSubtotals, discounts, exempt, taxAmount));
     }
 
     /**
      * GAP-05. El descuento se reparte en proporción al subtotal de cada línea, y el IVA en proporción a lo que
      * queda de cada una después de su descuento, que es su base. Así las líneas suman exactamente el descuento y
-     * el IVA de la orden, y el documento POS cuadra línea por línea.
+     * el IVA de la orden, y el documento POS cuadra línea por línea. IMP-08: la base de una línea exenta es 0, así
+     * que su IVA es 0.
      */
     private static List<LineAmounts> lineAmounts(List<BigDecimal> unitPrices, List<BigDecimal> subtotals,
-                                                 BigDecimal discount, BigDecimal tax) {
-        List<BigDecimal> discounts = AmountSpread.spread(discount, subtotals);
+                                                 List<BigDecimal> discounts, List<Boolean> exempt, BigDecimal tax) {
         List<BigDecimal> bases = new ArrayList<>(subtotals.size());
         for (int i = 0; i < subtotals.size(); i++) {
-            bases.add(subtotals.get(i).subtract(discounts.get(i)));
+            bases.add(exempt.get(i) ? BigDecimal.ZERO : subtotals.get(i).subtract(discounts.get(i)));
         }
         List<BigDecimal> taxes = AmountSpread.spread(tax, bases);
         List<LineAmounts> result = new ArrayList<>(subtotals.size());

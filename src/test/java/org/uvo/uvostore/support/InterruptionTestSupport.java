@@ -260,8 +260,6 @@ public abstract class InterruptionTestSupport {
             connection.setCompanyName("Empresa " + seq);
             connection.setCompanyId(seq);
             connection.setApiUrl("https://pos.test.local/api");
-            connection.setApiKey("api-key");
-            connection.setWebhookSecret("webhook-secret");
             connection.setActive(true);
             posConnectionRepository.save(connection);
 

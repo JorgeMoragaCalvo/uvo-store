@@ -2,41 +2,31 @@ package org.uvo.uvostore.service.pos;
 
 import java.math.BigDecimal;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
- * POS-4. Lo que el POS dice tener de un lote de productos, leído por {@code PosClient.readCatalog} para la
- * conciliación ({@code PosReconciliationService}).
+ * POS-4 e IMP-08. Lo que el POS dice tener de un lote de sus Productos ({@code POST /api/v1/products/snapshot},
+ * contrato §5), leído por {@code PosClient.readCatalog} para la conciliación ({@code PosReconciliationService}).
  *
- * <p><b>Contrato propuesto, no confirmado</b> (POS-1, como {@code PosOrderPayloadMapper}): el POS todavía no
- * ofrece esta lectura. Se le pide {@code POST /api/v1/products/snapshot} con {@code {"product_ids": [...]}} y se
- * espera {@code {"data": [{"product_id", "version", "stock_web", "price", "name", "description"}]}}. Con todos los
- * campos del POS y no solo algunos, por la misma razón que {@code product.updated} (POS-3): la conciliación avanza
- * la versión, y un estado parcial perdería cambios.
+ * <p>{@code data[]} trae, por Producto: {@code product_id}, {@code sku}, {@code version}, {@code name}, {@code price},
+ * {@code tax_exempt} y {@code stock_web}. Una variante de la tienda es un Producto del POS más, con su propia fila.
+ * {@code missing[]} trae los ids que el POS no tiene o que no son de esa empresa.
  *
- * <p>La lectura es tolerante, fila a fila: un campo que falta o no se entiende queda en {@code null}, y eso solo
- * apaga lo que dependía de él (sin {@code stock_web} no se concilia el stock; sin {@code version}, el catálogo).
- * Una fila sin {@code product_id} no se puede asignar a nada y se ignora.
- *
- * <p>POS-5. La fila de un producto con variantes trae además {@code variants}, con
- * {@code [{"variant_id", "sku", "price", "stock_web", "attributes"}]}: el estado completo de sus variantes. Se lee
- * con la misma tolerancia ({@link PosVariants#fromJson}), y la lista se valida antes de usarla.
+ * <p>La lectura es tolerante, fila a fila: un campo que falta o no se entiende queda en {@code null}, y eso solo apaga
+ * lo que dependía de él (sin {@code stock_web} no se concilia el stock; sin {@code version}, el catálogo). Una fila
+ * sin {@code product_id} no se puede asignar a nada y se ignora.
  */
-public record PosCatalogSnapshot(Map<Long, Row> rows, String failure) {
+public record PosCatalogSnapshot(Map<Long, Row> rows, Set<Long> missing, String failure) {
 
-    /** {@code variants} es {@code null} si la fila no las trae; el {@code stock} de cada una es su {@code stock_web}. */
-    public record Row(Long productId, Long version, Integer stockWeb, BigDecimal price, String name,
-                      String description, List<PosVariantFields> variants) {
-
-        public Row(Long productId, Long version, Integer stockWeb, BigDecimal price, String name,
-                   String description) {
-            this(productId, version, stockWeb, price, name, description, null);
-        }
+    public record Row(Long productId, String sku, Long version, Integer stockWeb, BigDecimal price, String name,
+                      Boolean taxExempt) {
     }
 
     public static PosCatalogSnapshot failed(String reason) {
-        return new PosCatalogSnapshot(Map.of(), reason);
+        return new PosCatalogSnapshot(Map.of(), Set.of(), reason);
     }
 
     public boolean isFailed() {
@@ -57,11 +47,35 @@ public record PosCatalogSnapshot(Map<Long, Row> rows, String failure) {
             if (productId == null) {
                 continue;
             }
-            rows.put(productId, new Row(productId, asLong(row.get("version")), asInt(row.get("stock_web")),
-                    asDecimal(row.get("price")), asText(row.get("name")), asText(row.get("description")),
-                    PosVariants.fromJson(row.get("variants"), "variant_id", "stock_web")));
+            Object exempt = row.get("tax_exempt");
+            rows.put(productId, new Row(productId, asText(row.get("sku")), asLong(row.get("version")),
+                    asInt(row.get("stock_web")), asDecimal(row.get("price")), asText(row.get("name")),
+                    exempt instanceof Boolean flag ? flag : null));
         }
-        return new PosCatalogSnapshot(Map.copyOf(rows), null);
+        Set<Long> missing = new HashSet<>();
+        if (body.get("missing") instanceof List<?> ids) {
+            for (Object id : ids) {
+                Long value = asLong(id);
+                if (value != null) {
+                    missing.add(value);
+                }
+            }
+        }
+        return new PosCatalogSnapshot(Map.copyOf(rows), Set.copyOf(missing), null);
+    }
+
+    /**
+     * §5: cada id pedido aparece en {@code data} o en {@code missing}. Los que no aparecen en ninguno: un lote
+     * incompleto, que no se concilia como si el POS no los tuviera.
+     */
+    public Set<Long> unaccounted(java.util.Collection<Long> requested) {
+        Set<Long> absent = new HashSet<>();
+        for (Long id : requested) {
+            if (!rows.containsKey(id) && !missing.contains(id)) {
+                absent.add(id);
+            }
+        }
+        return absent;
     }
 
     // Un 7 puede llegar como 7, 7.0 o "7", según cómo serialice el POS. Lo que no es un entero se descarta.

@@ -32,6 +32,9 @@ import type {
   PermissionDto,
   PosOwnershipDto,
   PosResyncSummary,
+  PosConnectionKeyView,
+  PosKeyDirection,
+  PosVariantLink,
   ProductDto,
   ProductReportRowDto,
   ProductsSummaryDto,
@@ -343,6 +346,17 @@ export const adminApi = {
   },
   pos: {
     resync: (): Promise<PosResyncSummary> => client.post('/pos/resync'),
+    // IMP-08. Las llaves de la conexión, sin secretos; revocar una es inmediato (contrato §2).
+    keys: (): Promise<PosConnectionKeyView[]> => client.get('/pos/keys'),
+    revokeKey: (direction: PosKeyDirection, keyId: string): Promise<PosConnectionKeyView[]> =>
+      client.post('/pos/keys/revoke', { direction, keyId }),
+    // IMP-08. El vínculo manual de cada variante con su Producto del POS.
+    variantLinks: (productId: number): Promise<PosVariantLink[]> =>
+      client.get(`/products/${productId}/variations/pos-links`),
+    linkVariant: (productId: number, variationId: number, posProductId: number): Promise<PosVariantLink> =>
+      client.put(`/products/${productId}/variations/${variationId}/pos-link`, { posProductId }),
+    unlinkVariant: (productId: number, variationId: number): Promise<void> =>
+      client.delete(`/products/${productId}/variations/${variationId}/pos-link`),
   },
   storeSettings: {
     get: (): Promise<StoreSettingsDto> => client.get('/settings/store'),

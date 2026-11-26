@@ -174,8 +174,6 @@ class OutboxPosEnqueueTest extends IntegrationTestSupport {
         connection.setCompanyName("Empresa " + store.getSlug());
         connection.setCompanyId(System.nanoTime());
         connection.setApiUrl("https://pos.test.local/api");
-        connection.setApiKey("api-key");
-        connection.setWebhookSecret("webhook-secret");
         connection.setActive(true);
         return posConnectionRepository.save(connection);
     }

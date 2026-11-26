@@ -108,8 +108,6 @@ class PosCatalogRaceTest {
         connection.setCompanyName("Empresa POS");
         connection.setCompanyId(seq);
         connection.setApiUrl("https://pos.test.local/api");
-        connection.setApiKey("k");
-        connection.setWebhookSecret("s");
         connection.setActive(true);
         connection = connectionRepository.save(connection);
 
@@ -221,12 +219,15 @@ class PosCatalogRaceTest {
             // A: un stock.updated con el mapeo de la versión 10 en memoria. Un save() del mapeo copiaría todas
             // sus columnas, y la versión volvería a 10: la 11 se aceptaría después.
             stock.set(posWebhookService.handleStockUpdated(new StockUpdatePayload(
-                    connection.getCompanyId(), externalId, null, "SKU", 10, 7, 7)));
+                    connection.getCompanyId(), externalId, "SKU", 13, 10, 7, 7)));
         });
 
         assertThat(stock.get().getStatus()).isEqualTo(WebhookStatus.SUCCESS);
         assertThat(productRepository.findById(product.getId()).orElseThrow().getStock()).isEqualTo(7);
-        assertThat(mappingRepository.findById(mapping.getId()).orElseThrow().getCatalogVersion()).isEqualTo(12L);
+        // IMP-08: catálogo y stock comparten la versión (§5), así que la 13 del stock queda como la aplicada; lo que
+        // importa es que no vuelva a la 10 que A tenía en memoria, ni pise el precio de la 12.
+        assertThat(mappingRepository.findById(mapping.getId()).orElseThrow().getCatalogVersion()).isEqualTo(13L);
+        assertThat(productRepository.findById(product.getId()).orElseThrow().getPrice()).isEqualByComparingTo("15000");
     }
 
     /** Lo que hace el servicio al empezar: el mapeo y el producto entran en la sesión de A. */

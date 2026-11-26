@@ -6,35 +6,35 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.uvo.uvostore.entity.catalog.Product;
+import org.uvo.uvostore.entity.catalog.ProductVariation;
 import org.uvo.uvostore.entity.catalog.enums.ProductType;
 import org.uvo.uvostore.entity.pos.ProductSyncMapping;
+import org.uvo.uvostore.entity.pos.ProductVariationSyncMapping;
 import org.uvo.uvostore.entity.pos.enums.SyncStatus;
+import org.uvo.uvostore.repository.OrderRepository;
+import org.uvo.uvostore.repository.OutboxMessageRepository;
 import org.uvo.uvostore.repository.ProductRepository;
+import org.uvo.uvostore.repository.ProductVariationRepository;
 
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.NoSuchElementException;
 
 /**
- * POS-3. El único camino que escribe el catálogo de un producto mapeado, lo use el webhook
- * {@code product.updated} o la sincronización.
+ * POS-3 e IMP-08. El único camino que escribe lo que el POS manda de uno de sus Productos, venga de un webhook, de la
+ * carga ({@code /api/sync/product}) o de la conciliación.
  *
- * <p>Antes eran dos caminos con reglas distintas: el webhook respetaba los flags del mapeo y la
- * sincronización pisaba nombre, descripción, precio, stock, estado y categoría en cada envío. Ninguno de los
- * dos miraba si lo que llegaba era más viejo que lo ya aplicado.
+ * <p><b>Qué escribe</b>: lo que es del POS (contrato §4) y solo lo que viene. {@code syncPrice} el precio,
+ * {@code syncName} el nombre y el slug, {@code syncStock} el stock; la exención de IVA siempre. En una variante se
+ * escribe la variación, y el padre vuelve a resumir sus variantes (el precio de la más barata, la suma del stock).
  *
- * <p><b>Qué escribe</b>: lo mismo que bloquea el panel ({@code PosCatalogOwnership}), y solo lo que viene.
- * {@code syncPrice} el precio, {@code syncName} el nombre y el slug, {@code syncDescription} la descripción.
- * El stock no pasa por aquí: lo mueve {@code stock.updated}, condicionado al {@code oldStock} (F13).
+ * <p><b>Orden</b> (§5): cada Producto del POS tiene una sola versión, que sube con cualquier cambio, de catálogo o de
+ * stock. Una entrada con una versión igual o menor que la aplicada se descarta.
  *
- * <p><b>Orden</b>: la entrada trae la versión del POS, que crece con cada cambio del producto. Una igual o
- * menor que la aplicada se descarta. El {@code product.updated} tiene que traer todos los campos del POS y no
- * solo los cambiados: con una sola versión, un evento parcial más viejo que se descarta perdería su cambio
- * hasta la siguiente sincronización.
- *
- * <p><b>Variantes</b> (POS-5): la versión del producto cubre también sus variantes, así que una entrada que las
- * trae se ordena con las mismas reglas y las aplica {@link PosVariantCatalog} bajo el mismo cerrojo. En un producto
- * variable el precio del padre no se escribe desde la entrada: resume el de sus variantes. Un producto simple aquí
- * con variantes en el POS es un {@link Outcome#MISMATCH}: cambiar el tipo no se hace solo.
+ * <p><b>Stock</b> (§6): una corrección del POS no puede devolver unidades de ventas web cobradas que todavía no llegaron
+ * al POS. Si el producto tiene alguna, el stock se salta y queda para la conciliación, que lo aplica cuando la venta
+ * ya está en el POS (y acepta la misma versión). Lo demás de la entrada se aplica y la versión avanza.
  */
 @Component
 public class PosCatalogWriter {
@@ -45,78 +45,88 @@ public class PosCatalogWriter {
         ALREADY_APPLIED,
         /** Ya estaba aplicada una versión más nueva: el evento llegó fuera de orden. */
         STALE,
-        /** El mapeo no está {@code ACTIVE}: no se escribe, igual que en el webhook de stock. */
+        /** El mapeo no está {@code ACTIVE}: no se escribe. */
         INACTIVE,
-        /**
-         * POS-5. El producto es simple en la tienda y la entrada trae variantes. No se escribe nada: convertirlo
-         * tocaría las órdenes que ya lo referencian, y eso es una revisión a mano, no algo que haga una entrada.
-         */
+        /** El id resuelve al padre de un producto con variantes, que no es un Producto del POS. */
         MISMATCH
     }
 
-    public record Result(Outcome outcome, String message) {
+    /**
+     * @param stockDeferred el stock no se aplicó porque había ventas web pendientes de llegar al POS
+     */
+    public record Result(Outcome outcome, String message, boolean stockDeferred) {
+
+        Result(Outcome outcome, String message) {
+            this(outcome, message, false);
+        }
     }
 
     private final ProductRepository productRepository;
-    private final PosVariantCatalog variantCatalog;
+    private final ProductVariationRepository variationRepository;
+    private final OutboxMessageRepository outboxRepository;
+    private final OrderRepository orderRepository;
 
     @PersistenceContext
     private EntityManager entityManager;
 
-    public PosCatalogWriter(ProductRepository productRepository, PosVariantCatalog variantCatalog) {
+    public PosCatalogWriter(ProductRepository productRepository, ProductVariationRepository variationRepository,
+                            OutboxMessageRepository outboxRepository, OrderRepository orderRepository) {
         this.productRepository = productRepository;
-        this.variantCatalog = variantCatalog;
+        this.variationRepository = variationRepository;
+        this.outboxRepository = outboxRepository;
+        this.orderRepository = orderRepository;
     }
 
     /**
-     * Aplica la entrada si es más nueva que lo aplicado. {@code MANDATORY}: el cerrojo solo dura lo que la
-     * transacción de quien llama, y fuera de una no protegería nada.
+     * Aplica la entrada si es más nueva que lo aplicado. {@code MANDATORY}: el cerrojo solo dura lo que la transacción
+     * de quien llama, y fuera de una no protegería nada.
      */
     @Transactional(propagation = Propagation.MANDATORY)
-    public Result apply(ProductSyncMapping mapping, long version, PosCatalogFields fields) {
-        return write(mapping, version, fields, false);
+    public Result apply(PosTarget target, long version, PosCatalogFields fields) {
+        return write(target, version, fields, false);
     }
 
     /**
-     * POS-4. Lo mismo, para la conciliación: aplica también una versión <b>igual</b> a la aplicada.
-     *
-     * <p>La conciliación lee el estado del POS en ese momento. Si trae la misma versión que ya está aplicada y aun
-     * así los valores difieren, lo que se movió es lo de aquí, y el POS manda. Una versión <b>menor</b> sigue
-     * descartándose: la lectura salió antes de que llegara un evento que ya se aplicó, y no debe pisarlo.
+     * POS-4. Lo mismo, para la conciliación: aplica también una versión <b>igual</b> a la aplicada. Si la lectura trae
+     * la misma versión y los valores difieren, lo que se movió es lo de aquí, y el POS manda. Una versión menor sigue
+     * descartándose: la lectura salió antes de que llegara un evento que ya se aplicó.
      */
     @Transactional(propagation = Propagation.MANDATORY)
-    public Result reconcile(ProductSyncMapping mapping, long version, PosCatalogFields fields) {
-        return write(mapping, version, fields, true);
+    public Result reconcile(PosTarget target, long version, PosCatalogFields fields) {
+        return write(target, version, fields, true);
     }
 
-    private Result write(ProductSyncMapping mapping, long version, PosCatalogFields fields, boolean acceptSameVersion) {
-        // El cerrojo del producto ordena todas las entradas de catálogo de ese producto: la segunda espera a que
-        // la primera confirme, y entonces relee la versión. Sin él, dos eventos simultáneos leen los dos la
-        // versión vieja y gana el que confirma último, sea el que sea.
-        //
-        // Y protege el stock. Product no lleva @DynamicUpdate, así que el UPDATE de abajo escribe todas las
-        // columnas, el stock incluido: una venta web entre la lectura y el commit volvía a aparecer. Con la
-        // fila bloqueada, la venta (decrementStock) espera, y el stock que se escribe es el actual.
-        //
-        // El producto primero y el mapeo después, como en el webhook de stock (setStockIfUnchanged y luego
-        // touchSynced): con el orden contrario, dos entradas podrían esperarse mutuamente.
+    private Result write(PosTarget target, long version, PosCatalogFields fields, boolean acceptSameVersion) {
+        // El cerrojo del producto (el padre, en una variante) ordena todas las entradas de ese producto, y protege el
+        // stock: Product y ProductVariation no llevan @DynamicUpdate, así que el UPDATE escribe todas las columnas, y
+        // con la fila bloqueada una venta (decrementStock) espera y el stock que se escribe es el actual.
         //
         // flush antes para no perder lo pendiente, y refresh después porque la consulta con cerrojo devuelve la
-        // instancia que ya estaba en la sesión sin releerla (la trampa de PROD-13b): quien llama acaba de
-        // cargar el mapeo, y puede haberlo cargado antes de que otra entrada confirmara.
+        // instancia que ya estaba en la sesión sin releerla (la trampa de PROD-13b).
         entityManager.flush();
-        Long productId = mapping.getProduct().getId();
+        Long productId = target.productId();
         Product product = productRepository.findByIdForUpdate(productId)
                 .orElseThrow(() -> new NoSuchElementException("Product " + productId + " not found"));
         entityManager.refresh(product);
+        ProductSyncMapping mapping = target.mapping();
         entityManager.refresh(mapping);
+        ProductVariationSyncMapping variantMapping = target instanceof PosTarget.Variant variant
+                ? variant.variantMapping() : null;
+        if (variantMapping != null) {
+            entityManager.refresh(variantMapping);
+            entityManager.refresh(variantMapping.getVariation());
+        }
 
         if (mapping.getSyncStatus() != SyncStatus.ACTIVE) {
             return new Result(Outcome.INACTIVE, "El mapeo de este producto está " + mapping.getSyncStatus()
                     + ": no se aplica.");
         }
+        if (variantMapping == null && product.getProductType() == ProductType.VARIABLE) {
+            return new Result(Outcome.MISMATCH, ("El producto %d tiene variantes en la tienda: cada variante es un "
+                    + "Producto del POS y se vincula por separado.").formatted(product.getId()));
+        }
 
-        Long applied = mapping.getCatalogVersion();
+        Long applied = variantMapping != null ? variantMapping.getPosVersion() : mapping.getCatalogVersion();
         if (applied != null && (version < applied || (version == applied && !acceptSameVersion))) {
             return version == applied
                     ? new Result(Outcome.ALREADY_APPLIED, "Evento descartado: la versión %d ya estaba aplicada."
@@ -125,35 +135,79 @@ public class PosCatalogWriter {
                             .formatted(version, applied));
         }
 
-        boolean variable = product.getProductType() == ProductType.VARIABLE;
-        if (fields.variants() != null && !variable) {
-            return new Result(Outcome.MISMATCH, ("El producto %d es simple en la tienda y el POS lo envía con "
-                    + "variantes: cambiar el tipo requiere revisión manual.").formatted(product.getId()));
+        boolean stockDeferred = false;
+        if (variantMapping != null) {
+            ProductVariation variation = variantMapping.getVariation();
+            if (mapping.isSyncPrice() && fields.price() != null && variation.getPrice().compareTo(fields.price()) != 0) {
+                variation.setPrice(fields.price());
+            }
+            if (fields.taxExempt() != null) {
+                variation.setTaxExempt(fields.taxExempt());
+            }
+            if (mapping.isSyncStock() && fields.stockWeb() != null && fields.stockWeb() != variation.getStock()) {
+                if (hasPendingSales(mapping.getCompanyId(), productId)) {
+                    stockDeferred = true;
+                } else {
+                    variation.setStock(fields.stockWeb());
+                }
+            }
+            recalculateParent(product);
+            variantMapping.setPosVersion(version);
+        } else {
+            if (mapping.isSyncPrice() && fields.price() != null) {
+                product.setPrice(fields.price());
+            }
+            // POS-6. El slug solo cambia si cambia el nombre, y nunca a uno que ya use otro producto de la tienda.
+            if (mapping.isSyncName() && fields.name() != null && !fields.name().equals(product.getName())) {
+                product.setName(fields.name());
+                product.setSlug(uniqueProductSlug(product.getStore().getId(), fields.name(), product.getId()));
+            }
+            if (fields.taxExempt() != null) {
+                product.setTaxExempt(fields.taxExempt());
+            }
+            if (mapping.isSyncStock() && fields.stockWeb() != null && fields.stockWeb() != product.getStock()) {
+                if (hasPendingSales(mapping.getCompanyId(), productId)) {
+                    stockDeferred = true;
+                } else {
+                    product.setStock(fields.stockWeb());
+                }
+            }
+            mapping.setCatalogVersion(version);
         }
 
-        // En un producto variable el precio del padre es el de su variante más barata (PosVariantCatalog).
-        if (mapping.isSyncPrice() && fields.price() != null && !variable) {
-            product.setPrice(fields.price());
-        }
-        // POS-6. El slug solo cambia si cambia el nombre, y nunca a uno que ya use otro producto de la tienda: antes se
-        // recalculaba en cada entrada, y un nombre repetido chocaba con UNIQUE(store_id, slug) y era un 500.
-        if (mapping.isSyncName() && fields.name() != null && !fields.name().equals(product.getName())) {
-            product.setName(fields.name());
-            product.setSlug(uniqueProductSlug(product.getStore().getId(), fields.name(), product.getId()));
-        }
-        if (mapping.isSyncDescription() && fields.description() != null) {
-            product.setDescription(fields.description());
-        }
-        if (variable && fields.variants() != null) {
-            variantCatalog.apply(product, mapping, fields.variants());
-        }
-
-        // La versión avanza aunque ningún campo tuviera su flag: es lo último que se sabe del producto, y un
-        // evento más viejo que llegue después no debe aplicarse.
-        mapping.setCatalogVersion(version);
+        // La versión avanza aunque ningún campo tuviera su flag: es lo último que se sabe del producto, y un evento más
+        // viejo que llegue después no debe aplicarse.
         mapping.setSyncError(null);
         mapping.setLastSyncedAt(Instant.now());
-        return new Result(Outcome.APPLIED, null);
+        return new Result(Outcome.APPLIED, stockDeferred
+                ? "Stock no aplicado: el producto tiene ventas web que el POS todavía no registró."
+                : null, stockDeferred);
+    }
+
+    /**
+     * §6. Si el producto tiene ventas web cobradas que esta empresa del POS todavía no registró (su fila del outbox no
+     * se entregó) o cuyo stock todavía no se descontó. Las mismas dos consultas que la foto de la conciliación. Por
+     * producto, no por variante: una venta pendiente de una talla retrasa las demás, que es lo prudente.
+     */
+    boolean hasPendingSales(Long companyId, Long productId) {
+        List<Long> ids = List.of(productId);
+        return !outboxRepository.findProductsWithUnregisteredSales(companyId, ids).isEmpty()
+                || !orderRepository.findProductsWithStockPending(ids).isEmpty();
+    }
+
+    /**
+     * El padre de un producto con variantes resume sus variaciones: el stock es la suma de todas, con la misma regla
+     * que {@code ProductRepository.recalculateStockFromVariations}, y el precio es el de la variante activa más barata,
+     * que es el "desde" de la tienda. Corre con el padre bloqueado, así que ninguna variación cambia mientras tanto.
+     */
+    private void recalculateParent(Product product) {
+        List<ProductVariation> variations = variationRepository.findByProductId(product.getId());
+        product.setStock(variations.stream().mapToInt(ProductVariation::getStock).sum());
+        variations.stream()
+                .filter(ProductVariation::isActive)
+                .map(ProductVariation::getPrice)
+                .min(BigDecimal::compareTo)
+                .ifPresent(product::setPrice);
     }
 
     static String slugify(String value) {
@@ -164,15 +218,8 @@ public class PosCatalogWriter {
 
     /**
      * POS-6. Un slug libre en la tienda para un producto que viene del POS: el del nombre, o {@code -2}, {@code -3}…
-     * si ya lo usa otro. En una carga inicial es lo normal tener dos productos con el mismo nombre (la misma polera
-     * en dos colores, como productos aparte), y antes el segundo chocaba con UNIQUE(store_id, slug) y era un 500
-     * que el POS reintentaría sin fin.
-     *
-     * <p>Un nombre que no deja nada (solo símbolos, o letras que no son latinas) da {@code producto}. El propio
-     * producto no cuenta al renombrar ({@code selfId}), para que conserve su slug si sigue libre.
-     *
-     * <p>Dos altas simultáneas con el mismo nombre todavía pueden elegir el mismo: el contrato pide empujar el
-     * catálogo en secuencia, y el reintento de la que choca encuentra el siguiente libre.
+     * si ya lo usa otro. Un nombre que no deja nada da {@code producto}. El propio producto no cuenta al renombrar
+     * ({@code selfId}), para que conserve su slug si sigue libre.
      */
     String uniqueProductSlug(Long storeId, String name, Long selfId) {
         String base = slugify(name);

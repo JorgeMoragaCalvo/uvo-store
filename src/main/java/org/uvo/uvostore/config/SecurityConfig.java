@@ -21,8 +21,7 @@ import org.uvo.uvostore.security.DeferredSurfaceGateFilter;
 import org.uvo.uvostore.security.JwtAuthenticationFilter;
 import org.uvo.uvostore.security.MetricsAuthFilter;
 import org.uvo.uvostore.security.PlatformApiKeyAuthFilter;
-import org.uvo.uvostore.security.PosApiKeyAuthFilter;
-import org.uvo.uvostore.security.PosWebhookAuthFilter;
+import org.uvo.uvostore.security.PosSignatureAuthFilter;
 import org.uvo.uvostore.security.RateLimitFilter;
 import org.uvo.uvostore.security.TenantResolutionFilter;
 
@@ -79,8 +78,7 @@ public class SecurityConfig {
             DeferredSurfaceGateFilter deferredSurfaceGateFilter,
             TenantResolutionFilter tenantResolutionFilter,
             JwtAuthenticationFilter jwtAuthenticationFilter,
-            PosWebhookAuthFilter posWebhookAuthFilter,
-            PosApiKeyAuthFilter posApiKeyAuthFilter,
+            PosSignatureAuthFilter posSignatureAuthFilter,
             PlatformApiKeyAuthFilter platformApiKeyAuthFilter,
             MetricsAuthFilter metricsAuthFilter,
             ApiSecurityErrorHandlers errorHandlers) throws Exception {
@@ -121,8 +119,8 @@ public class SecurityConfig {
                                 new StaticHeadersWriter("Content-Security-Policy", API_CONTENT_SECURITY_POLICY))))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_PATHS).permitAll()
-                        // POS webhook/sync routes authenticate themselves via HMAC signature /
-                        // API-key checks (PosWebhookAuthFilter/PosApiKeyAuthFilter below), not
+                        // POS webhook/sync routes authenticate themselves via the UVO-HMAC signature
+                        // of the POS contract (PosSignatureAuthFilter below), not
                         // Spring Security's own authorities — permitAll here on purpose, same
                         // as the public v1 API.
                         .requestMatchers("/api/admin/**").hasAuthority("ROLE_ADMIN")
@@ -135,8 +133,7 @@ public class SecurityConfig {
                 // TenantResolutionFilter must run before JwtAuthenticationFilter so
                 // TenantContext is populated in time for the token/subdomain cross-check.
                 .addFilterBefore(tenantResolutionFilter, JwtAuthenticationFilter.class)
-                .addFilterBefore(posWebhookAuthFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterBefore(posApiKeyAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(posSignatureAuthFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(platformApiKeyAuthFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(metricsAuthFilter, UsernamePasswordAuthenticationFilter.class)
                 // A4: first in the chain on purpose — a throttled request should be rejected before

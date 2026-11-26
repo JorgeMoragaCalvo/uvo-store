@@ -1,15 +1,18 @@
 package org.uvo.uvostore.service.outbox;
 
+import java.time.Duration;
 import java.util.Map;
 
 /**
  * PROD-13b. Cómo terminó un intento de entrega, en los términos que necesita el despachador para decidir
  * qué hacer con la fila.
  *
- * @param response lo que respondió el destino, si sirve para algo después de entregar (el POS devuelve su
- *                 stock); puede ser null
+ * @param response   lo que respondió el destino, si sirve para algo después de entregar (el POS devuelve su
+ *                   stock); puede ser null
+ * @param retryAfter IMP-08: cuándo pidió el destino que se volviera a intentar ({@code Retry-After}); null si no lo
+ *                   pidió y vale la espera creciente
  */
-public record OutboxResult(Outcome outcome, String detail, Map<String, Object> response) {
+public record OutboxResult(Outcome outcome, String detail, Map<String, Object> response, Duration retryAfter) {
 
     public enum Outcome {
         /** Entregado. */
@@ -24,6 +27,10 @@ public record OutboxResult(Outcome outcome, String detail, Map<String, Object> r
         PERMANENT
     }
 
+    public OutboxResult(Outcome outcome, String detail, Map<String, Object> response) {
+        this(outcome, detail, response, null);
+    }
+
     public static OutboxResult delivered(Map<String, Object> response) {
         return new OutboxResult(Outcome.DELIVERED, null, response);
     }
@@ -34,6 +41,10 @@ public record OutboxResult(Outcome outcome, String detail, Map<String, Object> r
 
     public static OutboxResult retryable(String detail) {
         return new OutboxResult(Outcome.RETRYABLE, detail, null);
+    }
+
+    public static OutboxResult retryable(String detail, Duration retryAfter) {
+        return new OutboxResult(Outcome.RETRYABLE, detail, null, retryAfter);
     }
 
     public static OutboxResult uncertain(String detail) {

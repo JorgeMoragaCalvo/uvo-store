@@ -58,7 +58,7 @@ class PosOrderedInputsTest extends IntegrationTestSupport {
     // --- la sincronización respeta lo que es de la web ----------------------------------------------
 
     @Test
-    @DisplayName("La sincronización ya no pisa lo que es de la web: con los flags por defecto solo cambia el precio")
+    @DisplayName("La carga no pisa lo que es de la web: cambia el precio y el stock web, que son del POS")
     void syncLeavesWebOwnedFieldsAlone() {
         Fixture fixture = mapped(false, false);
         String nameBefore = fixture.product.getName();
@@ -73,7 +73,7 @@ class PosOrderedInputsTest extends IntegrationTestSupport {
         assertThat(product.getDescription())
                 .as("la descripción que escribió la web sobrevive a la sincronización")
                 .isEqualTo(WEB_DESCRIPTION);
-        assertThat(product.getStock()).as("el stock solo entra por stock.updated").isEqualTo(10);
+        assertThat(product.getStock()).as("IMP-08: la carga trae el stock web (§5)").isEqualTo(99);
         assertThat(product.isActive()).as("el estado es de la web después de crear").isFalse();
         assertThat(product.getCategory().getId()).isEqualTo(fixture.category.getId());
         assertThat(categoryRepository.findByStoreIdAndName(fixture.store.getId(), "Categoría del POS"))
@@ -82,7 +82,7 @@ class PosOrderedInputsTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("El nombre y la descripción se sincronizan solo con su flag")
+    @DisplayName("El nombre se sincroniza con su flag; la descripción es de la tienda (§4) aunque tenga flag")
     void syncWritesNameAndDescriptionOnlyWhenFlagged() {
         Fixture fixture = mapped(true, true);
 
@@ -92,20 +92,19 @@ class PosOrderedInputsTest extends IntegrationTestSupport {
         Product product = reload(fixture.product);
         assertThat(product.getName()).isEqualTo("Polera Azul");
         assertThat(product.getSlug()).isEqualTo("polera-azul");
-        assertThat(product.getDescription()).isEqualTo("Descripción del POS");
-        assertThat(product.getStock()).isEqualTo(10);
+        assertThat(product.getDescription()).isEqualTo(WEB_DESCRIPTION);
+        assertThat(product.getStock()).isEqualTo(99);
     }
 
     @Test
-    @DisplayName("La sincronización no deshace una venta web: no escribe el stock de un producto que ya existe")
-    void syncNeverWritesTheStockOfAnExistingProduct() {
+    @DisplayName("IMP-08: sin ventas web pendientes, la carga de un producto que ya existe aplica su stock web")
+    void syncAppliesTheStockOfAnExistingProduct() {
+        // Con una venta pendiente de llegar al POS no lo aplicaría (§6): eso está en PosStockRaceTest.
         Fixture fixture = mapped(false, false);
-        // Una venta web deja 9; el POS todavía no la conoce y sincroniza con su 10.
-        productRepository.decrementStock(fixture.product.getId(), 1);
 
-        posSyncService.syncProduct(fixture.connection, sync(fixture, 1, "x", null, 9990, 10, null, true));
+        posSyncService.syncProduct(fixture.connection, sync(fixture, 1, "x", null, 9990, 4, null, true));
 
-        assertThat(reload(fixture.product).getStock()).isEqualTo(9);
+        assertThat(reload(fixture.product).getStock()).isEqualTo(4);
     }
 
     @Test
@@ -214,10 +213,10 @@ class PosOrderedInputsTest extends IntegrationTestSupport {
     void aRepeatedStockEventIsDiscardedWithoutADivergence() {
         Fixture fixture = mapped(false, false);
         StockUpdatePayload event = new StockUpdatePayload(
-                fixture.connection.getCompanyId(), fixture.externalId, null, "SKU", 10, 7, 7);
+                fixture.connection.getCompanyId(), fixture.externalId, "SKU", 2, 10, 7, 7);
 
         SyncWebhookLog first = posWebhookService.handleStockUpdated(event);
-        // El POS lo reintenta: es el mismo evento con otra firma, así que el filtro no lo para.
+        // El POS lo reintenta: es el mismo evento con otro nonce, así que el filtro no lo para; lo para la versión.
         SyncWebhookLog repeated = posWebhookService.handleStockUpdated(event);
 
         assertThat(first.getStatus()).isEqualTo(WebhookStatus.SUCCESS);
@@ -263,8 +262,6 @@ class PosOrderedInputsTest extends IntegrationTestSupport {
         connection.setCompanyName("Empresa POS");
         connection.setCompanyId(nextSeq());
         connection.setApiUrl("https://pos.test.local/api");
-        connection.setApiKey("k");
-        connection.setWebhookSecret("s");
         connection.setActive(true);
         connectionRepository.save(connection);
 

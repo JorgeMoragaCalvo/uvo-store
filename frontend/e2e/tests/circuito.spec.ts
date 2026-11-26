@@ -119,9 +119,9 @@ test('alta de tienda-pos por la API de plataforma, con su conexión al POS', asy
   })
   expect(result.status, result.text).toBe(200)
   expect(result.json).toMatchObject({ slug: posStore.slug, created: true })
-  // La respuesta nunca devuelve los secretos de la conexión.
-  expect(result.text).not.toContain(posCredentials.apiKey)
-  expect(result.text).not.toContain(posCredentials.webhookSecret)
+  // La respuesta nunca devuelve los secretos de las dos llaves (IMP-08).
+  expect(result.text).not.toContain(posCredentials.outboundSecret)
+  expect(result.text).not.toContain(posCredentials.inboundSecret)
 })
 
 test('alta de tienda-panel por el formulario de plataforma', async ({ page }) => {
@@ -219,8 +219,12 @@ test('tienda-pos: la venta web llega al POS', async () => {
     .toBe(true)
 
   const sale = (await posOrdersReceived()).find((call) => call.idempotencyKey?.startsWith(posStore.orderNumber))
+  // IMP-08: firmada con la llave tienda→POS (el doble la verifica), contrato v1, y registrada una sola vez.
   expect(sale).toMatchObject({
-    authorization: `Bearer ${posCredentials.apiKey}`,
+    keyId: posCredentials.outboundKeyId,
+    signatureValid: true,
+    contract: '1',
+    status: 201,
     companyId: String(POS_COMPANY_ID),
     idempotencyKey: `${posStore.orderNumber}:${POS_COMPANY_ID}`,
     body: {
@@ -229,8 +233,9 @@ test('tienda-pos: la venta web llega al POS', async () => {
       items: [expect.objectContaining({ product_id: POS_EXTERNAL_ID, quantity: 1 })],
     },
   })
-  // PROD-15b: la venta lleva el id de la petición que confirmó el pago, para seguirla entre los dos sistemas.
-  expect(sale?.requestId).toMatch(/^[A-Za-z0-9][A-Za-z0-9._-]{7,63}$/)
+  // PROD-15b: la venta lleva el id de la petición que confirmó el pago, para seguirla entre los dos sistemas, con
+  // el formato del contrato (§11).
+  expect(sale?.requestId).toMatch(/^[A-Za-z0-9-]{8,64}$/)
 })
 
 test('tienda-panel: sin conexión al POS, su venta no sale hacia el POS', async () => {
@@ -248,6 +253,8 @@ test('tienda-pos: un stock.updated del POS se refleja en la web', async ({ page 
     sku: posStore.product.sku,
     companyId: POS_COMPANY_ID,
     warehouseId: 1,
+    // IMP-08. La versión del Producto en el POS (§5): la carga fue la 1.
+    version: 2,
     oldStock: afterSale,
     newStock: 20,
     stockWeb: 20,
@@ -262,10 +269,10 @@ test('tienda-pos: un stock.updated del POS se refleja en la web', async ({ page 
   await openPanel(page, posStore)
   await expectStockInList(page, posStore.slug, posStore.product.sku, 20)
 
-  // El mismo webhook otra vez (misma firma) se rechaza: antirreplay de POS-3.
+  // El mismo aviso otra vez (mismo nonce) se rechaza: antirreplay del contrato (§3, regla 3).
   const replay = await webhook.send()
   expect(replay.status).toBe(401)
-  expect(replay.text).toContain('REPLAYED_WEBHOOK')
+  expect(replay.text).toContain('UNAUTHORIZED')
 })
 
 test('tienda-pos: el seguimiento del pedido', async ({ page }) => {

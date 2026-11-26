@@ -40,6 +40,23 @@ public class OutboxStore {
         return repository.finish(id, attempts, status, error, now) == 1;
     }
 
+    /**
+     * IMP-08. El cuerpo de la venta, fijado antes de que salga por primera vez. Si ya estaba fijado devuelve ese, para
+     * que todo reintento mande los mismos bytes.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public String fixPayload(Long id, String payload) {
+        if (repository.fixPayload(id, payload) == 1) {
+            return payload;
+        }
+        return repository.findById(id).map(org.uvo.uvostore.entity.outbox.OutboxMessage::getPayload).orElse(payload);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordPosSale(Long id, Long saleId) {
+        repository.recordPosSale(id, saleId);
+    }
+
     /** @return false si la fila cambió entretanto. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean reschedule(Long id, int attempts, String error, Instant nextAttemptAt, Instant now) {

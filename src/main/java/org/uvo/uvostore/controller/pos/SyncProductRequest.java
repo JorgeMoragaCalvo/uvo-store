@@ -2,32 +2,28 @@ package org.uvo.uvostore.controller.pos;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PositiveOrZero;
 
 import java.math.BigDecimal;
-import java.util.List;
-import java.util.Map;
 
+/**
+ * La carga de un Producto del POS ({@code POST /api/sync/product}, contrato §5). IMP-08: un producto por petición y
+ * sin variantes: cada variante es un Producto del POS más (§4). {@code stock} es el stock web.
+ */
 public record SyncProductRequest(
         @NotNull Long companyId,
         @NotNull Long externalId,
         @NotBlank String sku,
         @NotBlank String name,
         String description,
-        // POS-5. Obligatorios en un producto sin variantes (lo comprueba PosSyncServiceImpl); con variantes no se
-        // usan, porque el padre resume las suyas.
-        BigDecimal price,
-        Integer stock,
+        @NotNull BigDecimal price,
+        @NotNull @PositiveOrZero Integer stock,
         Long warehouseId,
         String categoryName,
         Boolean active,
-        // POS-3. Obligatoria: la versión del producto en el POS, que crece con cada cambio. Sin ella no hay
-        // forma de saber si lo que llega es más viejo que lo ya aplicado.
+        // POS-3. Obligatoria: la versión del producto en el POS, que crece con cada cambio.
         @NotNull Long version,
-        // POS-5. El estado completo de sus variantes, o nada si es un producto simple. Las reglas de la lista las
-        // aplica PosVariants.validate, la misma para las tres entradas del catálogo.
-        List<Variant> variants
+        // IMP-08. Exento de IVA; si no viene, se deja como está (al crear, no exento).
+        Boolean taxExempt
 ) {
-
-    public record Variant(Long variantId, String sku, BigDecimal price, Integer stock, Map<String, String> attributes) {
-    }
 }

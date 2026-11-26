@@ -80,6 +80,11 @@ public class ProductVariation {
     @Builder.Default
     private boolean active = true;
 
+    // IMP-08. Exenta de IVA: la variante es un Producto del POS, y el POS fija su exención (contrato §4).
+    @Column(name = "tax_exempt", nullable = false)
+    @Builder.Default
+    private boolean taxExempt = false;
+
     @Column(name = "pos_product_id")
     private String posProductId;
 

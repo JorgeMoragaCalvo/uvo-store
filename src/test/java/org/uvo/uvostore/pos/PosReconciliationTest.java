@@ -40,7 +40,6 @@ import org.uvo.uvostore.service.pos.PosClient;
 import org.uvo.uvostore.service.pos.PosReconciliationService;
 import org.uvo.uvostore.service.pos.PosReconciliationSummary;
 import org.uvo.uvostore.service.pos.PosSyncService;
-import org.uvo.uvostore.service.pos.PosVariantFields;
 import org.uvo.uvostore.service.pos.SyncProductCommand;
 import org.uvo.uvostore.service.pos.SyncProductResult;
 import org.uvo.uvostore.support.IntegrationTestSupport;
@@ -338,7 +337,7 @@ class PosReconciliationTest extends IntegrationTestSupport {
             PosConnection asked = invocation.getArgument(0);
             return asked.getCompanyId().equals(broken.getCompanyId())
                     ? PosCatalogSnapshot.failed("El POS respondió HTTP 503 a la lectura del catálogo")
-                    : new PosCatalogSnapshot(working, null);
+                    : new PosCatalogSnapshot(working, java.util.Set.of(), null);
         });
 
         PosReconciliationSummary summary = reconciliation.reconcileStore(store);
@@ -371,7 +370,7 @@ class PosReconciliationTest extends IntegrationTestSupport {
     @DisplayName("POS-5: el stock de una variante se corrige hacia el POS, y el padre vuelve a sumar")
     void aVariantStockDivergenceIsCorrected() {
         Variable variable = variable();
-        posSays(variableRow(variable, 1, null, 1, 9990, 2, 10990));
+        posSays(variableRows(variable, 1, 1, 9990, 2, 10990));
 
         PosReconciliationSummary summary = reconciliation.reconcileStore(store);
 
@@ -386,7 +385,7 @@ class PosReconciliationTest extends IntegrationTestSupport {
     void aVariantWithAPendingSaleIsNotCorrected() {
         Variable variable = variable();
         saleOf(variable.mapped, true, OutboxStatus.PENDING);
-        posSays(variableRow(variable, 1, null, 5, 9990, 2, 10990));
+        posSays(variableRows(variable, 1, 5, 9990, 2, 10990));
 
         PosReconciliationSummary summary = reconciliation.reconcileStore(store);
 
@@ -399,7 +398,7 @@ class PosReconciliationTest extends IntegrationTestSupport {
     @DisplayName("POS-5: un precio de variante distinto se corrige aunque la versión sea la misma")
     void aVariantPriceDivergenceIsCorrected() {
         Variable variable = variable();
-        posSays(variableRow(variable, 1, null, 4, 9990, 2, 11990));
+        posSays(variableRows(variable, 1, 4, 9990, 2, 11990));
 
         PosReconciliationSummary summary = reconciliation.reconcileStore(store);
 
@@ -407,20 +406,6 @@ class PosReconciliationTest extends IntegrationTestSupport {
         assertThat(price(variable.mapped)).as("el padre sigue en la más barata").isEqualByComparingTo("9990");
         assertThat(summary.catalogCorrected()).isEqualTo(1);
         assertThat(summary.stockCorrected()).isZero();
-    }
-
-    @Test
-    @DisplayName("POS-5: el stock del padre de un producto variable no se compara: es la suma de sus variantes")
-    void theParentStockOfAVariableProductIsNotCompared() {
-        Variable variable = variable();
-        // Las variantes cuadran; el número del padre no significa nada para un producto variable.
-        posSays(variableRow(variable, 1, 99, 4, 9990, 2, 10990));
-
-        PosReconciliationSummary summary = reconciliation.reconcileStore(store);
-
-        assertThat(stock(variable.mapped)).isEqualTo(6);
-        assertThat(summary.stockCorrected()).isZero();
-        assertThat(summary.catalogCorrected()).isZero();
     }
 
     // --- el botón del panel --------------------------------------------------------------------------
@@ -480,8 +465,6 @@ class PosReconciliationTest extends IntegrationTestSupport {
         created.setCompanyName("Empresa POS");
         created.setCompanyId(nextSeq());
         created.setApiUrl("https://pos.test.local/api");
-        created.setApiKey("k");
-        created.setWebhookSecret("s");
         created.setActive(true);
         return connectionRepository.save(created);
     }
@@ -558,63 +541,91 @@ class PosReconciliationTest extends IntegrationTestSupport {
     }
 
     private static PosCatalogSnapshot.Row row(Mapped mapped, long version, int stockWeb, long price) {
-        return new PosCatalogSnapshot.Row(mapped.externalId, version, stockWeb, BigDecimal.valueOf(price), null, null);
+        return new PosCatalogSnapshot.Row(mapped.externalId, null, version, stockWeb, BigDecimal.valueOf(price), null,
+                null);
     }
 
-    /** POS-5. Un producto del POS con dos variantes, M (9990, stock 4) y L (10990, stock 2), en la versión 1. */
+    /**
+     * IMP-08. Un producto con variantes de la tienda, con la M (9990, stock 4) y la L (10990, stock 2) vinculadas cada
+     * una a su Producto del POS, en la versión 1.
+     */
     private record Variable(Mapped mapped, long m, long l) {
     }
 
     private Variable variable() {
-        long externalId = nextSeq();
+        Product product = createProduct(store, category, "Polera", BigDecimal.valueOf(9990));
+        product.setProductType(org.uvo.uvostore.entity.catalog.enums.ProductType.VARIABLE);
+        product.setStock(6);
+        productRepository.save(product);
+        ProductSyncMapping mapping = new ProductSyncMapping();
+        mapping.setProduct(product);
+        mapping.setCompanyId(connection.getCompanyId());
+        mapping.setSyncStatus(SyncStatus.ACTIVE);
+        mapping.setSyncDirection(SyncDirection.FROM_POS);
+        mapping.setSyncStock(true);
+        mapping.setSyncPrice(true);
+        mapping.setLastSyncedAt(Instant.now());
+        mappingRepository.save(mapping);
         long m = nextSeq();
         long l = nextSeq();
-        SyncProductResult result = posSyncService.syncProduct(connection, new SyncProductCommand(externalId,
-                "POL-" + externalId, "Polera " + externalId, null, null, null, null, null, true, 1,
-                List.of(variant(m, 4, 9990, "M"), variant(l, 2, 10990, "L"))));
-        Product product = productRepository.findById(result.productId()).orElseThrow();
-        ProductSyncMapping mapping = mappingRepository
-                .findByExternalIdAndCompanyId(externalId, connection.getCompanyId()).orElseThrow();
-        return new Variable(new Mapped(product, mapping, externalId), m, l);
+        link(product, mapping, m, 4, 9990, "M");
+        link(product, mapping, l, 2, 10990, "L");
+        return new Variable(new Mapped(product, mapping, 0), m, l);
     }
 
-    // El SKU lleva el id de la variante: los SKU de variación son únicos por tienda.
-    private static PosVariantFields variant(long id, Integer stock, long price, String size) {
-        Map<String, String> attributes = new LinkedHashMap<>();
-        attributes.put("Talla", size);
-        attributes.put("Color", "Azul");
-        return new PosVariantFields(id, "POL-" + size + "-" + id, BigDecimal.valueOf(price), stock, attributes);
+    private void link(Product product, ProductSyncMapping mapping, long posProductId, int stock, long price, String size) {
+        ProductVariation variation = new ProductVariation();
+        variation.setStore(store);
+        variation.setProduct(product);
+        variation.setSku("POL-" + size + "-" + posProductId);
+        variation.setPrice(BigDecimal.valueOf(price));
+        variation.setStock(stock);
+        variation.setActive(true);
+        variationRepository.save(variation);
+        org.uvo.uvostore.entity.pos.ProductVariationSyncMapping link = new org.uvo.uvostore.entity.pos.ProductVariationSyncMapping();
+        link.setMapping(mapping);
+        link.setVariation(variation);
+        link.setCompanyId(connection.getCompanyId());
+        link.setExternalVariantId(posProductId);
+        link.setExternalSku(variation.getSku());
+        link.setPosVersion(1L);
+        variantMappingRepository.save(link);
     }
 
-    /** Lo que el POS dice del producto variable: la M y la L con su stock_web y su precio. */
-    private static PosCatalogSnapshot.Row variableRow(Variable variable, long version, Integer parentStock,
-                                                      int stockM, long priceM, int stockL, long priceL) {
-        return new PosCatalogSnapshot.Row(variable.mapped.externalId, version, parentStock, null, null, null,
-                List.of(variant(variable.m, stockM, priceM, "M"), variant(variable.l, stockL, priceL, "L")));
+    /** Lo que el POS dice de las dos variantes: un Producto del POS cada una, con su stock_web y su precio. */
+    private static PosCatalogSnapshot.Row[] variableRows(Variable variable, long version, int stockM, long priceM,
+                                                         int stockL, long priceL) {
+        return new PosCatalogSnapshot.Row[]{
+                new PosCatalogSnapshot.Row(variable.m, null, version, stockM, BigDecimal.valueOf(priceM), null, null),
+                new PosCatalogSnapshot.Row(variable.l, null, version, stockL, BigDecimal.valueOf(priceL), null, null)};
     }
 
-    private ProductVariation variation(Variable variable, long variantId) {
-        return variantMappingRepository.findByMappingIdAndExternalVariantId(variable.mapped.mapping.getId(), variantId)
+    private ProductVariation variation(Variable variable, long posProductId) {
+        return variantMappingRepository.findByCompanyIdAndExternalId(connection.getCompanyId(), posProductId)
                 .orElseThrow()
                 .getVariation();
     }
 
-    private int variationStock(Variable variable, long variantId) {
-        return variationRepository.findById(variation(variable, variantId).getId()).orElseThrow().getStock();
+    private int variationStock(Variable variable, long posProductId) {
+        return variationRepository.findById(variation(variable, posProductId).getId()).orElseThrow().getStock();
     }
 
     private static PosCatalogSnapshot snapshot(PosCatalogSnapshot.Row... rows) {
         return new PosCatalogSnapshot(Arrays.stream(rows)
-                .collect(Collectors.toMap(PosCatalogSnapshot.Row::productId, Function.identity())), null);
+                .collect(Collectors.toMap(PosCatalogSnapshot.Row::productId, Function.identity())), java.util.Set.of(),
+                null);
     }
 
     /** El POS responde lo que tiene de los ids que se le piden, como haría con lotes. */
     private void posSays(PosCatalogSnapshot.Row... rows) {
         Map<Long, PosCatalogSnapshot.Row> all = snapshot(rows).rows();
         posAnswers(ids -> {
+            // Lo que no tiene va en missing (§5): cada id pedido aparece en uno de los dos.
             Map<Long, PosCatalogSnapshot.Row> asked = new HashMap<>();
             ids.stream().filter(all::containsKey).forEach(id -> asked.put(id, all.get(id)));
-            return new PosCatalogSnapshot(asked, null);
+            java.util.Set<Long> missing = new java.util.HashSet<>(ids);
+            missing.removeAll(all.keySet());
+            return new PosCatalogSnapshot(asked, missing, null);
         });
     }
 

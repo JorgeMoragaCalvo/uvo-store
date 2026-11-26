@@ -35,8 +35,13 @@ public record GeneralSettingsUpdateRequest(
         String stripeSecretKey,
         boolean stripeEnabled,
         String posApiUrl,
-        String posApiToken,
-        String posWebhookSecret,
+        // IMP-08. La conexión con UvoPOS (contrato §2): la empresa y las dos llaves, cada una con su key_id y su
+        // secreto base64. Un secreto en blanco deja la llave como está; un key_id nuevo con su secreto es una rotación.
+        Long posCompanyId,
+        String posOutboundKeyId,
+        String posOutboundSecret,
+        String posInboundKeyId,
+        String posInboundSecret,
         boolean posSyncEnabled,
         String metaTitle,
         String metaDescription,

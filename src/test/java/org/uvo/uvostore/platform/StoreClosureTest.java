@@ -363,8 +363,6 @@ class StoreClosureTest extends IntegrationTestSupport {
         connection.setCompanyName("Empresa cierre");
         connection.setCompanyId(companyId);
         connection.setApiUrl("https://pos.test.local/api");
-        connection.setApiKey("uvp_" + companyId + "_" + POS_SECRET);
-        connection.setWebhookSecret(POS_SECRET);
         connection.setActive(true);
         return connectionRepository.save(connection);
     }
@@ -415,8 +413,10 @@ class StoreClosureTest extends IntegrationTestSupport {
         return """
                 {"slug":"%s","domain":"","storeName":"Tienda nueva","adminName":"Dueño","adminEmail":"nuevo-%d@test.local",
                  "pos":{"companyId":%d,"companyName":"Empresa","apiUrl":"http://pos.internal/api",
-                        "apiKey":"uvp_%d_%s","webhookSecret":"%s"}}"""
-                .formatted(slug, companyId, companyId, companyId, "n".repeat(40), "w".repeat(40));
+                        "outboundKeyId":"out-%d","outboundSecret":"%s","inboundKeyId":"in-%d","inboundSecret":"%s"}}"""
+                .formatted(slug, companyId, companyId, companyId,
+                        org.uvo.uvostore.support.PosSigning.secret("out-" + companyId), companyId,
+                        org.uvo.uvostore.support.PosSigning.secret("in-" + companyId));
     }
 
     private MockHttpServletRequestBuilder platform(MockHttpServletRequestBuilder builder) {

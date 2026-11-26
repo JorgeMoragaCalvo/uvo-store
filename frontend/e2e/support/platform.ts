@@ -2,7 +2,7 @@
 
 import { http, type HttpResult } from './http.ts'
 import { BACKEND_URL, E2E_PLATFORM_API_KEY } from './env.ts'
-import type { PosCredentials } from './pos.ts'
+import { registerWithPosDouble, type PosCredentials } from './pos.ts'
 
 export interface StoreOnboarding {
   slug: string
@@ -12,8 +12,10 @@ export interface StoreOnboarding {
   pos?: PosCredentials & { companyName: string; apiUrl: string }
 }
 
-export function createStoreViaApi(onboarding: StoreOnboarding): Promise<HttpResult> {
+export async function createStoreViaApi(onboarding: StoreOnboarding): Promise<HttpResult> {
   const { pos, ...store } = onboarding
+  // IMP-08. El doble del POS tiene que conocer la llave tienda→POS para verificar las ventas que le lleguen.
+  if (pos) await registerWithPosDouble(pos)
   return http('POST', `${BACKEND_URL}/api/platform/stores`, {
     headers: { 'X-Platform-Key': E2E_PLATFORM_API_KEY, 'X-Platform-Operator': 'e2e' },
     body: {
@@ -23,8 +25,10 @@ export function createStoreViaApi(onboarding: StoreOnboarding): Promise<HttpResu
         companyId: pos.companyId,
         companyName: pos.companyName,
         apiUrl: pos.apiUrl,
-        apiKey: pos.apiKey,
-        webhookSecret: pos.webhookSecret,
+        outboundKeyId: pos.outboundKeyId,
+        outboundSecret: pos.outboundSecret,
+        inboundKeyId: pos.inboundKeyId,
+        inboundSecret: pos.inboundSecret,
       },
     },
   })

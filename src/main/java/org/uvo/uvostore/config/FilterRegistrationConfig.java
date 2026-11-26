@@ -9,8 +9,7 @@ import org.uvo.uvostore.security.DeferredSurfaceGateFilter;
 import org.uvo.uvostore.security.JwtAuthenticationFilter;
 import org.uvo.uvostore.security.MetricsAuthFilter;
 import org.uvo.uvostore.security.PlatformApiKeyAuthFilter;
-import org.uvo.uvostore.security.PosApiKeyAuthFilter;
-import org.uvo.uvostore.security.PosWebhookAuthFilter;
+import org.uvo.uvostore.security.PosSignatureAuthFilter;
 import org.uvo.uvostore.security.RateLimitFilter;
 import org.uvo.uvostore.security.TenantResolutionFilter;
 
@@ -67,12 +66,7 @@ public class FilterRegistrationConfig {
     }
 
     @Bean
-    public FilterRegistrationBean<PosWebhookAuthFilter> posWebhookAuthFilterRegistration(PosWebhookAuthFilter filter) {
-        return disableAutoRegistration(filter);
-    }
-
-    @Bean
-    public FilterRegistrationBean<PosApiKeyAuthFilter> posApiKeyAuthFilterRegistration(PosApiKeyAuthFilter filter) {
+    public FilterRegistrationBean<PosSignatureAuthFilter> posSignatureAuthFilterRegistration(PosSignatureAuthFilter filter) {
         return disableAutoRegistration(filter);
     }
 

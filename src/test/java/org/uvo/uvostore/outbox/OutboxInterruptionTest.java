@@ -79,7 +79,7 @@ class OutboxInterruptionTest extends InterruptionTestSupport {
         dispatcher(shop).dispatch(OutboxChannel.MAIL);
         dispatcher(shop).dispatch(OutboxChannel.MAIL);
 
-        verify(posClient, never()).notifyOrder(any(), any());
+        verify(posClient, never()).notifyOrder(any(), any(), any());
         assertThat(reload(sale).getStatus()).isEqualTo(OutboxStatus.FAILED);
         assertThat(reload(sale).getLastError()).contains("Huérfana en vuelo");
         verify(emailService, times(1)).deliver(any(), any(), any());
@@ -92,14 +92,14 @@ class OutboxInterruptionTest extends InterruptionTestSupport {
         Shop shop = shop(10);
         Order order = pay(shop, pendingWebpayOrder(shop, 1, null));
         OutboxMessage sale = row(order, OutboxType.POS_ORDER);
-        when(posClient.notifyOrder(any(), any())).thenReturn(PosDelivery.sent(Map.of()));
+        when(posClient.notifyOrder(any(), any(), any())).thenReturn(PosDelivery.sent(Map.of()));
         doThrow(new IllegalStateException("Caída simulada antes de cerrar el intento"))
                 .doCallRealMethod()
                 .when(outboxStore).finish(eq(sale.getId()), anyInt(), any(), any(), any());
 
         dispatcher(shop).dispatch(OutboxChannel.POS);
 
-        verify(posClient, times(1)).notifyOrder(any(), any());
+        verify(posClient, times(1)).notifyOrder(any(), any(), any());
         assertThat(reload(sale).getStatus()).isEqualTo(OutboxStatus.IN_FLIGHT);
 
         // Al volver: la fila es huérfana y no se sabe si llegó. No se reenvía.
@@ -107,7 +107,7 @@ class OutboxInterruptionTest extends InterruptionTestSupport {
         dispatcher(shop).dispatch(OutboxChannel.POS);
         dispatcher(shop).dispatch(OutboxChannel.POS);
 
-        verify(posClient, times(1)).notifyOrder(any(), any());
+        verify(posClient, times(1)).notifyOrder(any(), any(), any());
         OutboxMessage failed = reload(sale);
         assertThat(failed.getStatus()).isEqualTo(OutboxStatus.FAILED);
         assertThat(failed.getAttempts()).isEqualTo(1);
@@ -124,10 +124,14 @@ class OutboxInterruptionTest extends InterruptionTestSupport {
         dispatcher(shop).dispatch(OutboxChannel.POS);
         dispatcher(shop).dispatch(OutboxChannel.POS);
 
-        ArgumentCaptor<PosOrderPayload> payloads = ArgumentCaptor.forClass(PosOrderPayload.class);
-        verify(posClient, times(2)).notifyOrder(any(), payloads.capture());
-        assertThat(payloads.getAllValues()).extracting(PosOrderPayload::idempotencyKey)
+        // IMP-08: la misma clave y los mismos bytes en los dos envíos (el cuerpo se fijó en el primero).
+        ArgumentCaptor<String> keys = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> bodies = ArgumentCaptor.forClass(String.class);
+        verify(posClient, times(2)).notifyOrder(any(), keys.capture(), bodies.capture());
+        assertThat(keys.getAllValues())
                 .containsOnly(PosOrderPayloadMapper.idempotencyKey(order.getOrderNumber(), shop.companyId()));
+        assertThat(bodies.getAllValues()).hasSize(2);
+        assertThat(bodies.getAllValues().get(1)).isEqualTo(bodies.getAllValues().get(0));
         OutboxMessage sent = reload(sale);
         assertThat(sent.getStatus()).isEqualTo(OutboxStatus.SENT);
         assertThat(sent.getAttempts()).isEqualTo(2);
@@ -173,7 +177,7 @@ class OutboxInterruptionTest extends InterruptionTestSupport {
         // Rechazada no es incierta: no hace falta confirmar la revisión del POS.
         TenantContext.runWithin(shop.store(),
                 () -> outboxAdminService.retry(sale.getId(), "Producto mapeado", false));
-        when(posClient.notifyOrder(any(), any())).thenReturn(PosDelivery.notSent("Conexión rechazada"));
+        when(posClient.notifyOrder(any(), any(), any())).thenReturn(PosDelivery.notSent("Conexión rechazada"));
         dispatcher(shop).dispatch(OutboxChannel.POS);
 
         OutboxMessage retried = reload(sale);
@@ -221,7 +225,7 @@ class OutboxInterruptionTest extends InterruptionTestSupport {
                 () -> outboxAdminService.resolve(legacy.getId(), "Otra vez")))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("ya no está fallido");
-        verify(posClient, never()).notifyOrder(any(), any());
+        verify(posClient, never()).notifyOrder(any(), any(), any());
     }
 
     @Test
@@ -258,10 +262,10 @@ class OutboxInterruptionTest extends InterruptionTestSupport {
         assertThat(Collections.frequency(outcomes, true)).isEqualTo(1);
         assertThat(AuditRows.forStore(jdbc, shop.store().getId(), "OUTBOX_RETRY")).hasSize(1);
 
-        when(posClient.notifyOrder(any(), any())).thenReturn(PosDelivery.sent(Map.of()));
+        when(posClient.notifyOrder(any(), any(), any())).thenReturn(PosDelivery.sent(Map.of()));
         dispatcher(shop).dispatch(OutboxChannel.POS);
         dispatcher(shop).dispatch(OutboxChannel.POS);
-        verify(posClient, times(1)).notifyOrder(any(), any());
+        verify(posClient, times(1)).notifyOrder(any(), any(), any());
         assertThat(reload(sale).getStatus()).isEqualTo(OutboxStatus.SENT);
     }
 

@@ -25,4 +25,13 @@ public interface OutboxHandler {
      */
     default void afterDelivered(OutboxMessage message, OutboxResult result) {
     }
+
+    /**
+     * IMP-08. Qué hacer con una fila huérfana en vuelo: el proceso que la reclamó murió durante la entrega. Por defecto
+     * sigue incierta; el POS consulta la venta antes de decidir (contrato §10). Se llama como {@link #handle}: fuera de
+     * toda transacción y con el tenant de la fila.
+     */
+    default OutboxResult resolveUncertain(OutboxMessage message, String detail) {
+        return OutboxResult.uncertain(detail);
+    }
 }

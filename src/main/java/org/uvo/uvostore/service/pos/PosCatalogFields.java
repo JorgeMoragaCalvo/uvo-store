@@ -1,19 +1,13 @@
 package org.uvo.uvostore.service.pos;
 
 import java.math.BigDecimal;
-import java.util.List;
 
 /**
- * POS-3. Los campos de catálogo que trae una entrada del POS. Un {@code null} es "no viene": no se escribe.
- * Que se escriba o no lo que sí viene lo deciden los flags del mapeo ({@link PosCatalogWriter}).
+ * POS-3 e IMP-08. Lo que el POS manda de uno de sus Productos (contrato §4 y §5): solo lo que es suyo. Un {@code null}
+ * es "no viene" y no se escribe: {@code product.updated} trae solo lo que cambió. Que se escriba o no lo que sí viene
+ * lo deciden los flags del mapeo ({@link PosCatalogWriter}).
  *
- * <p>POS-5. {@code variants} es el estado completo de las variantes del producto en el POS, o {@code null} si la
- * entrada no las trae. Quien la construye ya la validó ({@link PosVariants#validate}).
+ * @param stockWeb el stock que ofrece a la web; la conciliación lo pasa nulo porque lo corrige por su cuenta
  */
-public record PosCatalogFields(String name, String description, BigDecimal price, List<PosVariantFields> variants) {
-
-    /** Un producto sin variantes, como antes de POS-5. */
-    public PosCatalogFields(String name, String description, BigDecimal price) {
-        this(name, description, price, null);
-    }
+public record PosCatalogFields(String name, BigDecimal price, Boolean taxExempt, Integer stockWeb) {
 }

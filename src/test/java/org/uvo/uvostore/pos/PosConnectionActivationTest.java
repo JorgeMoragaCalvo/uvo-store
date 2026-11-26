@@ -4,114 +4,159 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.uvo.uvostore.entity.pos.PosConnection;
+import org.uvo.uvostore.entity.pos.PosConnectionKey;
 import org.uvo.uvostore.entity.security.User;
 import org.uvo.uvostore.entity.tenant.Store;
+import org.uvo.uvostore.repository.PosConnectionKeyRepository;
 import org.uvo.uvostore.repository.PosConnectionRepository;
+import org.uvo.uvostore.support.AuditRows;
 import org.uvo.uvostore.support.IntegrationTestSupport;
+import org.uvo.uvostore.support.PosSigning;
 import org.uvo.uvostore.support.WithPosIntegration;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
-import java.nio.charset.StandardCharsets;
-import java.util.HexFormat;
+import java.time.Duration;
+import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.hamcrest.Matchers.containsString;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * PROD-12. Conectar el POS exige el secreto con el que se firman sus webhooks.
- *
- * <p>Antes la conexión quedaba {@code active = true} de forma incondicional, con el secreto en cadena
- * vacía si el administrador dejaba el campo en blanco — ni ping, ni handshake, ni validación de ninguna
- * clase. Y una conexión activa con el secreto vacío no queda abierta, queda <b>rota</b>: lo demuestra el
- * último caso de esta clase.
- *
- * <p>Con {@code @WithPosIntegration} porque configurar el POS con la integración apagada responde 404 —
- * eso es {@code PosSurfaceDisabledTest}; lo que se mide aquí es la validación de la activación.
+ * PROD-12 e IMP-08. La conexión con UvoPOS desde Ajustes: la empresa, la URL y las dos llaves del contrato (§2). Solo
+ * queda activa con una llave vigente en cada dirección; un {@code key_id} nuevo es una rotación (la anterior vive 7
+ * días) y una llave se puede revocar en el acto.
  */
 @WithPosIntegration
 class PosConnectionActivationTest extends IntegrationTestSupport {
 
     @Autowired
     private PosConnectionRepository posConnectionRepository;
+    @Autowired
+    private PosConnectionKeyRepository keyRepository;
 
     @Test
-    @DisplayName("Sin secreto de webhook la conexión se rechaza y no queda creada")
-    void aMissingWebhookSecretIsRejected() throws Exception {
-        Fixture fixture = fixture("pos-nosecret");
+    @DisplayName("Sin las dos llaves la conexión se rechaza y no queda creada")
+    void withoutBothKeysTheConnectionIsRejected() throws Exception {
+        Fixture fixture = fixture("pos-nokeys");
+        long company = nextSeq();
 
-        mockMvc.perform(settingsPut(fixture, "uvp_" + fixture.store().getId() + "_abc123", ""))
+        mockMvc.perform(settingsPut(fixture, company, "out-" + company, PosSigning.secret("o" + company), "", ""))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status").value(400))
-                .andExpect(jsonPath("$.message").value(
-                        org.hamcrest.Matchers.containsString("secreto de webhook")));
+                .andExpect(jsonPath("$.message").value(containsString("dos llaves")));
 
         assertThat(posConnectionRepository.findByStoreId(fixture.store().getId())).isEmpty();
     }
 
     @Test
-    @DisplayName("Con secreto la conexión se crea y queda activa")
-    void aWebhookSecretActivatesTheConnection() throws Exception {
-        Fixture fixture = fixture("pos-secret");
+    @DisplayName("Un secreto que no es base64 de 32 bytes se rechaza sin repetirlo")
+    void aWeakSecretIsRejected() throws Exception {
+        Fixture fixture = fixture("pos-weak");
+        long company = nextSeq();
 
-        mockMvc.perform(settingsPut(fixture, "uvp_" + fixture.store().getId() + "_abc123", "whsec_de_prueba_12345"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.posApiTokenConfigured").value(true))
-                .andExpect(jsonPath("$.posWebhookSecretConfigured").value(true));
+        String response = mockMvc.perform(settingsPut(fixture, company, "out-" + company, "corto",
+                        "in-" + company, PosSigning.secret("i" + company)))
+                .andExpect(status().isBadRequest())
+                .andReturn().getResponse().getContentAsString();
 
-        PosConnection connection = posConnectionRepository.findByStoreId(fixture.store().getId()).orElseThrow();
-        assertThat(connection.isActive()).isTrue();
-        assertThat(connection.getWebhookSecret()).isEqualTo("whsec_de_prueba_12345");
+        assertThat(response).contains("32").doesNotContain("\"corto\"");
     }
 
     @Test
-    @DisplayName("Una conexión activa con el secreto vacío no autentica nada: está rota, no abierta")
-    void anEmptySecretBreaksEveryIncomingWebhook() throws Exception {
-        // Las filas que ya existan así siguen en la base, y esto deja escrito qué les pasa de verdad en
-        // vez de suponerlo: PosWebhookAuthFilter firma sin comprobar que el secreto exista, y un HMAC con
-        // clave vacía no se puede construir. No es que cualquiera pueda falsificar la firma — es que
-        // ninguna, ni la auténtica, llega a verificarse.
-        Store store = createStore("pos-empty-secret");
+    @DisplayName("Con las dos llaves la conexión queda activa, y el panel ve los key_id, nunca los secretos")
+    void bothKeysActivateTheConnection() throws Exception {
+        Fixture fixture = fixture("pos-keys");
+        long company = nextSeq();
+        String outSecret = PosSigning.secret("o" + company);
+        String inSecret = PosSigning.secret("i" + company);
+
+        String response = mockMvc.perform(settingsPut(fixture, company, "out-" + company, outSecret, "in-" + company,
+                        inSecret))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.posCompanyId").value(company))
+                .andExpect(jsonPath("$.posOutboundKeyId").value("out-" + company))
+                .andExpect(jsonPath("$.posInboundKeyId").value("in-" + company))
+                .andExpect(jsonPath("$.posConnectionActive").value(true))
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(response).doesNotContain(outSecret).doesNotContain(inSecret);
+        PosConnection connection = posConnectionRepository.findByStoreId(fixture.store().getId()).orElseThrow();
+        assertThat(connection.isActive()).isTrue();
+        assertThat(connection.getApiUrl()).isEqualTo("https://pos.test");
+
+        // Un guardado que repite los key_id sin secretos (el panel no puede pre-rellenarlos) no cambia nada.
+        mockMvc.perform(settingsPut(fixture, company, "out-" + company, "", "in-" + company, ""))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.posConnectionActive").value(true));
+        assertThat(keyRepository.findByConnection(connection.getId(), PosConnectionKey.Direction.INBOUND)).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("Un key_id nuevo es una rotación: la llave anterior sigue viva 7 días")
+    void aNewKeyIdRotates() throws Exception {
+        Fixture fixture = fixture("pos-rotate");
+        long company = nextSeq();
+        mockMvc.perform(settingsPut(fixture, company, "out-" + company, PosSigning.secret("o" + company),
+                "in-" + company, PosSigning.secret("i" + company))).andExpect(status().isOk());
+
+        mockMvc.perform(settingsPut(fixture, company, "", "", "in2-" + company, PosSigning.secret("i2" + company)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.posInboundKeyId").value("in2-" + company));
+
+        PosConnectionKey old = keyRepository.findWithConnection(PosConnectionKey.Direction.INBOUND, "in-" + company)
+                .orElseThrow();
+        assertThat(old.getRetiresAt()).isBetween(Instant.now().plus(Duration.ofDays(6)),
+                Instant.now().plus(Duration.ofDays(8)));
+        assertThat(old.isUsableAt(Instant.now())).isTrue();
+    }
+
+    @Test
+    @DisplayName("Revocar la única llave de una dirección la mata y deja la conexión inactiva, con auditoría")
+    void revokingTheOnlyKeyDeactivatesTheConnection() throws Exception {
+        Fixture fixture = fixture("pos-revoke");
+        long company = nextSeq();
+        mockMvc.perform(settingsPut(fixture, company, "out-" + company, PosSigning.secret("o" + company),
+                "in-" + company, PosSigning.secret("i" + company))).andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/admin/pos/keys/revoke")
+                        .header("Host", hostHeader(fixture.store()))
+                        .header("Authorization", "Bearer " + fixture.token())
+                        .contentType("application/json")
+                        .content("{\"direction\":\"INBOUND\",\"keyId\":\"in-" + company + "\"}"))
+                .andExpect(status().isOk());
+
+        PosConnection connection = posConnectionRepository.findByStoreId(fixture.store().getId()).orElseThrow();
+        assertThat(connection.isActive()).isFalse();
+        assertThat(keyRepository.findWithConnection(PosConnectionKey.Direction.INBOUND, "in-" + company).orElseThrow()
+                .getRevokedAt()).isNotNull();
+        assertThat(AuditRows.single(jdbcTemplate, fixture.store().getId(), "POS_KEY_REVOKE").details())
+                .contains("in-" + company).doesNotContain(PosSigning.secret("i" + company));
+
+        mockMvc.perform(get("/api/admin/pos/keys")
+                        .header("Host", hostHeader(fixture.store()))
+                        .header("Authorization", "Bearer " + fixture.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.keyId == 'in-" + company + "')].usable").value(false));
+    }
+
+    @Test
+    @DisplayName("Una conexión activa sin llaves (anterior a V38) no autentica nada: responde 401, no revienta")
+    void aConnectionWithoutKeysAnswers401() throws Exception {
+        Store store = createStore("pos-legacy");
         PosConnection connection = new PosConnection();
         connection.setStore(store);
-        connection.setCompanyId(9191L);
+        connection.setCompanyId(nextSeq());
         connection.setCompanyName("UvoPOS");
-        connection.setApiKey("uvp_9191_clave");
-        connection.setWebhookSecret("");
         connection.setApiUrl("https://pos.invalid");
         connection.setActive(true);
         posConnectionRepository.save(connection);
 
-        String body = "{\"company_id\":9191,\"product_id\":1,\"old_stock\":5,\"new_stock\":4}";
-        String timestamp = String.valueOf(System.currentTimeMillis() / 1000);
-
-        // Y esto es lo que pasa de verdad, comprobado y no supuesto: la petición ni se rechaza ni se
-        // acepta — revienta al construir el HMAC. MockMvc relanza la excepción del filtro; en un
-        // contenedor de verdad sale por su página de error, un 500 sin cuerpo del proyecto, porque
-        // GlobalExceptionHandler solo atiende lo que llega a un controlador.
-        assertThatThrownBy(() -> mockMvc.perform(post("/api/webhooks/pos/stock-updated")
-                .header("Host", hostHeader(store))
-                .header("X-Company-ID", "9191")
-                .header("X-Timestamp", timestamp)
-                .header("X-Signature", hmacWithEmptyKeyIsImpossible())
-                .contentType("application/json")
-                .content(body)))
-                .rootCause()
-                .hasMessageContaining("Empty key");
-    }
-
-    /**
-     * No hay forma de calcular la firma que esa conexión esperaría, porque {@code SecretKeySpec} rechaza
-     * una clave vacía — que es justamente el problema. Se manda una cualquiera.
-     */
-    private static String hmacWithEmptyKeyIsImpossible() throws Exception {
-        Mac mac = Mac.getInstance("HmacSHA256");
-        mac.init(new SecretKeySpec("x".getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-        return HexFormat.of().formatHex(mac.doFinal("lo que sea".getBytes(StandardCharsets.UTF_8)));
+        mockMvc.perform(PosSigning.signedPost("/api/webhooks/pos/stock-updated",
+                        "{\"companyId\":" + connection.getCompanyId() + "}", connection))
+                .andExpect(status().isUnauthorized());
     }
 
     private record Fixture(Store store, String token) {
@@ -124,7 +169,7 @@ class PosConnectionActivationTest extends IntegrationTestSupport {
     }
 
     private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder settingsPut(
-            Fixture fixture, String posToken, String webhookSecret) {
+            Fixture fixture, long company, String outKeyId, String outSecret, String inKeyId, String inSecret) {
         return put("/api/admin/settings/general")
                 .header("Host", hostHeader(fixture.store()))
                 .header("Authorization", "Bearer " + fixture.token())
@@ -136,9 +181,11 @@ class PosConnectionActivationTest extends IntegrationTestSupport {
                           "shippingEnabled":true,"defaultShippingCost":"0","freeShippingEnabled":false,"freeShippingThreshold":"0",
                           "allowGuestCheckout":true,"requirePhone":false,"requireCompany":false,
                           "stripePublicKey":"","stripeSecretKey":"","stripeEnabled":false,
-                          "posApiUrl":"https://pos.test","posApiToken":"%s","posWebhookSecret":"%s","posSyncEnabled":true,
+                          "posApiUrl":"https://pos.test","posCompanyId":%d,
+                          "posOutboundKeyId":"%s","posOutboundSecret":"%s","posInboundKeyId":"%s","posInboundSecret":"%s",
+                          "posSyncEnabled":true,
                           "metaTitle":"","metaDescription":"","metaKeywords":"","facebookUrl":"","instagramUrl":"","twitterUrl":""
                         }
-                        """.formatted(posToken, webhookSecret));
+                        """.formatted(company, outKeyId, outSecret, inKeyId, inSecret));
     }
 }

@@ -66,10 +66,12 @@ public class ProductSyncMapping {
     private Product product;
 
     // UvoPOS's producto_empresa_id — plain bigint, not a JPA-managed FK.
-    @Column(name = "external_id", nullable = false)
+    // IMP-08: null en el padre de un producto con variantes, que no es un Producto del POS: cada variante lo es, y
+    // su id va en ProductVariationSyncMapping (contrato §4). Este mapeo guarda entonces la empresa y los flags.
+    @Column(name = "external_id")
     private Long externalId;
 
-    @Column(name = "external_sku", nullable = false, length = 100)
+    @Column(name = "external_sku", length = 100)
     private String externalSku;
 
     // UvoPOS's empresa_id. Source verification: no DB-level FK constraint exists
@@ -117,8 +119,8 @@ public class ProductSyncMapping {
     @Column(name = "sync_metadata", columnDefinition = "jsonb")
     private Map<String, Object> syncMetadata;
 
-    // POS-3. La versión de catálogo ya aplicada; la escribe solo PosCatalogWriter, con el producto bloqueado.
-    // null = todavía ninguna.
+    // POS-3. La versión ya aplicada; la escribe solo PosCatalogWriter, con el producto bloqueado. null = todavía
+    // ninguna. IMP-08: es la versión única del Producto POS, de catálogo y de stock (contrato §5).
     @Column(name = "catalog_version")
     private Long catalogVersion;
 

@@ -94,21 +94,25 @@ class SettingsAuditTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("Conectar el POS deja la empresa y que se pusieron el token y el secreto, sin sus valores")
+    @DisplayName("Conectar el POS deja la empresa y los key_id de las dos llaves, nunca sus secretos")
     void connectingThePosIsRecordedWithoutSecrets() throws Exception {
         long company = 880_000_000L + nextSeq();
         Body withPos = new Body();
-        withPos.posApiToken = "uvp_" + company + "_TokenDelPosNoDebeAparecer01";
-        withPos.posWebhookSecret = "secreto-del-webhook-que-no-debe-aparecer";
+        withPos.posCompanyId = company;
+        withPos.posOutboundKeyId = "out-" + company;
+        withPos.posOutboundSecret = org.uvo.uvostore.support.PosSigning.secret("NoDebeAparecerOut" + company);
+        withPos.posInboundKeyId = "in-" + company;
+        withPos.posInboundSecret = org.uvo.uvostore.support.PosSigning.secret("NoDebeAparecerIn" + company);
         save(withPos);
 
         AuditRows.Row row = auditRow(store, "POS_CONNECTION_UPDATE");
         assertThat(row.targetType()).isEqualTo("POS_CONNECTION");
-        assertThat(row.change("apiKey").asText()).isEqualTo("set");
-        assertThat(row.change("webhookSecret").asText()).isEqualTo("set");
         assertThat(row.change("companyId").path("to").asLong()).isEqualTo(company);
+        assertThat(row.change("outboundKeyId").path("to").asText()).isEqualTo("out-" + company);
+        assertThat(row.change("inboundKeyId").path("to").asText()).isEqualTo("in-" + company);
+        assertThat(row.json().path("keysInstalled").asBoolean()).isTrue();
         assertThat(row.json().path("connectionCreated").asBoolean()).isTrue();
-        assertThat(row.details()).doesNotContain("TokenDelPos", "secreto-del-webhook");
+        assertThat(row.details()).doesNotContain(withPos.posOutboundSecret, withPos.posInboundSecret);
     }
 
     private void save(Body body) throws Exception {
@@ -126,8 +130,11 @@ class SettingsAuditTest extends IntegrationTestSupport {
         String taxRate = "19";
         String stripeSecretKey = "";
         Boolean stripeEnabled;
-        String posApiToken = "";
-        String posWebhookSecret = "";
+        Long posCompanyId;
+        String posOutboundKeyId = "";
+        String posOutboundSecret = "";
+        String posInboundKeyId = "";
+        String posInboundSecret = "";
 
         String json() {
             return """
@@ -137,12 +144,13 @@ class SettingsAuditTest extends IntegrationTestSupport {
                       "shippingEnabled":true,"defaultShippingCost":"0","freeShippingEnabled":false,"freeShippingThreshold":"0",
                       "allowGuestCheckout":true,"requirePhone":false,"requireCompany":false,
                       "stripePublicKey":"pk_test_123","stripeSecretKey":"%s","stripeEnabled":%s,
-                      "posApiUrl":"https://pos.test","posApiToken":"%s","posWebhookSecret":"%s","posSyncEnabled":%s,
+                      "posApiUrl":"https://pos.test","posCompanyId":%s,"posOutboundKeyId":"%s",
+                      "posOutboundSecret":"%s","posInboundKeyId":"%s","posInboundSecret":"%s","posSyncEnabled":%s,
                       "metaTitle":"","metaDescription":"","metaKeywords":"","facebookUrl":"","instagramUrl":"","twitterUrl":""
                     }
                     """.formatted(storeName, taxRate, stripeSecretKey,
-                    stripeEnabled != null ? stripeEnabled : !stripeSecretKey.isBlank(), posApiToken,
-                    posWebhookSecret, !posApiToken.isBlank());
+                    stripeEnabled != null ? stripeEnabled : !stripeSecretKey.isBlank(), posCompanyId,
+                    posOutboundKeyId, posOutboundSecret, posInboundKeyId, posInboundSecret, posCompanyId != null);
         }
     }
 }

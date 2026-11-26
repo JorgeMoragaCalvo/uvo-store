@@ -77,7 +77,7 @@ class PosNotifierDisabledTest {
         verifyNoInteractions(mappingRepository);
 
         // Una fila encolada antes de apagar la integración.
-        OutboxResult result = new PosSaleOutboxHandler(notifier, posClient).handle(rowFor(order, 7L));
+        OutboxResult result = new PosSaleOutboxHandler(notifier, posClient, new PosOrderPayloadMapper(), null, null).handle(rowFor(order, 7L));
 
         assertThat(result.outcome()).isEqualTo(OutboxResult.Outcome.SKIPPED);
         assertThat(result.detail()).contains("deshabilitada");

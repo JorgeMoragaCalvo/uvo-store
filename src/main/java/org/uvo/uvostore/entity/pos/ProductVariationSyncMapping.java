@@ -49,12 +49,21 @@ public class ProductVariationSyncMapping {
     @OnDelete(action = OnDeleteAction.CASCADE)
     private ProductVariation variation;
 
-    // El id de la variante en el POS. Único dentro del mapeo del producto, no globalmente: es de una empresa.
+    // IMP-08. El id del Producto del POS que es esta variante (contrato §4: el POS no tiene variantes, cada una es un
+    // Producto suyo). Único por empresa (V38).
     @Column(name = "external_variant_id", nullable = false)
     private Long externalVariantId;
 
     @Column(name = "external_sku", nullable = false, length = 100)
     private String externalSku;
+
+    // IMP-08. La empresa, copiada del mapeo padre: la unicidad del Producto POS es por empresa.
+    @Column(name = "company_id", nullable = false)
+    private Long companyId;
+
+    // IMP-08. La última versión del Producto POS aplicada a esta variante, de catálogo o de stock (§5). Null = ninguna.
+    @Column(name = "pos_version")
+    private Long posVersion;
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)

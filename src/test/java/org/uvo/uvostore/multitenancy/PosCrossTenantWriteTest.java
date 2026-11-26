@@ -10,20 +10,17 @@ import org.uvo.uvostore.entity.pos.ProductSyncMapping;
 import org.uvo.uvostore.entity.pos.enums.SyncDirection;
 import org.uvo.uvostore.entity.pos.enums.SyncStatus;
 import org.uvo.uvostore.entity.tenant.Store;
+import org.uvo.uvostore.repository.PosConnectionKeyRepository;
 import org.uvo.uvostore.repository.PosConnectionRepository;
 import org.uvo.uvostore.repository.ProductSyncMappingRepository;
 import org.uvo.uvostore.support.IntegrationTestSupport;
+import org.uvo.uvostore.support.PosSigning;
 import org.uvo.uvostore.support.WithPosIntegration;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.HexFormat;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -46,8 +43,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WithPosIntegration
 class PosCrossTenantWriteTest extends IntegrationTestSupport {
 
-    private static final String SECRET_A = "secreto-webhook-de-la-tienda-a";
-    private static final String API_KEY_A = "api-key-de-la-tienda-a";
     private static final String INJECTED_NAME = "Producto inyectado";
     // PosSyncServiceImpl.slugify() del nombre de arriba — es por donde se comprueba en la base si el
     // producto llegó a crearse, sin depender del código de estado de la respuesta.
@@ -57,6 +52,8 @@ class PosCrossTenantWriteTest extends IntegrationTestSupport {
     private PosConnectionRepository posConnectionRepository;
     @Autowired
     private ProductSyncMappingRepository mappingRepository;
+    @Autowired
+    private PosConnectionKeyRepository keyRepository;
 
     @Test
     @DisplayName("Un webhook firmado por A que declara el companyId de B no toca el stock de B")
@@ -70,16 +67,9 @@ class PosCrossTenantWriteTest extends IntegrationTestSupport {
         createMapping(connectionB, productB, externalId);
         int stockBefore = productB.getStock();
 
-        // A firma con SU secreto y manda SU cabecera: el filtro lo acepta, como debe.
-        String payload = stockPayload(connectionB.getCompanyId(), externalId);
-        String timestamp = String.valueOf(System.currentTimeMillis() / 1000);
-
-        mockMvc.perform(post("/api/webhooks/pos/stock-updated")
-                        .header("X-Signature", hmac(payload + timestamp, SECRET_A))
-                        .header("X-Company-ID", String.valueOf(connectionA.getCompanyId()))
-                        .header("X-Timestamp", timestamp)
-                        .contentType("application/json")
-                        .content(payload))
+        // A firma con SU llave y manda SU cabecera: el filtro lo acepta, como debe.
+        mockMvc.perform(PosSigning.signedPost("/api/webhooks/pos/stock-updated",
+                        stockPayload(connectionB.getCompanyId(), externalId), connectionA))
                 .andExpect(status().isForbidden());
 
         assertThat(productRepository.findById(productB.getId()).orElseThrow().getStock())
@@ -88,16 +78,13 @@ class PosCrossTenantWriteTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("La API key de A no crea productos en el catálogo de B")
+    @DisplayName("La llave de A no crea productos en el catálogo de B")
     void theApiKeyOfADoesNotCreateProductsInB() throws Exception {
         PosConnection connectionA = createConnection(createStore("pos-sync-a"));
         PosConnection connectionB = createConnection(createStore("pos-sync-b"));
 
-        mockMvc.perform(post("/api/sync/product")
-                        .header("Authorization", "Bearer " + API_KEY_A)
-                        .header("X-Company-ID", String.valueOf(connectionA.getCompanyId()))
-                        .contentType("application/json")
-                        .content(syncPayload(connectionB.getCompanyId())))
+        mockMvc.perform(PosSigning.signedPost("/api/sync/product", syncPayload(connectionB.getCompanyId()),
+                        connectionA))
                 .andExpect(status().isForbidden());
 
         assertThat(productRepository.findByStoreIdAndSlug(connectionB.getStore().getId(), INJECTED_SLUG))
@@ -111,11 +98,8 @@ class PosCrossTenantWriteTest extends IntegrationTestSupport {
         PosConnection connectionA = createConnection(createStore("pos-own-a"));
 
         // El control positivo: la corrección tiene que rechazar el cruce, no la sincronización.
-        mockMvc.perform(post("/api/sync/product")
-                        .header("Authorization", "Bearer " + API_KEY_A)
-                        .header("X-Company-ID", String.valueOf(connectionA.getCompanyId()))
-                        .contentType("application/json")
-                        .content(syncPayload(connectionA.getCompanyId())))
+        mockMvc.perform(PosSigning.signedPost("/api/sync/product", syncPayload(connectionA.getCompanyId()),
+                        connectionA))
                 .andExpect(status().isOk());
 
         assertThat(productRepository.findByStoreIdAndSlug(connectionA.getStore().getId(), INJECTED_SLUG))
@@ -131,12 +115,8 @@ class PosCrossTenantWriteTest extends IntegrationTestSupport {
         connection.setCompanyName("Empresa POS " + store.getSlug());
         connection.setCompanyId(nextSeq());
         connection.setApiUrl("https://pos.test.local/api");
-        // Las dos tiendas comparten credenciales a propósito: si la corrección dependiera de que el
-        // secreto de A no sirve para firmar lo de B, no estaría arreglando lo que dice arreglar.
-        connection.setApiKey(API_KEY_A);
-        connection.setWebhookSecret(SECRET_A);
         connection.setActive(true);
-        return posConnectionRepository.save(connection);
+        return PosSigning.installKeys(keyRepository, posConnectionRepository.save(connection));
     }
 
     private void createMapping(PosConnection connection, Product product, long externalId) {
@@ -158,7 +138,7 @@ class PosCrossTenantWriteTest extends IntegrationTestSupport {
     private String stockPayload(long companyId, long externalId) {
         return """
                 {"event":"stock.updated","productId":%d,"sku":"SKU-1","companyId":%d,\
-                "warehouseId":1,"oldStock":10,"newStock":0,"stockWeb":0}"""
+                "warehouseId":1,"version":2,"oldStock":10,"newStock":0,"stockWeb":0}"""
                 .formatted(externalId, companyId);
     }
 
@@ -167,15 +147,5 @@ class PosCrossTenantWriteTest extends IntegrationTestSupport {
                 {"companyId":%d,"externalId":%d,"sku":"POS-SKU-%d","name":"%s",\
                 "price":1990,"stock":5,"active":true,"version":1}"""
                 .formatted(companyId, nextSeq(), nextSeq(), INJECTED_NAME);
-    }
-
-    private String hmac(String data, String secret) {
-        try {
-            Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-            return HexFormat.of().formatHex(mac.doFinal(data.getBytes(StandardCharsets.UTF_8)));
-        } catch (Exception e) {
-            throw new IllegalStateException(e);
-        }
     }
 }

@@ -15,27 +15,29 @@ import org.uvo.uvostore.entity.order.OrderItem;
 import org.uvo.uvostore.entity.order.enums.FulfillmentStatus;
 import org.uvo.uvostore.entity.order.enums.OrderStatus;
 import org.uvo.uvostore.entity.order.enums.PaymentStatus;
+import org.uvo.uvostore.entity.catalog.enums.ProductType;
 import org.uvo.uvostore.entity.pos.PosConnection;
+import org.uvo.uvostore.entity.pos.ProductSyncMapping;
+import org.uvo.uvostore.entity.pos.ProductVariationSyncMapping;
+import org.uvo.uvostore.entity.pos.enums.SyncDirection;
+import org.uvo.uvostore.entity.pos.enums.SyncStatus;
 import org.uvo.uvostore.entity.tenant.Store;
 import org.uvo.uvostore.entity.tenant.enums.StoreStatus;
 import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.repository.PosConnectionRepository;
 import org.uvo.uvostore.repository.ProductRepository;
+import org.uvo.uvostore.repository.ProductVariationRepository;
 import org.uvo.uvostore.repository.ProductSyncMappingRepository;
 import org.uvo.uvostore.repository.ProductVariationSyncMappingRepository;
 import org.uvo.uvostore.repository.StoreRepository;
 import org.uvo.uvostore.service.order.OrderInventoryService;
-import org.uvo.uvostore.service.pos.PosSyncService;
-import org.uvo.uvostore.service.pos.PosVariantFields;
 import org.uvo.uvostore.service.pos.PosWebhookService;
 import org.uvo.uvostore.service.pos.ProductUpdatePayload;
-import org.uvo.uvostore.service.pos.SyncProductCommand;
 import org.uvo.uvostore.support.WithPosIntegration;
 
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -48,7 +50,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * POS-5. Todo lo que escribe una variación bloquea antes a su producto padre, y por eso una venta y una
+ * POS-5 e IMP-08. Todo lo que escribe una variación bloquea antes a su producto padre, y por eso una venta y una
  * actualización de catálogo del mismo producto no pueden quedar esperándose la una a la otra.
  *
  * <p>El escritor de catálogo bloquea el padre y después escribe sus variaciones (el precio de la talla). La venta
@@ -64,7 +66,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PosVariantLockOrderTest {
 
     @Autowired
-    private PosSyncService posSyncService;
+    private ProductVariationRepository variationRepository;
     @Autowired
     private PosWebhookService posWebhookService;
     @Autowired
@@ -88,9 +90,8 @@ class PosVariantLockOrderTest {
 
     private Store store;
     private PosConnection connection;
-    private long externalId;
     private long m;
-    private long l;
+    private Long mediumId;
     private Long productId;
     private Long orderId;
 
@@ -105,17 +106,35 @@ class PosVariantLockOrderTest {
         connection.setCompanyName("Empresa POS");
         connection.setCompanyId(seq);
         connection.setApiUrl("https://pos.test.local/api");
-        connection.setApiKey("k");
-        connection.setWebhookSecret("s");
         connection.setActive(true);
         connection = connectionRepository.save(connection);
 
-        externalId = seq;
+        // IMP-08. Un producto con variantes de la tienda, con cada variante vinculada a su Producto del POS.
         m = seq + 1;
-        l = seq + 2;
-        productId = posSyncService.syncProduct(connection, new SyncProductCommand(externalId, "POL-" + seq,
-                "Polera " + seq, null, null, null, null, null, true, 1,
-                List.of(variant(m, 9990, 4, "M"), variant(l, 10990, 2, "L")))).productId();
+        long l = seq + 2;
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            Product product = new Product();
+            product.setStore(store);
+            product.setName("Polera " + seq);
+            product.setSlug("polera-" + seq);
+            product.setDescription("");
+            product.setPrice(BigDecimal.valueOf(9990));
+            product.setStock(6);
+            product.setActive(true);
+            product.setProductType(ProductType.VARIABLE);
+            product = productRepository.save(product);
+            productId = product.getId();
+            ProductSyncMapping parent = new ProductSyncMapping();
+            parent.setProduct(product);
+            parent.setCompanyId(connection.getCompanyId());
+            parent.setSyncStatus(SyncStatus.ACTIVE);
+            parent.setSyncDirection(SyncDirection.FROM_POS);
+            parent.setSyncStock(true);
+            parent.setSyncPrice(true);
+            parent = mappingRepository.save(parent);
+            mediumId = link(product, parent, "POL-M-" + seq, 9990, 4, m);
+            link(product, parent, "POL-L-" + seq, 10990, 2, l);
+        });
 
         // Una venta de una M, cobrada, cuyo descuento todavía no corrió: lo que hace recoverMissedStock.
         orderId = new TransactionTemplate(transactionManager).execute(status -> paidOrderOfOneM(seq).getId());
@@ -151,18 +170,15 @@ class PosVariantLockOrderTest {
 
                 // A, después, la variación: el precio de la M. Si la venta ya la tuviera bloqueada (porque la
                 // tomó antes que el padre), aquí las dos se esperarían y Postgres abortaría una.
-                posWebhookService.handleProductUpdated(new ProductUpdatePayload(connection.getCompanyId(), externalId,
-                        "POL", 2, Map.of("variants", List.of(json(variant(m, 8990, null, "M")),
-                                json(variant(l, 10990, null, "L"))))));
+                posWebhookService.handleProductUpdated(new ProductUpdatePayload(connection.getCompanyId(), m,
+                        "POL-M", 2, Map.of("price", 8990)));
             });
             sale.get().get(10, TimeUnit.SECONDS);
         } finally {
             executor.shutdownNow();
         }
 
-        ProductVariation medium = variantMappingRepository.findByMappingIdAndExternalVariantId(
-                mappingRepository.findByExternalIdAndCompanyId(externalId, connection.getCompanyId())
-                        .orElseThrow().getId(), m).orElseThrow().getVariation();
+        ProductVariation medium = variationRepository.findById(mediumId).orElseThrow();
         assertThat(medium.getPrice()).as("el cambio de catálogo se aplicó").isEqualByComparingTo("8990");
         assertThat(medium.getStock()).as("y la venta también").isEqualTo(3);
         assertThat(productRepository.findById(productId).orElseThrow().getStock()).isEqualTo(3 + 2);
@@ -171,9 +187,7 @@ class PosVariantLockOrderTest {
 
     private Order paidOrderOfOneM(long seq) {
         Product product = productRepository.findById(productId).orElseThrow();
-        ProductVariation medium = variantMappingRepository.findByMappingIdAndExternalVariantId(
-                mappingRepository.findByExternalIdAndCompanyId(externalId, connection.getCompanyId())
-                        .orElseThrow().getId(), m).orElseThrow().getVariation();
+        ProductVariation medium = variationRepository.findById(mediumId).orElseThrow();
 
         Order order = new Order();
         order.setStore(product.getStore());
@@ -205,20 +219,23 @@ class PosVariantLockOrderTest {
         return orderRepository.save(order);
     }
 
-    private static PosVariantFields variant(long id, long price, Integer stock, String size) {
-        Map<String, String> attributes = new LinkedHashMap<>();
-        attributes.put("Talla", size);
-        return new PosVariantFields(id, "POL-" + size + "-" + id, BigDecimal.valueOf(price), stock, attributes);
-    }
-
-    /** Como llega en {@code product.updated}: un mapa en camelCase. */
-    private static Map<String, Object> json(PosVariantFields variant) {
-        Map<String, Object> entry = new LinkedHashMap<>();
-        entry.put("variantId", variant.variantId());
-        entry.put("sku", variant.sku());
-        entry.put("price", variant.price());
-        entry.put("attributes", variant.attributes());
-        return entry;
+    private Long link(Product product, ProductSyncMapping parent, String sku, long price, int stock, long posProductId) {
+        ProductVariation variation = new ProductVariation();
+        variation.setStore(store);
+        variation.setProduct(product);
+        variation.setSku(sku);
+        variation.setPrice(BigDecimal.valueOf(price));
+        variation.setStock(stock);
+        variation.setActive(true);
+        variation = variationRepository.save(variation);
+        ProductVariationSyncMapping link = new ProductVariationSyncMapping();
+        link.setMapping(parent);
+        link.setVariation(variation);
+        link.setCompanyId(connection.getCompanyId());
+        link.setExternalVariantId(posProductId);
+        link.setExternalSku(sku);
+        variantMappingRepository.save(link);
+        return variation.getId();
     }
 
     private static boolean finishesWithin(Future<?> future, Duration timeout) {

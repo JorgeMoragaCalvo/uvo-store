@@ -15,6 +15,7 @@ import org.uvo.uvostore.entity.order.enums.OrderStatus;
 import org.uvo.uvostore.entity.order.enums.PaymentStatus;
 import org.uvo.uvostore.entity.pos.PosConnection;
 import org.uvo.uvostore.entity.pos.ProductSyncMapping;
+import org.uvo.uvostore.entity.pos.ProductVariationSyncMapping;
 import org.uvo.uvostore.repository.OrderRepository;
 import org.uvo.uvostore.repository.PosConnectionRepository;
 import org.uvo.uvostore.repository.ProductSyncMappingRepository;
@@ -196,27 +197,20 @@ public class PosOrderNotifier {
 
             Long externalId = Long.valueOf(productId.toString());
             int posStock = (int) Double.parseDouble(newStockWeb.toString());
-            Long variantId = PosCatalogSnapshot.asLong(result.get("variant_id"));
 
-            mappingRepository.findByExternalIdAndCompanyId(externalId, companyId).ifPresent(mapping -> {
-                // POS-5. Un resultado de variante se compara con esa variación. El padre de un producto variable
-                // es la suma de sus variantes: compararlo con el stock de una talla avisaría en cada venta.
-                int ourStock;
-                String what;
-                if (variantId != null) {
-                    var variant = variantMappingRepository.findByMappingIdAndExternalVariantId(mapping.getId(), variantId);
-                    if (variant.isEmpty()) {
-                        return;
-                    }
-                    ourStock = variant.get().getVariation().getStock();
-                    what = "la variación %d del producto %d".formatted(variant.get().getVariation().getId(),
-                            mapping.getProduct().getId());
-                } else if (mapping.getProduct().getProductType() == ProductType.VARIABLE) {
-                    return;
-                } else {
-                    ourStock = mapping.getProduct().getStock();
-                    what = "producto %d".formatted(mapping.getProduct().getId());
-                }
+            // IMP-08. El product_id es un Producto del POS: una variante de la tienda o un producto simple. El padre
+            // de un producto variable no es un Producto del POS, y es la suma de sus variantes.
+            Optional<StockSubject> subject = variantMappingRepository.findByCompanyIdAndExternalId(companyId, externalId)
+                    .map(variant -> new StockSubject(variant.getVariation().getStock(),
+                            "la variación %d del producto %d".formatted(variant.getVariation().getId(),
+                                    variant.getVariation().getProduct().getId())))
+                    .or(() -> mappingRepository.findByExternalIdAndCompanyId(externalId, companyId)
+                            .filter(mapping -> mapping.getProduct().getProductType() != ProductType.VARIABLE)
+                            .map(mapping -> new StockSubject(mapping.getProduct().getStock(),
+                                    "producto %d".formatted(mapping.getProduct().getId()))));
+            subject.ifPresent(found -> {
+                int ourStock = found.stock();
+                String what = found.what();
                 int gap = Math.abs(ourStock - posStock);
                 if (gap == 0) {
                     return;
@@ -235,20 +229,21 @@ public class PosOrderNotifier {
         }
     }
 
+    private record StockSubject(int stock, String what) {
+    }
+
     /**
-     * POS-5. Una línea de variación lleva su variante del POS. Si la variación no está mapeada, la línea no se envía:
-     * mandarla sin variante haría que el POS descontara otra cosa. Ya se avisó al confirmar el pago
-     * ({@link #reportIncompleteCoverage}).
+     * IMP-08. Cada línea lleva el Producto del POS vendido (contrato §4): el del producto simple o, en una variación,
+     * el de esa variante. Si no está vinculado, la línea no se envía: mandarla con otro id haría que el POS descontara
+     * otra cosa. Ya se avisó al confirmar el pago ({@link #reportIncompleteCoverage}).
      */
     private Optional<PosOrderItem> toPosItem(OrderItem item, ProductSyncMapping mapping) {
-        if (item.getVariation() == null) {
-            return Optional.of(new PosOrderItem(mapping.getExternalId(), null, item.getQuantity(), item.getPrice(),
-                    item.getSubtotal(), item.getDiscountAmount(), item.getTaxAmount()));
-        }
-        return variantMappingRepository.findByMappingIdAndVariationId(mapping.getId(), item.getVariation().getId())
-                .map(variant -> new PosOrderItem(mapping.getExternalId(), variant.getExternalVariantId(),
-                        item.getQuantity(), item.getPrice(), item.getSubtotal(), item.getDiscountAmount(),
-                        item.getTaxAmount()));
+        Optional<Long> posProductId = item.getVariation() == null
+                ? Optional.ofNullable(mapping.getExternalId())
+                : variantMappingRepository.findByCompanyIdAndVariationId(mapping.getCompanyId(), item.getVariation().getId())
+                        .map(ProductVariationSyncMapping::getExternalVariantId);
+        return posProductId.map(id -> new PosOrderItem(id, item.getQuantity(), item.getPrice(), item.getSubtotal(),
+                item.getDiscountAmount(), item.getTaxAmount()));
     }
 
     /**

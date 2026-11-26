@@ -234,8 +234,32 @@ public class OutboxDispatcher {
      */
     private void recoverOrphan(OutboxMessage orphan) {
         log.warn("Fila del outbox huérfana en vuelo id={} tipo={} {}", orphan.getId(), orphan.getType(), subject(orphan));
-        apply(orphan, orphan.getAttempts(), OutboxResult.uncertain(
-                "Huérfana en vuelo: el proceso se interrumpió durante la entrega, que pudo haber ocurrido"));
+        String detail = "Huérfana en vuelo: el proceso se interrumpió durante la entrega, que pudo haber ocurrido";
+        // IMP-08. El POS consulta la venta antes de decidir (contrato §10); los demás tipos siguen inciertos.
+        OutboxHandler handler = handlers.get(orphan.getType());
+        OutboxResult result = OutboxResult.uncertain(detail);
+        if (handler != null) {
+            try {
+                AtomicReference<OutboxResult> resolved = new AtomicReference<>();
+                withRequestIdOf(orphan, () -> TenantContext.runWithin(orphan.getStore(),
+                        () -> resolved.set(handler.resolveUncertain(orphan, detail))));
+                if (resolved.get() != null) {
+                    result = resolved.get();
+                }
+            } catch (Exception e) {
+                log.error("No se pudo resolver la huérfana id={} error={}", orphan.getId(), e.getMessage(), e);
+            }
+        }
+        apply(orphan, orphan.getAttempts(), result);
+        if (result.outcome() == OutboxResult.Outcome.DELIVERED && handler != null) {
+            OutboxResult delivered = result;
+            try {
+                withRequestIdOf(orphan, () -> TenantContext.runWithin(orphan.getStore(),
+                        () -> handler.afterDelivered(orphan, delivered)));
+            } catch (Exception e) {
+                log.error("Fallo después de entregar la fila del outbox id={} error={}", orphan.getId(), e.getMessage());
+            }
+        }
     }
 
     private void apply(OutboxMessage message, int attempts, OutboxResult result) {
@@ -252,14 +276,14 @@ public class OutboxDispatcher {
                     fail(message, attempts, "Resultado incierto, la venta pudo haber llegado al POS: "
                             + result.detail(), now);
                 } else {
-                    retryLater(message, attempts, result.detail(), now);
+                    retryLater(message, attempts, result.detail(), null, now);
                 }
             }
-            case RETRYABLE -> retryLater(message, attempts, result.detail(), now);
+            case RETRYABLE -> retryLater(message, attempts, result.detail(), result.retryAfter(), now);
         }
     }
 
-    private void retryLater(OutboxMessage message, int attempts, String detail, Instant now) {
+    private void retryLater(OutboxMessage message, int attempts, String detail, Duration retryAfter, Instant now) {
         // GAP-04: desde el último reencolado manual, si lo hubo; si no, una fila vieja reintentada desde el panel
         // volvería a FAILED en su primer fallo.
         Instant windowStart = message.retryWindowStart();
@@ -267,7 +291,8 @@ public class OutboxDispatcher {
             fail(message, attempts, "Sin éxito tras " + giveUpAfter.toHours() + " h: " + detail, now);
             return;
         }
-        Instant next = now.plus(backoff(attempts));
+        // IMP-08. Si el destino pidió un plazo (Retry-After del POS), ese manda; si no, la espera creciente.
+        Instant next = now.plus(retryAfter != null ? retryAfter : backoff(attempts));
         if (!store.reschedule(message.getId(), attempts, detail, next, now)) {
             log.warn("La fila del outbox id={} cambió durante la entrega; no se reprograma", message.getId());
             return;

@@ -24,11 +24,11 @@ public interface PosWebhookReceiptRepository extends JpaRepository<PosWebhookRec
     @Transactional
     @Modifying
     @Query(value = """
-            INSERT INTO pos_webhook_receipts (company_id, signature, received_at)
-            VALUES (:companyId, :signature, now())
-            ON CONFLICT (company_id, signature) DO NOTHING
+            INSERT INTO pos_webhook_receipts (key_id, nonce, received_at)
+            VALUES (:keyId, :nonce, now())
+            ON CONFLICT (key_id, nonce) DO NOTHING
             """, nativeQuery = true)
-    int recordIfNew(@Param("companyId") long companyId, @Param("signature") String signature);
+    int recordIfNew(@Param("keyId") String keyId, @Param("nonce") String nonce);
 
     @Transactional
     @Modifying

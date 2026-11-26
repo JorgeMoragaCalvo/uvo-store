@@ -28,7 +28,7 @@ import java.util.regex.Pattern;
 // Guards /api/platform/** — store onboarding is done by the operator team, not by a per-store
 // admin (there's no tenant/JWT to check against yet when a store doesn't exist). A single shared
 // secret is enough for this: it's used by a handful of internal people, not exposed to clients.
-// Same shape as PosApiKeyAuthFilter (constant-time compare, single header), different header name
+// Same shape as the former PosApiKeyAuthFilter (constant-time compare, single header), different header name
 // so the two schemes can't be confused with each other.
 //
 // POS-6: and only from the private network (PlatformNetworkPolicy). The network is checked BEFORE the

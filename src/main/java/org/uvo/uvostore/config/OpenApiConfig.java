@@ -57,8 +57,9 @@ public class OpenApiConfig {
                         - **Pública** (`/api/v1/**`): catálogo, carrito y checkout del storefront, sin autenticación.
                         - **Admin** (`/api/admin/**`): panel de administración de cada tienda, JWT bearer con rol ADMIN.
                         - **Cliente** (`/api/customer/**`): cuenta y direcciones del comprador, JWT bearer con rol CUSTOMER.
-                        - **POS** (`/api/webhooks/pos/**`, `/api/sync/**`): integración con UvoPOS, firma HMAC \
-                        (`X-Signature`/`X-Company-ID`/`X-Timestamp`) o API key — no probable con el botón \
+                        - **POS** (`/api/webhooks/pos/**`, `/api/sync/**`): integración con UvoPOS según el \
+                        contrato v1, firma UVO-HMAC-SHA256 (`X-Uvo-Key-Id`/`X-Uvo-Timestamp`/`X-Uvo-Nonce`/\
+                        `X-Uvo-Signature`/`X-Company-ID`/`X-Uvo-Contract`) — no probable con el botón \
                         "Authorize" de esta UI, ver la documentación de cada endpoint.
                         - **Plataforma** (`/api/platform/**`): alta y ciclo de vida de las tiendas por el equipo \
                         operador, header `X-Platform-Key`, solo desde la red privada.

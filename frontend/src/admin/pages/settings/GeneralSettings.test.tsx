@@ -10,7 +10,7 @@ import type { GeneralSettingsDto, GeneralSettingsUpdateRequest, PosResyncSummary
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/admin/services/adminApi', () => ({
   default: {
-    pos: { resync: vi.fn() },
+    pos: { resync: vi.fn(), keys: vi.fn(() => Promise.resolve([])), revokeKey: vi.fn() },
     // IMP-07. Lo que la plataforma deja activar; por defecto, todo.
     paymentGateways: { availability: vi.fn(() => Promise.resolve([])) },
   },
@@ -44,8 +44,10 @@ const BASE: GeneralSettingsDto = {
   stripeSecretKeyConfigured: false,
   stripeEnabled: false,
   posApiUrl: '',
-  posApiTokenConfigured: false,
-  posWebhookSecretConfigured: false,
+  posCompanyId: null,
+  posOutboundKeyId: null,
+  posInboundKeyId: null,
+  posConnectionActive: false,
   posSyncEnabled: false,
   posIntegrationAvailable: false,
   metaTitle: '',
@@ -84,7 +86,8 @@ describe('GeneralSettings: pestaña POS', () => {
     })
     expect(screen.getByRole('switch', { name: /sincronización con pos/i })).toBeDisabled()
     expect(screen.getByLabelText(/url de la api del pos/i)).toBeDisabled()
-    expect(screen.getByLabelText(/secreto de webhook/i)).toBeDisabled()
+    expect(screen.getByLabelText(/secreto de la llave pos→tienda/i)).toBeDisabled()
+    expect(screen.getByLabelText(/empresa del pos/i)).toBeDisabled()
   })
 
   it('leaves the fields usable when the platform allows it', async () => {
@@ -101,14 +104,17 @@ describe('GeneralSettings: pestaña POS', () => {
 
 /**
  * POS-4. La resincronización concilia ahora los productos sincronizados con UvoPOS. El backend decide con lo
- * guardado (integración de plataforma, token y sincronización de la tienda), así que el botón también: con
+ * guardado (integración de plataforma, las dos llaves y sincronización de la tienda), así que el botón también: con
  * algo de eso faltando queda deshabilitado y dice qué falta, en vez de ofrecer un botón que siempre falla.
  */
 describe('GeneralSettings: resincronizar con UvoPOS', () => {
   const READY: GeneralSettingsDto = {
     ...BASE,
     posIntegrationAvailable: true,
-    posApiTokenConfigured: true,
+    posCompanyId: 12,
+    posOutboundKeyId: 'pos-12-tienda',
+    posInboundKeyId: 'pos-12-pos',
+    posConnectionActive: true,
     posSyncEnabled: true,
   }
   const SUMMARY: PosResyncSummary = {
@@ -132,7 +138,7 @@ describe('GeneralSettings: resincronizar con UvoPOS', () => {
 
   it.each([
     ['sin integración', BASE, /se habilita junto con la integración/i],
-    ['sin token', { ...READY, posApiTokenConfigured: false }, /configura y guarda el token/i],
+    ['sin las llaves', { ...READY, posConnectionActive: false }, /configura y guarda las dos llaves/i],
     ['con la sincronización apagada', { ...READY, posSyncEnabled: false }, /activa y guarda la sincronización/i],
   ])('stays disabled %s and says why', async (_case, settings, reason) => {
     renderWith(settings)

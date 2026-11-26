@@ -404,10 +404,13 @@ class StoreOnboardingTest extends IntegrationTestSupport {
                     "companyId": %d,
                     "companyName": "Empresa",
                     "apiUrl": "http://pos.internal",
-                    "apiKey": "uvp_%d_%s",
-                    "webhookSecret": "%s"
+                    "outboundKeyId": "out-%d",
+                    "outboundSecret": "%s",
+                    "inboundKeyId": "in-%d",
+                    "inboundSecret": "%s"
                   }
-                }""".formatted(companyId, companyId, "a".repeat(40), "s".repeat(40)));
+                }""".formatted(companyId, companyId, org.uvo.uvostore.support.PosSigning.secret("o" + companyId),
+                companyId, org.uvo.uvostore.support.PosSigning.secret("i" + companyId)));
 
         mockMvc.perform(post("/api/platform/stores")
                         .header("X-Platform-Key", platformKey)

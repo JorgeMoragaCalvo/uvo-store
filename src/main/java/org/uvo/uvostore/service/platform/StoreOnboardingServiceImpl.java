@@ -22,13 +22,13 @@ import org.uvo.uvostore.service.audit.AuditDiff;
 import org.uvo.uvostore.service.audit.AuditEntry;
 import org.uvo.uvostore.service.audit.AuditTrail;
 import org.uvo.uvostore.service.outbox.OutboxService;
-import org.uvo.uvostore.service.pos.PosApiKey;
+import org.uvo.uvostore.entity.pos.PosConnectionKey;
+import org.uvo.uvostore.security.UvoHmac;
+import org.uvo.uvostore.service.pos.PosConnectionKeyService;
 import org.uvo.uvostore.service.pos.PosIntegrationPolicy;
 import org.uvo.uvostore.service.security.AdminInvitationMailer;
 import org.uvo.uvostore.service.url.StorePublicUrlResolver;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.NoSuchElementException;
@@ -59,9 +59,6 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
      */
     static final int ONBOARDING_LOCK_CLASS = 7312;
 
-    /** POS-6. El largo mínimo de la clave del token: lo genera una máquina, no lo teclea nadie. */
-    static final int MIN_GENERATED_KEY_LENGTH = 32;
-
     private final StoreRepository storeRepository;
     private final UserRepository userRepository;
     private final StoreOwnerRole storeOwnerRole;
@@ -69,6 +66,7 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
     private final SettingRepository settingRepository;
     private final PosConnectionRepository posConnectionRepository;
     private final PosIntegrationPolicy posPolicy;
+    private final PosConnectionKeyService posKeys;
     private final AdminInvitationMailer invitationMailer;
     private final OutboxService outboxService;
     private final JdbcTemplate jdbcTemplate;
@@ -80,7 +78,8 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
                                       StoreSettingsRepository storeSettingsRepository,
                                       SettingRepository settingRepository,
                                       PosConnectionRepository posConnectionRepository,
-                                      PosIntegrationPolicy posPolicy, AdminInvitationMailer invitationMailer,
+                                      PosIntegrationPolicy posPolicy, PosConnectionKeyService posKeys,
+                                      AdminInvitationMailer invitationMailer,
                                       OutboxService outboxService, JdbcTemplate jdbcTemplate,
                                       StorePublicUrlResolver publicUrls, AuditTrail auditTrail) {
         this.storeRepository = storeRepository;
@@ -90,6 +89,7 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
         this.settingRepository = settingRepository;
         this.posConnectionRepository = posConnectionRepository;
         this.posPolicy = posPolicy;
+        this.posKeys = posKeys;
         this.invitationMailer = invitationMailer;
         this.outboxService = outboxService;
         this.jdbcTemplate = jdbcTemplate;
@@ -176,7 +176,7 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
      *
      * <p>La integración tiene que estar encendida en la plataforma: con {@code POS_ENABLED=false},
      * {@code /api/sync/**} responde 404, así que la tienda quedaría creada y el POS no podría cargarle el catálogo
-     * — un alta a medias. Y el token tiene que ser de esa empresa, con una clave de máquina.
+     * — un alta a medias. Y las dos llaves (IMP-08) tienen que servir: distintas, y secretos de máquina.
      *
      * <p>Ningún mensaje repite el token: vuelve en la respuesta.
      */
@@ -185,14 +185,20 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
             throw new BusinessException("La integración con UvoPOS está apagada en esta plataforma (POS_ENABLED): "
                     + "sin ella el POS no podría cargar el catálogo de la tienda.");
         }
-        Long tokenCompany = PosApiKey.companyIdOf(pos.apiKey()).orElse(null);
-        if (!pos.companyId().equals(tokenCompany)) {
-            throw new BusinessException("El token de la API no tiene el formato uvp_<empresa>_<clave> de la empresa "
-                    + pos.companyId() + ".");
+        // IMP-08. Las dos llaves (contrato §2). El formato lo vuelve a comprobar PosConnectionKeyService al
+        // instalarlas; aquí se rechaza antes de crear nada, con el mismo criterio.
+        if (!UvoHmac.isValidKeyId(pos.outboundKeyId()) || !UvoHmac.isValidKeyId(pos.inboundKeyId())) {
+            throw new BusinessException("Los key_id solo pueden tener letras, números, punto, guion y guion bajo.");
         }
-        if (PosApiKey.secretLength(pos.apiKey()) < MIN_GENERATED_KEY_LENGTH) {
-            throw new BusinessException("La clave del token de la API debe tener al menos " + MIN_GENERATED_KEY_LENGTH
-                    + " caracteres.");
+        if (pos.outboundKeyId().equals(pos.inboundKeyId())) {
+            throw new BusinessException("Las llaves tienda→POS y POS→tienda deben ser distintas.");
+        }
+        if (!UvoHmac.isUsableSecret(pos.outboundSecret()) || !UvoHmac.isUsableSecret(pos.inboundSecret())) {
+            throw new BusinessException("Cada secreto debe ser base64 de al menos " + UvoHmac.MIN_SECRET_BYTES
+                    + " bytes.");
+        }
+        if (pos.outboundSecret().trim().equals(pos.inboundSecret().trim())) {
+            throw new BusinessException("Las llaves tienda→POS y POS→tienda deben tener secretos distintos.");
         }
     }
 
@@ -229,8 +235,8 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
         User owner = store.getOwnerUserId() == null ? null : userRepository.findById(store.getOwnerUserId()).orElse(null);
         boolean sameAlta = owner != null
                 && owner.getEmail().equalsIgnoreCase(command.adminEmail().trim())
-                && constantTimeEquals(connection.getApiKey(), pos.apiKey())
-                && constantTimeEquals(connection.getWebhookSecret(), pos.webhookSecret());
+                && posKeys.matchesCurrent(connection, pos.outboundKeyId(), pos.outboundSecret(),
+                pos.inboundKeyId(), pos.inboundSecret());
         if (!sameAlta) {
             throw new BusinessException("La empresa " + pos.companyId() + " ya está conectada con otras credenciales.");
         }
@@ -248,21 +254,14 @@ public class StoreOnboardingServiceImpl implements StoreOnboardingService {
         connection.setCompanyId(pos.companyId());
         connection.setCompanyName(pos.companyName());
         connection.setApiUrl(pos.apiUrl());
-        connection.setApiKey(pos.apiKey());
-        connection.setWebhookSecret(pos.webhookSecret());
         connection.setActive(true);
         connection.setConnectedAt(Instant.now());
-        posConnectionRepository.save(connection);
+        PosConnection saved = posConnectionRepository.save(connection);
+        posKeys.install(saved, PosConnectionKey.Direction.OUTBOUND, pos.outboundKeyId(), pos.outboundSecret());
+        posKeys.install(saved, PosConnectionKey.Direction.INBOUND, pos.inboundKeyId(), pos.inboundSecret());
 
         seedSetting(store, PosIntegrationPolicy.STORE_SETTING_KEY, "true");
         seedSetting(store, POS_API_URL_KEY, pos.apiUrl());
-    }
-
-    private static boolean constantTimeEquals(String stored, String received) {
-        if (stored == null || received == null) {
-            return false;
-        }
-        return MessageDigest.isEqual(stored.getBytes(StandardCharsets.UTF_8), received.getBytes(StandardCharsets.UTF_8));
     }
 
     @Override

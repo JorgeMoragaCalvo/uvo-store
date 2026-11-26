@@ -2,61 +2,44 @@ package org.uvo.uvostore.service.pos;
 
 import org.springframework.stereotype.Component;
 import org.uvo.uvostore.entity.order.Order;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
- * G3.1 y G3.3. Arma el cuerpo que se le manda a UvoPOS al completarse una orden.
+ * El cuerpo de {@code POST /api/v1/orders/external}: la venta web que se registra en UvoPOS. Sigue el §7 del contrato
+ * UvoPOS ↔ uvo-store v1 ({@code docs/contrato-pos-ecommerce.md}), y sus ejemplos
+ * ({@code docs/contrato-pos-ecommerce/ejemplos/venta-*.request.json}) lo fijan en {@code PosOrderPayloadMapperTest}.
  *
- * <p>Hasta aquí el cuerpo se construía dentro de {@code PosClient.notifyOrder} y llevaba solo
- * {@code source}, {@code order_number} e {@code items} con {@code product_id}, {@code quantity} y
- * {@code price}. Faltaban los importes de la orden —total, envío, descuento, IVA—, así que un
- * documento tributario emitido a partir de esto salía por un monto distinto del cobrado; y faltaba
- * cualquier forma de idempotencia, sin la cual un reintento (G2) duplica el documento.
- *
- * <h2>ATENCIÓN: el contrato con la plataforma SII NO está confirmado</h2>
- * Los nombres de campo y la convención de idempotencia de abajo son una apuesta razonable, no un
- * acuerdo. Todo lo que depende de ese contrato vive en esta clase a propósito: alinearlo cuando
- * llegue la especificación es editar un archivo, y su test de contrato dirá exactamente qué cambió.
- * Queda por confirmar:
- * <ol>
- *   <li>Los nombres: {@code subtotal}, {@code discount_amount}, {@code shipping_cost},
- *       {@code tax_amount}, {@code total} — y los mismos {@code subtotal}/{@code tax_amount} por
- *       ítem.</li>
- *   <li>Si los importes van como número decimal (lo que se hace aquí) o en unidades enteras de la
- *       moneda. En CLP no hay decimales, así que la diferencia no se nota hasta que aparezca una
- *       moneda que sí los tenga.</li>
- *   <li>Si el descuento va como monto positivo a restar (lo que se hace aquí) o negativo.</li>
- *   <li>Cuál de las dos convenciones de idempotencia usa la plataforma: campo en el cuerpo
- *       ({@code idempotency_key}) o cabecera {@code Idempotency-Key}. Se mandan las dos por eso
- *       mismo — mandar de más es inocuo, quedarse corto duplica documentos.</li>
- *   <li>Si la clave debe ser única por orden o por orden y empresa. Aquí es por orden y empresa,
- *       porque una orden con productos de dos empresas genera dos documentos distintos y una clave
- *       compartida haría que el segundo se descartara como repetido. GAP-06: desde que el checkout
- *       exige una empresa por orden ({@link PosSaleCoverage}), esas órdenes solo pueden ser
- *       anteriores, y por eso los totales de abajo son los de la orden completa. Una orden de dos
- *       empresas que se cuele deja un aviso en {@code PosOrderNotifier}.</li>
- *   <li>POS-5: que una línea de variación identifique la variante con {@code variant_id}, junto al
- *       {@code product_id} del producto.</li>
- *   <li>GAP-05: {@code tax_included} en la orden y {@code discount_amount} por ítem. Las líneas suman
- *       el descuento y el IVA de la orden; con {@code tax_included = true} el subtotal y el descuento
- *       van con IVA y el IVA está contenido, y con {@code false} el IVA se suma.</li>
- * </ol>
+ * <ul>
+ *   <li>Todo en snake_case y todo obligatorio. Los importes son enteros CLP.</li>
+ *   <li>{@code idempotency_key} = {@code {order_number}:{company_id}} (§8), igual a la cabecera {@code Idempotency-Key}.
+ *       Una orden es de una sola empresa (GAP-06, {@link PosSaleCoverage}), así que los totales son los de la orden.</li>
+ *   <li>Cada línea lleva el {@code product_id} del Producto POS vendido. En una variante es el Producto POS de esa
+ *       variante (§4): el contrato no tiene {@code variant_id}.</li>
+ *   <li>GAP-05: con {@code tax_included = true} el subtotal y el descuento van con IVA y el IVA está contenido; con
+ *       {@code false} el IVA se suma. Las líneas suman el descuento y el IVA de la orden. El envío va solo en
+ *       {@code shipping_cost}, fuera de la base del IVA.</li>
+ * </ul>
  */
 @Component
 public class PosOrderPayloadMapper {
 
     private static final String SOURCE = "uvostore";
 
+    private static final JsonMapper JSON = JsonMapper.builder().build();
+
     public PosOrderPayload toPayload(Order order, Long companyId, List<PosOrderItem> items) {
         String idempotencyKey = idempotencyKey(order.getOrderNumber(), companyId);
 
-        // LinkedHashMap y no Map.of(): el orden estable hace legible el test de contrato, y Map.of
-        // además no admite nulos ni pasa de diez pares.
+        // LinkedHashMap y no Map.of(): el orden estable es el de los ejemplos del contrato, y Map.of además no admite
+        // nulos ni pasa de diez pares.
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("source", SOURCE);
         body.put("order_number", order.getOrderNumber());
@@ -65,8 +48,6 @@ public class PosOrderPayloadMapper {
         body.put("discount_amount", amount(order.getDiscountAmount()));
         body.put("shipping_cost", amount(order.getShippingCost()));
         body.put("tax_amount", amount(order.getTaxAmount()));
-        // GAP-05: true cuando subtotal y descuento van con IVA y tax_amount está contenido en ellos; false cuando
-        // tax_amount se suma. Sin esto el receptor no sabe cuál de las dos sumas da el total.
         body.put("tax_included", order.isTaxIncluded());
         body.put("total", amount(order.getTotal()));
         body.put("items", items.stream().map(PosOrderPayloadMapper::itemBody).toList());
@@ -75,22 +56,76 @@ public class PosOrderPayloadMapper {
     }
 
     /**
-     * Estable por orden y empresa: dos llamadas para la misma orden y la misma empresa producen la
-     * misma clave. Eso —y no otra cosa— es lo que impide que un reintento emita un segundo
-     * documento tributario, así que no puede llevar nada aleatorio ni derivado del reloj.
+     * Estable por orden y empresa: dos llamadas para la misma orden y la misma empresa producen la misma clave. Eso
+     * —y no otra cosa— es lo que impide que un reintento registre una segunda venta, así que no puede llevar nada
+     * aleatorio ni derivado del reloj.
      */
     public static String idempotencyKey(String orderNumber, Long companyId) {
         return orderNumber + ":" + companyId;
     }
 
+    /** Los bytes que se fijan en la fila del outbox y se firman. Compacto y con el orden de {@link #toPayload}. */
+    public String toJson(PosOrderPayload payload) {
+        return JSON.writeValueAsString(payload.body());
+    }
+
+    /**
+     * Las invariantes del §7 que el POS verifica, comprobadas antes de mandar nada: si fallan, el POS respondería
+     * {@code 422 VALIDATION} con la misma clave para siempre. Devuelve el primer problema, o vacío si cuadra.
+     */
+    public static Optional<String> invariantViolation(Map<String, Object> body) {
+        List<?> items = (List<?>) body.get("items");
+        long subtotal = 0;
+        long discount = 0;
+        long tax = 0;
+        for (Object entry : items) {
+            Map<?, ?> item = (Map<?, ?>) entry;
+            long quantity = ((Number) item.get("quantity")).longValue();
+            long price = ((Number) item.get("price")).longValue();
+            long lineSubtotal = ((Number) item.get("subtotal")).longValue();
+            long lineDiscount = ((Number) item.get("discount_amount")).longValue();
+            if (quantity <= 0) {
+                return Optional.of("una línea tiene cantidad " + quantity);
+            }
+            if (lineSubtotal != quantity * price) {
+                return Optional.of("el subtotal de la línea del producto " + item.get("product_id")
+                        + " no es cantidad × precio");
+            }
+            if (lineDiscount < 0) {
+                return Optional.of("una línea tiene un descuento negativo");
+            }
+            subtotal += lineSubtotal;
+            discount += lineDiscount;
+            tax += ((Number) item.get("tax_amount")).longValue();
+        }
+        long orderSubtotal = ((Number) body.get("subtotal")).longValue();
+        long orderDiscount = ((Number) body.get("discount_amount")).longValue();
+        long orderShipping = ((Number) body.get("shipping_cost")).longValue();
+        long orderTax = ((Number) body.get("tax_amount")).longValue();
+        long orderTotal = ((Number) body.get("total")).longValue();
+        if (subtotal != orderSubtotal) {
+            return Optional.of("las líneas suman un subtotal de " + subtotal + " y la orden dice " + orderSubtotal);
+        }
+        if (discount != orderDiscount) {
+            return Optional.of("las líneas suman un descuento de " + discount + " y la orden dice " + orderDiscount);
+        }
+        if (tax != orderTax) {
+            return Optional.of("las líneas suman un IVA de " + tax + " y la orden dice " + orderTax);
+        }
+        if (orderShipping < 0) {
+            return Optional.of("el envío es negativo");
+        }
+        long expected = orderSubtotal - orderDiscount + orderShipping
+                + (Boolean.TRUE.equals(body.get("tax_included")) ? 0 : orderTax);
+        if (expected != orderTotal) {
+            return Optional.of("el total debería ser " + expected + " y la orden dice " + orderTotal);
+        }
+        return Optional.empty();
+    }
+
     private static Map<String, Object> itemBody(PosOrderItem item) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("product_id", item.productId());
-        // POS-5. La variante vendida, solo en las líneas de variación: el POS descuenta el stock de esa talla, no el
-        // del producto. Una línea simple queda como antes, sin la clave, para no obligar al POS a leer un null.
-        if (item.variantId() != null) {
-            body.put("variant_id", item.variantId());
-        }
         body.put("quantity", item.quantity());
         body.put("price", amount(item.price()));
         body.put("subtotal", amount(item.subtotal()));
@@ -99,9 +134,8 @@ public class PosOrderPayloadMapper {
         return Collections.unmodifiableMap(body);
     }
 
-    // Un importe ausente se manda como 0 y no como null: la plataforma tendría que interpretar el
-    // null, y "sin IVA" y "IVA cero" son lo mismo para el documento.
-    private static BigDecimal amount(BigDecimal value) {
-        return value == null ? BigDecimal.ZERO : value;
+    // Enteros CLP (§7). Un importe ausente se manda como 0: "sin IVA" y "IVA cero" son lo mismo para el documento.
+    private static long amount(BigDecimal value) {
+        return value == null ? 0L : value.setScale(0, RoundingMode.HALF_UP).longValueExact();
     }
 }
