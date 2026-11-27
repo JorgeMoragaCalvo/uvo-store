@@ -124,7 +124,6 @@ public class PaymentServiceImpl implements PaymentService {
                 .build();
 
         return SessionCreateParams.builder()
-                .addPaymentMethodType(SessionCreateParams.PaymentMethodType.CARD)
                 .setMode(SessionCreateParams.Mode.PAYMENT)
                 // PROD-04. Las dos salen del storefront de la tienda de la orden y ya no se reciben del
                 // cliente. Lo que había era un redirect abierto en un flujo de pago: un POST a

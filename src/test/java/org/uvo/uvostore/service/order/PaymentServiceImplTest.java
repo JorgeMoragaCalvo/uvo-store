@@ -2,6 +2,7 @@ package org.uvo.uvostore.service.order;
 
 import com.stripe.model.PaymentIntent;
 import com.stripe.model.checkout.Session;
+import com.stripe.net.BearerTokenAuthenticator;
 import com.stripe.net.RequestOptions;
 import com.stripe.param.checkout.SessionCreateParams;
 import org.junit.jupiter.api.AfterEach;
@@ -164,7 +165,7 @@ class PaymentServiceImplTest {
 
         RequestOptions options = paymentService.requestOptions();
 
-        assertEquals(realKey, options.getApiKey());
+        assertEquals(realKey, ((BearerTokenAuthenticator) options.getAuthenticator()).getApiKey());
     }
 
     @Test
@@ -172,7 +173,7 @@ class PaymentServiceImplTest {
         // The application.properties fallback was never encrypted, so it must be used as-is.
         RequestOptions options = paymentService.requestOptions();
 
-        assertEquals("sk_test_fallback", options.getApiKey());
+        assertEquals("sk_test_fallback", ((BearerTokenAuthenticator) options.getAuthenticator()).getApiKey());
     }
 
     @Test
