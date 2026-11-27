@@ -70,6 +70,9 @@ jobs:
       # El de la distribución: el E2E lo arranca sin root, con su propio prefijo y configuración.
       - name: Install nginx
         run: |
+          # El runner trae el repositorio de paquetes de Microsoft, que a veces responde 403 y tumba el
+          # apt-get update entero. Este job no usa nada de ahí.
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends nginx
           nginx -v
