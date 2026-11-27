@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # The full tag, not @v5: this action does not publish floating major tags after v3. v5 runs on
       # node24 and needs a runner >= 2.327.1, which the hosted ubuntu-latest has.
