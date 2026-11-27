@@ -73,8 +73,9 @@ class PosWebhookAuthTest extends IntegrationTestSupport {
     void anUnknownContractVersionIs400() throws Exception {
         PosConnection connection = createConnection(true);
 
-        mockMvc.perform(PosSigning.signedPost(STOCK, stockPayload(connection.getCompanyId(), 1), connection)
-                        .header(UvoHmac.HEADER_CONTRACT, "2"))
+        mockMvc.perform(PosSigning.signedPost(STOCK, stockPayload(connection.getCompanyId(), 1),
+                        String.valueOf(connection.getCompanyId()), PosSigning.inboundKeyId(connection),
+                        PosSigning.inboundSecret(connection), now(), UvoHmac.newNonce(), "2"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("UNSUPPORTED_CONTRACT"));
     }

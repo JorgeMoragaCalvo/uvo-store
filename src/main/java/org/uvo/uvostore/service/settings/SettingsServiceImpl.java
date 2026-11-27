@@ -218,6 +218,13 @@ public class SettingsServiceImpl implements SettingsService {
             throw new BusinessException("Para conectar UvoPOS debes indicar la URL de su API (https://…).");
         }
 
+        // Antes de guardar nada: una conexión nueva, o una dirección sin llave vigente, necesita key_id y secreto. Así el
+        // rechazo no deja una conexión a medias en la sesión.
+        requireKeyFor(previousOutbound, command.posOutboundKeyId(), command.posOutboundSecret(),
+                PosConnectionKey.Direction.OUTBOUND);
+        requireKeyFor(previousInbound, command.posInboundKeyId(), command.posInboundSecret(),
+                PosConnectionKey.Direction.INBOUND);
+
         connection.setStore(store);
         connection.setCompanyId(companyId);
         connection.setApiUrl(apiUrl);
@@ -268,6 +275,14 @@ public class SettingsServiceImpl implements SettingsService {
             throw new BusinessException("Falta el secreto de la llave " + label(direction) + ".");
         }
         return posKeys.install(connection, direction, keyId.trim(), secret);
+    }
+
+    private static void requireKeyFor(String currentKeyId, String keyId, String secret,
+                                      PosConnectionKey.Direction direction) {
+        if (currentKeyId == null && (!notBlank(keyId) || !notBlank(secret))) {
+            throw new BusinessException("Para conectar UvoPOS debes indicar las dos llaves, tienda→POS y POS→tienda, "
+                    + "cada una con su key_id y su secreto: falta la llave " + label(direction) + ".");
+        }
     }
 
     private String currentInboundKeyId(PosConnection connection) {

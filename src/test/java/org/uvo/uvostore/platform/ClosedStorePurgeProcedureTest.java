@@ -298,8 +298,8 @@ class ClosedStorePurgeProcedureTest {
         long mappingId = insert("INSERT INTO product_sync_mapping (product_id, external_id, external_sku, company_id, sync_status, "
                 + "sync_direction, sync_stock, sync_price, sync_name, sync_description) "
                 + "VALUES (?, ?, 'EXT', ?, 'ACTIVE', 'FROM_POS', true, true, false, false) RETURNING id", productId, seq, companyId);
-        jdbc.update("INSERT INTO product_variation_sync_mapping (mapping_id, product_variation_id, external_variant_id, external_sku) "
-                + "VALUES (?, ?, ?, 'EXT-M')", mappingId, variationId, seq);
+        jdbc.update("INSERT INTO product_variation_sync_mapping (mapping_id, product_variation_id, external_variant_id, external_sku, "
+                + "company_id) VALUES (?, ?, ?, 'EXT-M', ?)", mappingId, variationId, seq, companyId);
 
         long customerId = insert("INSERT INTO customers (store_id, email, first_name, last_name, account_status, password) "
                 + "VALUES (?, ?, 'Cli', 'Ente', 'ACTIVE', 'hash') RETURNING id", id, "cliente-" + seq + "@test.local");

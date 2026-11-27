@@ -116,13 +116,12 @@ public class PosSaleOutboxHandler implements OutboxHandler {
 
     /**
      * IMP-08. Una fila huérfana en vuelo (el proceso murió durante la entrega): se consulta al POS antes de decidir.
-     * Si el cuerpo nunca se fijó, no salió nada y se puede reintentar.
+     *
+     * <p>Una fila sin cuerpo fijado no prueba que no saliera nada: puede ser de antes de V38, cuando el cuerpo no se
+     * guardaba. Se consulta igual, sin comparar el hash; si la consulta no lo resuelve, sigue incierta.
      */
     @Override
     public OutboxResult resolveUncertain(OutboxMessage message, String detail) {
-        if (message.getPayload() == null) {
-            return OutboxResult.retryable(detail + " (el cuerpo no llegó a fijarse: no salió nada)");
-        }
         Optional<PosConnection> connection = activeConnection(message.getCompanyId());
         if (connection.isEmpty()) {
             return OutboxResult.uncertain(detail + " (sin conexión activa para consultar)");
@@ -156,9 +155,10 @@ public class PosSaleOutboxHandler implements OutboxHandler {
         return Optional.empty();
     }
 
+    /** {@code json} nulo: una fila sin cuerpo fijado (anterior a V38), que no se puede comparar. */
     private OutboxResult resolveRegistered(OutboxMessage message, PosLookup lookup, String json, String detail) {
-        String ours = UvoHmac.sha256Hex(json.getBytes(StandardCharsets.UTF_8));
-        if (lookup.bodySha256() != null && !lookup.bodySha256().equalsIgnoreCase(ours)) {
+        String ours = json == null ? null : UvoHmac.sha256Hex(json.getBytes(StandardCharsets.UTF_8));
+        if (ours != null && lookup.bodySha256() != null && !lookup.bodySha256().equalsIgnoreCase(ours)) {
             return OutboxResult.uncertain(detail + " — el POS tiene esta clave registrada con otro cuerpo");
         }
         log.info("La consulta confirma la venta en el POS order_id={} company_id={} sale_id={}",

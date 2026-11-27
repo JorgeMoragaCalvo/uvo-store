@@ -254,6 +254,7 @@ class PosSaleRestrictionTest extends IntegrationTestSupport {
         variant.setVariation(variation);
         variant.setExternalVariantId(nextSeq());
         variant.setExternalSku("EXT-VAR-" + variation.getId());
+        variant.setCompanyId(mapping.getCompanyId());
         variantMappingRepository.save(variant);
     }
 

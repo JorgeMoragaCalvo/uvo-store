@@ -335,6 +335,9 @@ public abstract class InterruptionTestSupport {
             item.setQuantity(quantity);
             item.setPrice(PRICE);
             item.setSubtotal(subtotal);
+            // GAP-05 e IMP-08: como el checkout, la línea lleva su parte del descuento; si no, la venta no cuadra
+            // con las invariantes del contrato (§7) y se rechaza antes de enviarse.
+            item.setDiscountAmount(discount);
             item.setTaxAmount(BigDecimal.ZERO);
             List<OrderItem> items = new ArrayList<>();
             items.add(item);

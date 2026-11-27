@@ -883,19 +883,26 @@
           "metaTitle" : {
             "type" : "string"
           },
-          "posApiTokenConfigured" : {
+          "posApiUrl" : {
+            "type" : "string"
+          },
+          "posCompanyId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "posConnectionActive" : {
             "type" : "boolean"
           },
-          "posApiUrl" : {
+          "posInboundKeyId" : {
             "type" : "string"
           },
           "posIntegrationAvailable" : {
             "type" : "boolean"
           },
-          "posSyncEnabled" : {
-            "type" : "boolean"
+          "posOutboundKeyId" : {
+            "type" : "string"
           },
-          "posWebhookSecretConfigured" : {
+          "posSyncEnabled" : {
             "type" : "boolean"
           },
           "pricesIncludeTax" : {
@@ -980,17 +987,27 @@
           "metaTitle" : {
             "type" : "string"
           },
-          "posApiToken" : {
+          "posApiUrl" : {
             "type" : "string"
           },
-          "posApiUrl" : {
+          "posCompanyId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "posInboundKeyId" : {
+            "type" : "string"
+          },
+          "posInboundSecret" : {
+            "type" : "string"
+          },
+          "posOutboundKeyId" : {
+            "type" : "string"
+          },
+          "posOutboundSecret" : {
             "type" : "string"
           },
           "posSyncEnabled" : {
             "type" : "boolean"
-          },
-          "posWebhookSecret" : {
-            "type" : "string"
           },
           "pricesIncludeTax" : {
             "type" : "boolean"
@@ -1144,6 +1161,46 @@
           },
           "title" : {
             "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "KeyView" : {
+        "properties" : {
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "direction" : {
+            "enum" : [ "OUTBOUND", "INBOUND" ],
+            "type" : "string"
+          },
+          "keyId" : {
+            "type" : "string"
+          },
+          "retiresAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "revokedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "usable" : {
+            "type" : "boolean"
+          }
+        },
+        "type" : "object"
+      },
+      "Link" : {
+        "properties" : {
+          "posProductId" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "variationId" : {
+            "format" : "int64",
+            "type" : "integer"
           }
         },
         "type" : "object"
@@ -1755,6 +1812,15 @@
         },
         "type" : "object"
       },
+      "PosLinkRequest" : {
+        "properties" : {
+          "posProductId" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
       "PosOwnershipDto" : {
         "properties" : {
           "lockedFields" : {
@@ -2170,6 +2236,20 @@
           }
         },
         "required" : [ "outcome" ],
+        "type" : "object"
+      },
+      "RevokeKeyRequest" : {
+        "properties" : {
+          "direction" : {
+            "enum" : [ "OUTBOUND", "INBOUND" ],
+            "type" : "string"
+          },
+          "keyId" : {
+            "minLength" : 1,
+            "type" : "string"
+          }
+        },
+        "required" : [ "direction" ],
         "type" : "object"
       },
       "RoleDto" : {
@@ -3110,7 +3190,7 @@
     }
   },
   "info" : {
-    "description" : "API de UvoStore, una plataforma SaaS de e-commerce multi-tenant. Agrupa cinco superficies con distinta autenticación:\n\n- **Pública** (`/api/v1/**`): catálogo, carrito y checkout del storefront, sin autenticación.\n- **Admin** (`/api/admin/**`): panel de administración de cada tienda, JWT bearer con rol ADMIN.\n- **Cliente** (`/api/customer/**`): cuenta y direcciones del comprador, JWT bearer con rol CUSTOMER.\n- **POS** (`/api/webhooks/pos/**`, `/api/sync/**`): integración con UvoPOS, firma HMAC (`X-Signature`/`X-Company-ID`/`X-Timestamp`) o API key — no probable con el botón \"Authorize\" de esta UI, ver la documentación de cada endpoint.\n- **Plataforma** (`/api/platform/**`): alta y ciclo de vida de las tiendas por el equipo operador, header `X-Platform-Key`, solo desde la red privada.\n",
+    "description" : "API de UvoStore, una plataforma SaaS de e-commerce multi-tenant. Agrupa cinco superficies con distinta autenticación:\n\n- **Pública** (`/api/v1/**`): catálogo, carrito y checkout del storefront, sin autenticación.\n- **Admin** (`/api/admin/**`): panel de administración de cada tienda, JWT bearer con rol ADMIN.\n- **Cliente** (`/api/customer/**`): cuenta y direcciones del comprador, JWT bearer con rol CUSTOMER.\n- **POS** (`/api/webhooks/pos/**`, `/api/sync/**`): integración con UvoPOS según el contrato v1, firma UVO-HMAC-SHA256 (`X-Uvo-Key-Id`/`X-Uvo-Timestamp`/`X-Uvo-Nonce`/`X-Uvo-Signature`/`X-Company-ID`/`X-Uvo-Contract`) — no probable con el botón \"Authorize\" de esta UI, ver la documentación de cada endpoint.\n- **Plataforma** (`/api/platform/**`): alta y ciclo de vida de las tiendas por el equipo operador, header `X-Platform-Key`, solo desde la red privada.\n",
     "title" : "UvoStore API",
     "version" : "0.0.1-SNAPSHOT"
   },
@@ -5040,6 +5120,64 @@
         "tags" : [ "Pasarelas de pago (admin)" ]
       }
     },
+    "/api/admin/pos/keys" : {
+      "get" : {
+        "operationId" : "keys",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/KeyView"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "UvoPOS (admin)" ]
+      }
+    },
+    "/api/admin/pos/keys/revoke" : {
+      "post" : {
+        "operationId" : "revoke",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/RevokeKeyRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/KeyView"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "UvoPOS (admin)" ]
+      }
+    },
     "/api/admin/pos/resync" : {
       "post" : {
         "operationId" : "resync",
@@ -5472,6 +5610,39 @@
         "tags" : [ "Variaciones de producto (admin)" ]
       }
     },
+    "/api/admin/products/{productId}/variations/pos-links" : {
+      "get" : {
+        "operationId" : "posLinks",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "productId",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/Link"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Variaciones de producto (admin)" ]
+      }
+    },
     "/api/admin/products/{productId}/variations/{variationId}" : {
       "delete" : {
         "operationId" : "delete_5",
@@ -5537,6 +5708,83 @@
               "*/*" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/ProductDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Variaciones de producto (admin)" ]
+      }
+    },
+    "/api/admin/products/{productId}/variations/{variationId}/pos-link" : {
+      "delete" : {
+        "operationId" : "unlink",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "productId",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "path",
+          "name" : "variationId",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "Variaciones de producto (admin)" ]
+      },
+      "put" : {
+        "operationId" : "link",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "productId",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "path",
+          "name" : "variationId",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/PosLinkRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Link"
                 }
               }
             },
@@ -7433,6 +7681,9 @@
     "description" : "Transportistas habilitados en esta instalación, JWT bearer con rol ADMIN",
     "name" : "Transportistas (admin)"
   }, {
+    "description" : "Resincronización y llaves de la conexión con el POS, JWT bearer con rol ADMIN",
+    "name" : "UvoPOS (admin)"
+  }, {
     "description" : "CRUD de atributos y sus valores, JWT bearer con rol ADMIN",
     "name" : "Atributos (admin)"
   }, {
@@ -7444,9 +7695,6 @@
   }, {
     "description" : "Moneda, impuestos, envío y checkout, JWT bearer con rol ADMIN",
     "name" : "Configuración general (admin)"
-  }, {
-    "description" : "Resincronización con el POS, JWT bearer con rol ADMIN",
-    "name" : "UvoPOS (admin)"
   }, {
     "description" : "CRUD de métodos de envío y sus credenciales de transportista, JWT bearer con rol ADMIN",
     "name" : "Métodos de envío (admin)"

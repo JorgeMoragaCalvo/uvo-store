@@ -79,6 +79,13 @@ public final class PosSigning {
     /** Lo mismo con todo explícito, para las pruebas que alteran una parte. */
     public static MockHttpServletRequestBuilder signedPost(String path, String body, String companyHeader, String keyId,
                                                            String secret, long timestamp, String nonce) {
+        return signedPost(path, body, companyHeader, keyId, secret, timestamp, nonce, UvoHmac.CONTRACT_VERSION);
+    }
+
+    /** Con otra versión de contrato en {@code X-Uvo-Contract}: la cabecera va una sola vez. */
+    public static MockHttpServletRequestBuilder signedPost(String path, String body, String companyHeader, String keyId,
+                                                           String secret, long timestamp, String nonce,
+                                                           String contract) {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         String signature = UvoHmac.sign(secret, UvoHmac.canonical("POST", path, timestamp, nonce, keyId, bytes));
         return post(path)
@@ -87,7 +94,7 @@ public final class PosSigning {
                 .header(UvoHmac.HEADER_NONCE, nonce)
                 .header(UvoHmac.HEADER_SIGNATURE, signature)
                 .header(UvoHmac.HEADER_COMPANY, companyHeader)
-                .header(UvoHmac.HEADER_CONTRACT, UvoHmac.CONTRACT_VERSION)
+                .header(UvoHmac.HEADER_CONTRACT, contract)
                 .contentType("application/json")
                 .content(bytes);
     }

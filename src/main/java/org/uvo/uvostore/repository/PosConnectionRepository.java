@@ -56,6 +56,19 @@ public interface PosConnectionRepository extends JpaRepository<PosConnection, Lo
     @Query("select c.companyId from PosConnection c where c.store.id = :storeId order by c.companyId")
     List<Long> findCompanyIdsByStoreId(@Param("storeId") Long storeId);
 
+    /**
+     * IMP-08. Los nonces ya vistos con las llaves de las conexiones de una tienda. El cierre los borra antes que las
+     * conexiones: al borrar la conexión se van sus llaves (ON DELETE CASCADE), y sin ellas ya no se sabe qué nonces eran
+     * suyos.
+     */
+    @Modifying(flushAutomatically = true)
+    @Query(value = """
+            DELETE FROM pos_webhook_receipts WHERE key_id IN (
+                SELECT k.key_id FROM pos_connection_keys k JOIN pos_connections c ON c.id = k.connection_id
+                WHERE c.store_id = :storeId)
+            """, nativeQuery = true)
+    int deleteReceiptsForStore(@Param("storeId") Long storeId);
+
     /** El cierre borra las conexiones: así la empresa (company_id es UNIQUE) puede darse de alta otra vez. */
     @Modifying(flushAutomatically = true)
     @Query("delete from PosConnection c where c.store.id = :storeId")

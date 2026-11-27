@@ -137,6 +137,7 @@ public class StoreClosureServiceImpl implements StoreClosureService {
 
         List<Long> posCompanyIds = posConnectionRepository.findCompanyIdsByStoreId(store.getId());
         int syncMappingsRemoved = productSyncMappingRepository.deleteAllForStore(store.getId());
+        posConnectionRepository.deleteReceiptsForStore(store.getId());
         posConnectionRepository.deleteAllForStore(store.getId());
 
         String previousDomain = store.getDomain();

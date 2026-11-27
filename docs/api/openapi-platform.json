@@ -295,7 +295,7 @@
       "PlatformAuditEventDto" : {
         "properties" : {
           "action" : {
-            "enum" : [ "REFUND_REQUEST", "REFUND_ISSUE", "REFUND_RECORD_EXTERNAL", "REFUND_RESOLVE", "ORDER_CANCEL", "ORDER_PAYMENT_STATUS_UPDATE", "ORDER_STOCK_SHORTAGE_RELEASE", "OUTBOX_RETRY", "OUTBOX_RESOLVE", "PAYMENT_GATEWAY_UPDATE", "BANK_TRANSFER_UPDATE", "SETTINGS_MONEY_UPDATE", "SETTINGS_STRIPE_UPDATE", "POS_CONNECTION_UPDATE", "SHIPPING_METHOD_CREDENTIALS_UPDATE", "USER_CREATE", "USER_UPDATE", "USER_ACTIVATE", "USER_DEACTIVATE", "USER_DELETE", "USER_INVITATION_RESEND", "USER_INVITATION_ACCEPT", "USER_PASSWORD_RESET", "AUTH_LOGIN", "ROLE_CREATE", "ROLE_UPDATE", "ROLE_DELETE", "STORE_CREATE", "STORE_DOMAIN_UPDATE", "STORE_DOMAIN_VERIFY", "STORE_STATUS_UPDATE", "STORE_CLOSE", "STORE_OWNER_ACCESS_RECOVERY", "COUPON_CREATE", "COUPON_UPDATE", "COUPON_DELETE", "COUPON_STATUS_TOGGLE", "SHIPPING_RATE_CREATE", "SHIPPING_RATE_UPDATE", "SHIPPING_RATE_DELETE", "SHIPPING_RATE_STATUS_TOGGLE", "SHIPPING_METHOD_CREATE", "SHIPPING_METHOD_UPDATE", "SHIPPING_METHOD_DELETE", "SHIPPING_METHOD_STATUS_TOGGLE", "PRODUCT_PRICE_UPDATE", "VARIATION_PRICE_UPDATE" ],
+            "enum" : [ "REFUND_REQUEST", "REFUND_ISSUE", "REFUND_RECORD_EXTERNAL", "REFUND_RESOLVE", "ORDER_CANCEL", "ORDER_PAYMENT_STATUS_UPDATE", "ORDER_STOCK_SHORTAGE_RELEASE", "OUTBOX_RETRY", "OUTBOX_RESOLVE", "PAYMENT_GATEWAY_UPDATE", "BANK_TRANSFER_UPDATE", "SETTINGS_MONEY_UPDATE", "SETTINGS_STRIPE_UPDATE", "POS_CONNECTION_UPDATE", "POS_KEY_REVOKE", "SHIPPING_METHOD_CREDENTIALS_UPDATE", "USER_CREATE", "USER_UPDATE", "USER_ACTIVATE", "USER_DEACTIVATE", "USER_DELETE", "USER_INVITATION_RESEND", "USER_INVITATION_ACCEPT", "USER_PASSWORD_RESET", "AUTH_LOGIN", "ROLE_CREATE", "ROLE_UPDATE", "ROLE_DELETE", "STORE_CREATE", "STORE_DOMAIN_UPDATE", "STORE_DOMAIN_VERIFY", "STORE_STATUS_UPDATE", "STORE_CLOSE", "STORE_OWNER_ACCESS_RECOVERY", "COUPON_CREATE", "COUPON_UPDATE", "COUPON_DELETE", "COUPON_STATUS_TOGGLE", "SHIPPING_RATE_CREATE", "SHIPPING_RATE_UPDATE", "SHIPPING_RATE_DELETE", "SHIPPING_RATE_STATUS_TOGGLE", "SHIPPING_METHOD_CREATE", "SHIPPING_METHOD_UPDATE", "SHIPPING_METHOD_DELETE", "SHIPPING_METHOD_STATUS_TOGGLE", "PRODUCT_PRICE_UPDATE", "VARIATION_PRICE_UPDATE" ],
             "type" : "string"
           },
           "actorId" : {
@@ -408,10 +408,6 @@
       },
       "PosLinkRequest" : {
         "properties" : {
-          "apiKey" : {
-            "minLength" : 1,
-            "type" : "string"
-          },
           "apiUrl" : {
             "minLength" : 1,
             "pattern" : "^https?://\\S+$",
@@ -425,9 +421,20 @@
             "minLength" : 1,
             "type" : "string"
           },
-          "webhookSecret" : {
-            "maxLength" : 2147483647,
-            "minLength" : 32,
+          "inboundKeyId" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "inboundSecret" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "outboundKeyId" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "outboundSecret" : {
+            "minLength" : 1,
             "type" : "string"
           }
         },
@@ -565,7 +572,7 @@
     }
   },
   "info" : {
-    "description" : "API de UvoStore, una plataforma SaaS de e-commerce multi-tenant. Agrupa cinco superficies con distinta autenticación:\n\n- **Pública** (`/api/v1/**`): catálogo, carrito y checkout del storefront, sin autenticación.\n- **Admin** (`/api/admin/**`): panel de administración de cada tienda, JWT bearer con rol ADMIN.\n- **Cliente** (`/api/customer/**`): cuenta y direcciones del comprador, JWT bearer con rol CUSTOMER.\n- **POS** (`/api/webhooks/pos/**`, `/api/sync/**`): integración con UvoPOS, firma HMAC (`X-Signature`/`X-Company-ID`/`X-Timestamp`) o API key — no probable con el botón \"Authorize\" de esta UI, ver la documentación de cada endpoint.\n- **Plataforma** (`/api/platform/**`): alta y ciclo de vida de las tiendas por el equipo operador, header `X-Platform-Key`, solo desde la red privada.\n",
+    "description" : "API de UvoStore, una plataforma SaaS de e-commerce multi-tenant. Agrupa cinco superficies con distinta autenticación:\n\n- **Pública** (`/api/v1/**`): catálogo, carrito y checkout del storefront, sin autenticación.\n- **Admin** (`/api/admin/**`): panel de administración de cada tienda, JWT bearer con rol ADMIN.\n- **Cliente** (`/api/customer/**`): cuenta y direcciones del comprador, JWT bearer con rol CUSTOMER.\n- **POS** (`/api/webhooks/pos/**`, `/api/sync/**`): integración con UvoPOS según el contrato v1, firma UVO-HMAC-SHA256 (`X-Uvo-Key-Id`/`X-Uvo-Timestamp`/`X-Uvo-Nonce`/`X-Uvo-Signature`/`X-Company-ID`/`X-Uvo-Contract`) — no probable con el botón \"Authorize\" de esta UI, ver la documentación de cada endpoint.\n- **Plataforma** (`/api/platform/**`): alta y ciclo de vida de las tiendas por el equipo operador, header `X-Platform-Key`, solo desde la red privada.\n",
     "title" : "UvoStore API",
     "version" : "0.0.1-SNAPSHOT"
   },
@@ -906,7 +913,7 @@
           "name" : "action",
           "required" : false,
           "schema" : {
-            "enum" : [ "REFUND_REQUEST", "REFUND_ISSUE", "REFUND_RECORD_EXTERNAL", "REFUND_RESOLVE", "ORDER_CANCEL", "ORDER_PAYMENT_STATUS_UPDATE", "ORDER_STOCK_SHORTAGE_RELEASE", "OUTBOX_RETRY", "OUTBOX_RESOLVE", "PAYMENT_GATEWAY_UPDATE", "BANK_TRANSFER_UPDATE", "SETTINGS_MONEY_UPDATE", "SETTINGS_STRIPE_UPDATE", "POS_CONNECTION_UPDATE", "SHIPPING_METHOD_CREDENTIALS_UPDATE", "USER_CREATE", "USER_UPDATE", "USER_ACTIVATE", "USER_DEACTIVATE", "USER_DELETE", "USER_INVITATION_RESEND", "USER_INVITATION_ACCEPT", "USER_PASSWORD_RESET", "AUTH_LOGIN", "ROLE_CREATE", "ROLE_UPDATE", "ROLE_DELETE", "STORE_CREATE", "STORE_DOMAIN_UPDATE", "STORE_DOMAIN_VERIFY", "STORE_STATUS_UPDATE", "STORE_CLOSE", "STORE_OWNER_ACCESS_RECOVERY", "COUPON_CREATE", "COUPON_UPDATE", "COUPON_DELETE", "COUPON_STATUS_TOGGLE", "SHIPPING_RATE_CREATE", "SHIPPING_RATE_UPDATE", "SHIPPING_RATE_DELETE", "SHIPPING_RATE_STATUS_TOGGLE", "SHIPPING_METHOD_CREATE", "SHIPPING_METHOD_UPDATE", "SHIPPING_METHOD_DELETE", "SHIPPING_METHOD_STATUS_TOGGLE", "PRODUCT_PRICE_UPDATE", "VARIATION_PRICE_UPDATE" ],
+            "enum" : [ "REFUND_REQUEST", "REFUND_ISSUE", "REFUND_RECORD_EXTERNAL", "REFUND_RESOLVE", "ORDER_CANCEL", "ORDER_PAYMENT_STATUS_UPDATE", "ORDER_STOCK_SHORTAGE_RELEASE", "OUTBOX_RETRY", "OUTBOX_RESOLVE", "PAYMENT_GATEWAY_UPDATE", "BANK_TRANSFER_UPDATE", "SETTINGS_MONEY_UPDATE", "SETTINGS_STRIPE_UPDATE", "POS_CONNECTION_UPDATE", "POS_KEY_REVOKE", "SHIPPING_METHOD_CREDENTIALS_UPDATE", "USER_CREATE", "USER_UPDATE", "USER_ACTIVATE", "USER_DEACTIVATE", "USER_DELETE", "USER_INVITATION_RESEND", "USER_INVITATION_ACCEPT", "USER_PASSWORD_RESET", "AUTH_LOGIN", "ROLE_CREATE", "ROLE_UPDATE", "ROLE_DELETE", "STORE_CREATE", "STORE_DOMAIN_UPDATE", "STORE_DOMAIN_VERIFY", "STORE_STATUS_UPDATE", "STORE_CLOSE", "STORE_OWNER_ACCESS_RECOVERY", "COUPON_CREATE", "COUPON_UPDATE", "COUPON_DELETE", "COUPON_STATUS_TOGGLE", "SHIPPING_RATE_CREATE", "SHIPPING_RATE_UPDATE", "SHIPPING_RATE_DELETE", "SHIPPING_RATE_STATUS_TOGGLE", "SHIPPING_METHOD_CREATE", "SHIPPING_METHOD_UPDATE", "SHIPPING_METHOD_DELETE", "SHIPPING_METHOD_STATUS_TOGGLE", "PRODUCT_PRICE_UPDATE", "VARIATION_PRICE_UPDATE" ],
             "type" : "string"
           }
         }, {
