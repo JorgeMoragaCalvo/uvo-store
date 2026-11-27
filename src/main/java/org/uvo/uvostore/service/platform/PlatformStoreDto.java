@@ -11,6 +11,8 @@ import java.util.List;
  * <p><b>Nunca lleva secretos</b>: de la conexión con el POS solo la empresa y si está activa (ni el token, ni el
  * secreto de webhook, ni la URL de su API), y del dueño nada de su contraseña ni de sus tokens.
  *
+ * @param legalTaxId RUT del vendedor ({@code store_settings.legal_tax_id}, {@code 12345678-5}); nulo si la tienda no
+ *        lo configuró. Es el mismo dato que el storefront ya publica en sus páginas legales.
  * @param statusChangedAt cuándo cambió el estado por última vez; nulo si nunca cambió desde el alta
  * @param owner nulo si la tienda no tiene dueño registrado ({@code stores.owner_user_id})
  */
@@ -18,6 +20,7 @@ public record PlatformStoreDto(
         Long id,
         String name,
         String slug,
+        String legalTaxId,
         String domain,
         Instant domainVerifiedAt,
         StoreStatus status,

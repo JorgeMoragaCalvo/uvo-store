@@ -7,6 +7,12 @@ public interface StoreOnboardingService {
     StoreOnboardingResponse updateDomain(Long storeId, String domain);
 
     /**
+     * Quita el dominio propio (y su verificación): la tienda queda solo con su subdominio de plataforma y el
+     * dominio se libera para otra tienda. Sin dominio no hace nada ni deja auditoría.
+     */
+    StoreOnboardingResponse clearDomain(Long storeId);
+
+    /**
      * PROD-04. Marca (o desmarca) el dominio propio de la tienda como comprobado, que es lo que permite
      * usarlo en los enlaces de salida. Registra la comprobación del operador; no sondea DNS.
      */

@@ -362,6 +362,9 @@
             "format" : "int64",
             "type" : "integer"
           },
+          "legalTaxId" : {
+            "type" : "string"
+          },
           "name" : {
             "type" : "string"
           },
@@ -1001,6 +1004,34 @@
       }
     },
     "/api/platform/stores/{id}/domain" : {
+      "delete" : {
+        "operationId" : "clearDomain",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/StoreOnboardingResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [ {
+          "platformApiKey" : [ ]
+        } ],
+        "tags" : [ "Alta de tiendas (plataforma)" ]
+      },
       "put" : {
         "operationId" : "updateDomain",
         "parameters" : [ {

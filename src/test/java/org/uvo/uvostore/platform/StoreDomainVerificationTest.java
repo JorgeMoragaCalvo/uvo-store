@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Value;
 import org.uvo.uvostore.support.IntegrationTestSupport;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -105,7 +107,55 @@ class StoreDomainVerificationTest extends IntegrationTestSupport {
                 .andExpect(status().isUnauthorized());
     }
 
+    @Test
+    @DisplayName("Quitar el dominio devuelve la tienda a su subdominio, libera el dominio y repetirlo no hace nada")
+    void clearingTheDomainReturnsToTheSubdomainAndFreesIt() throws Exception {
+        String slug = "verif-del-" + nextSeq();
+        String domain = "verif-del-" + nextSeq() + ".example";
+        long storeId = createAndGetId(slug, domain);
+        mockMvc.perform(setVerified(storeId, true)).andExpect(status().isOk());
+
+        mockMvc.perform(clearDomain(storeId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.domain").doesNotExist())
+                .andExpect(jsonPath("$.domainVerifiedAt").doesNotExist())
+                .andExpect(jsonPath("$.storefrontUrl").value("http://" + slug + ".localhost"));
+
+        // El backend deja de resolverlo: la visita con ese Host ya no es de ninguna tienda.
+        mockMvc.perform(get("/api/v1/store-settings").header("Host", domain))
+                .andExpect(status().isNotFound());
+
+        // Y queda libre: antes, el PUT exigía un dominio y el viejo seguía ocupado para cualquier otra tienda.
+        long other = createAndGetId("verif-del-otra-" + nextSeq(), "");
+        mockMvc.perform(put("/api/platform/stores/" + other + "/domain")
+                        .header("X-Platform-Key", platformKey)
+                        .contentType("application/json")
+                        .content("{\"domain\":\"" + domain + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.domain").value(domain));
+
+        // Sin dominio, quitarlo otra vez es un 200 sin cambios.
+        mockMvc.perform(clearDomain(storeId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.domain").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("Quitar el dominio es operación de plataforma: sin la clave, 401; tienda inexistente, 404")
+    void clearingTheDomainRequiresThePlatformKey() throws Exception {
+        long storeId = createAndGetId("verif-del-key-" + nextSeq(), "verif-del-key" + nextSeq() + ".example");
+
+        mockMvc.perform(delete("/api/platform/stores/" + storeId + "/domain"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(clearDomain(999_999_999L))
+                .andExpect(status().isNotFound());
+    }
+
     // --- helpers -----------------------------------------------------------------------------------
+
+    private org.springframework.test.web.servlet.RequestBuilder clearDomain(long storeId) {
+        return delete("/api/platform/stores/" + storeId + "/domain").header("X-Platform-Key", platformKey);
+    }
 
     private long createAndGetId(String slug, String domain) throws Exception {
         String response = mockMvc.perform(create(slug, domain))

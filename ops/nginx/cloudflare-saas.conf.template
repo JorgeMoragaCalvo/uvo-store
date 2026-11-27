@@ -1,0 +1,63 @@
+# Cloudflare for SaaS: el server que recibe los dominios propios de las tiendas a través de Cloudflare.
+#
+# Reemplaza a default.conf (se instala en el mismo lugar, /etc/nginx/conf.d/uvostore-default.conf) cuando los
+# dominios de los clientes se conectan con Cloudflare for SaaS en vez de con un certificado por dominio
+# (dominio-propio.sh). Lo instala y lo quita ops/servidor/cloudflare-saas.sh; no se copia a mano.
+#
+# Por qué un default_server y no un server por dominio: con Cloudflare for SaaS el cliente apunta su CNAME al
+# fallback origin (customers.<zona>), Cloudflare termina el TLS con el certificado del cliente y se conecta aquí con
+# el Host del cliente (tienda.cliente.cl). Esos dominios no se conocen de antemano, así que los atiende el server por
+# omisión del 443. El backend decide la tienda por el Host (stores.domain), igual que con un dominio propio.
+#
+# Lo que default.conf protegía se mantiene:
+#   - en 80 sigue el corte (444) salvo el desafío de Certbot, que dominio-propio.sh y el comodín siguen usando;
+#   - en 443 solo se atiende a Cloudflare: cualquier otra conexión recibe 444 antes de llegar al backend. El filtro
+#     usa $realip_remote_addr (la IP de la conexión) y no $remote_addr, porque real_ip cambia $remote_addr por la
+#     del comprador y entonces "solo Cloudflare" dejaría fuera a todos los compradores.
+#
+# La IP del comprador: Cloudflare la manda en CF-Connecting-IP. real_ip la toma solo de los rangos de Cloudflare
+# (cloudflare-realip.conf) y uvostore-locations.conf la pasa al backend en X-Forwarded-For como a cualquier otra
+# petición; el backend confía en el proxy porque sale desde 127.0.0.2 (RATE_LIMIT_TRUSTED_PROXIES).
+#
+# Marcadores: @@AMBIENTE@@ (el ambiente que atiende los dominios de Cloudflare), @@CERT_ORIGEN@@ y @@LLAVE_ORIGEN@@
+# (el certificado de origen, por ejemplo uno de Cloudflare Origin CA para customers.<zona>).
+
+geo $realip_remote_addr $uvostore_desde_cloudflare {
+    default 0;
+    include uvostore/cloudflare-geo.conf;
+}
+
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+    location / {
+        return 444;
+    }
+}
+
+server {
+    listen 443 ssl http2 default_server;
+    listen [::]:443 ssl http2 default_server;
+    server_name _;
+
+    ssl_certificate     @@CERT_ORIGEN@@;
+    ssl_certificate_key @@LLAVE_ORIGEN@@;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    if ($uvostore_desde_cloudflare = 0) {
+        return 444;
+    }
+
+    include uvostore/cloudflare-realip.conf;
+    real_ip_header CF-Connecting-IP;
+
+    root /srv/uvostore-@@AMBIENTE@@/frontend/current;
+    set $uvostore_upstream uvostore_@@AMBIENTE@@;
+    proxy_bind 127.0.0.2;
+    include uvostore/uvostore-locations.conf;
+}
